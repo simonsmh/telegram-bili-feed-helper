@@ -5,7 +5,7 @@ import re
 import sys
 
 import requests
-from telegram import InputMediaPhoto
+from telegram import InputMediaPhoto, InputMediaAnimation
 from telegram.ext import MessageHandler, Updater
 from telegram.ext.dispatcher import run_async
 from telegram.ext.filters import Filters
@@ -55,6 +55,12 @@ def dynamic_parser(url):
 
 @run_async
 def parse(update, context):
+    # TODO: type "animation" can't be used in sendmediagroup
+    # def media_helper(url, **kwargs):
+    #     if ".gif" in url:
+    #         return InputMediaAnimation(url, **kwargs)
+    #     else:
+    #         return InputMediaPhoto(url, **kwargs)
     message = update.message
     data = message.text
     urls = re.findall(
@@ -67,11 +73,14 @@ def parse(update, context):
         if not imgs:
             message.reply_text(caption)
         elif len(imgs) == 1:
-            message.reply_photo(imgs[0], caption=caption)
+            if ".gif" in imgs[0]:
+                message.reply_animation(imgs[0], caption=caption)
+            else:
+                message.reply_photo(imgs[0], caption=caption)
         else:
             media = [InputMediaPhoto(img) for img in imgs]
             media[0] = InputMediaPhoto(imgs[0], caption=caption)
-            update.message.reply_media_group(media)
+            message.reply_media_group(media)
 
 
 @run_async
