@@ -5,11 +5,20 @@ import os
 import re
 import sys
 from io import BytesIO
+from uuid import uuid4
 
 import requests
-from telegram import InputMediaAnimation, InputMediaPhoto
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InlineQueryResultArticle,
+    InlineQueryResultGif,
+    InlineQueryResultPhoto,
+    InputMediaPhoto,
+    InputTextMessageContent,
+)
 from telegram.error import BadRequest
-from telegram.ext import MessageHandler, Updater
+from telegram.ext import InlineQueryHandler, MessageHandler, Updater
 from telegram.ext.dispatcher import run_async
 from telegram.ext.filters import Filters
 
@@ -21,7 +30,6 @@ logger = logging.getLogger("Telegram_Bili_Feed_Helper")
 
 
 def dynamic_parser(url):
-    logger.info(f"解析URL: {url}")
     s = requests.Session()
     s.headers.update(
         {
@@ -29,7 +37,7 @@ def dynamic_parser(url):
         }
     )
     post = s.get(url)
-    dynamic_id = re.search(r"t.bilibili.com\/(\d+)", post.url).group(1)
+    dynamic_id = re.search(r"t\.bilibili\.com.*\/(\d+)", post.url).group(1)
     logger.info(f"动态ID: {dynamic_id}")
     data = s.get(
         "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/get_dynamic_detail",
@@ -53,8 +61,9 @@ def parse(update, context):
     message = update.message
     data = message.text
     urls = re.findall(
-        r"https?:\/\/t\.bilibili\.com\/\d+|https?:\/\/b23\.tv\/(?!av)\w+", data
+        r"https?:\/\/t\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+", data,
     )
+    logger.info(f"Parse: {urls}")
 
     def get_imgs(s, urls):
         async def get_img(s, url):
@@ -71,29 +80,113 @@ def parse(update, context):
         loop.close()
         return results
 
-    def callback(imgs, caption, imgraws):
+    def callback(imgs, caption, reply_markup, imgraws):
         if len(imgs) == 1:
             if ".gif" in imgs[0]:
-                message.reply_animation(imgraws[0], caption=caption)
+                message.reply_animation(
+                    imgraws[0], caption=caption, reply_markup=reply_markup
+                )
             else:
-                message.reply_photo(imgraws[0], caption=caption)
+                message.reply_photo(
+                    imgraws[0], caption=caption, reply_markup=reply_markup
+                )
         else:
             media = [InputMediaPhoto(img) for img in imgraws]
-            media[0].caption=caption
-            message.reply_media_group(media)
+            media[0].caption = caption
+            message.reply_media_group(media, reply_markup=reply_markup)
 
     for url in urls:
         s, user, content, imgs, dynamic_id = dynamic_parser(url)
-        caption = f"@{user}:\n{content}\nhttps://t.bilibili.com/{dynamic_id}"
-        if not imgs:
-            message.reply_text(caption)
-        else:
+        dynamic_url = f"https://t.bilibili.com/{dynamic_id}"
+        caption = f"@{user}:\n{content}\n{dynamic_url}"
+        reply_markup = InlineKeyboardMarkup(
+            [[InlineKeyboardButton(text="动态源地址", url=dynamic_url)]]
+        )
+        if imgs:
             # try:
-            #     callback(imgs, caption, imgs)
+            #     callback(imgs, caption, reply_markup, imgs)
             # except BadRequest:
             logger.info("Uploading by bot")
             imgraws = get_imgs(s, imgs)
-            callback(imgs, caption, imgraws)
+            callback(imgs, caption, reply_markup, imgraws)
+        else:
+            message.reply_text(caption, reply_markup=reply_markup)
+
+
+@run_async
+def inlineparse(update, context):
+    inline_query = update.inline_query
+    query = inline_query.query
+    helpmsg = [
+        InlineQueryResultArticle(
+            id=uuid4(),
+            title="帮助",
+            description="将 Bot 添加到群组可以自动匹配消息, Inline 模式只可发单张图。",
+            reply_markup=InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            text="源代码",
+                            url="https://github.com/simonsmh/telegram-bili-feed-helper",
+                        )
+                    ]
+                ]
+            ),
+            input_message_content=InputTextMessageContent(
+                "欢迎使用 @bilifeedbot 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组自动匹配消息。"
+            ),
+        )
+    ]
+    if not query:
+        inline_query.answer(helpmsg)
+        return
+    try:
+        url = re.search(
+            r"https?:\/\/t\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+",
+            query,
+        ).group(0)
+    except AttributeError:
+        inline_query.answer(helpmsg)
+        return
+    logger.info(f"Inline: {url}")
+    _, user, content, imgs, dynamic_id = dynamic_parser(url)
+    dynamic_url = f"https://t.bilibili.com/{dynamic_id}"
+    caption = f"@{user}:\n{content}"
+    reply_markup = InlineKeyboardMarkup(
+        [[InlineKeyboardButton(text="动态源地址", url=dynamic_url)]]
+    )
+    if not imgs:
+        results = [
+            InlineQueryResultArticle(
+                id=uuid4(),
+                title=user,
+                description=caption,
+                reply_markup=reply_markup,
+                input_message_content=InputTextMessageContent(caption),
+            )
+        ]
+    else:
+        results = [
+            InlineQueryResultGif(
+                id=uuid4(),
+                caption=caption,
+                reply_markup=reply_markup,
+                gif_url=img,
+                thumb_url=img,
+            )
+            if ".gif" in img
+            else InlineQueryResultPhoto(
+                id=uuid4(),
+                caption=caption,
+                reply_markup=reply_markup,
+                photo_url=img,
+                thumb_url=img + "@428w_428h_1e_1c.png",
+            )
+            for img in imgs
+        ]
+        results[0].title = user
+        results[0].description = caption
+    inline_query.answer(results)
 
 
 @run_async
@@ -126,11 +219,12 @@ if __name__ == "__main__":
     updater.dispatcher.add_handler(
         MessageHandler(
             Filters.regex(
-                r"https?:\/\/t\.bilibili\.com\/\d+|https?:\/\/b23\.tv\/(?!av)\w+"
+                r"https?:\/\/t\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+"
             ),
             parse,
         )
     )
+    updater.dispatcher.add_handler(InlineQueryHandler(inlineparse))
     updater.dispatcher.add_error_handler(error)
     updater.start_polling()
     updater.idle()
