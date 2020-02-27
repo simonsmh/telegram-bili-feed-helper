@@ -88,11 +88,12 @@ def parse(update, context):
         if not imgs:
             message.reply_text(caption)
         else:
-            try:
-                callback(imgs, caption, imgs)
-            except BadRequest:
-                imgraws = get_imgs(s, imgs)
-                callback(imgs, caption, imgraws)
+            # try:
+            #     callback(imgs, caption, imgs)
+            # except BadRequest:
+            logger.info("Uploading by bot")
+            imgraws = get_imgs(s, imgs)
+            callback(imgs, caption, imgraws)
 
 
 @run_async
