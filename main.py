@@ -1,11 +1,14 @@
+import asyncio
 import json
 import logging
 import os
 import re
 import sys
+from io import BytesIO
 
 import requests
-from telegram import InputMediaPhoto, InputMediaAnimation
+from telegram import InputMediaAnimation, InputMediaPhoto
+from telegram.error import BadRequest
 from telegram.ext import MessageHandler, Updater
 from telegram.ext.dispatcher import run_async
 from telegram.ext.filters import Filters
@@ -33,7 +36,7 @@ def dynamic_parser(url):
         params={"dynamic_id": dynamic_id},
     ).json()
     detail = json.loads(data.get("data").get("card").get("card"))
-    logger.info(f"动态解析: {detail}")
+    logger.debug(f"动态解析: {detail}")
     user = detail.get("user").get("name", detail.get("user").get("uname"))
     content = detail.get("item").get("description", detail.get("item").get("content"))
     imgs = (
@@ -41,46 +44,55 @@ def dynamic_parser(url):
         if detail.get("item").get("pictures")
         else []
     )
-    # TODO: Uploading directly is possible but disabled for now.
-    # async def get_img(s, url):
-    #     img = s.get(url, stream=True)
-    #     return img.raw
-    # loop = asyncio.new_event_loop()
-    # tasks = [get_img(s, img) for img in imgs]
-    # results = loop.run_until_complete(asyncio.gather(*tasks, loop=loop))
-    # loop.close()
     logger.debug(f"用户: {user}\n内容: {content}\n图片: {imgs}")
-    return user, content, imgs, dynamic_id
+    return s, user, content, imgs, dynamic_id
 
 
 @run_async
 def parse(update, context):
-    # TODO: type "animation" can't be used in sendmediagroup
-    # def media_helper(url, **kwargs):
-    #     if ".gif" in url:
-    #         return InputMediaAnimation(url, **kwargs)
-    #     else:
-    #         return InputMediaPhoto(url, **kwargs)
     message = update.message
     data = message.text
     urls = re.findall(
         r"https?:\/\/t\.bilibili\.com\/\d+|https?:\/\/b23\.tv\/(?!av)\w+", data
     )
+
+    def get_imgs(s, urls):
+        async def get_img(s, url):
+            imgraw = await loop.run_in_executor(None, s.get, url)
+            img = BytesIO(imgraw.content)
+            img.seek(0)
+            while not imgraw.ok:
+                asyncio.sleep(1)
+            return img
+
+        loop = asyncio.new_event_loop()
+        tasks = [get_img(s, img) for img in urls]
+        results = loop.run_until_complete(asyncio.gather(*tasks, loop=loop))
+        loop.close()
+        return results
+
+    def callback(imgs, caption, imgraws):
+        if len(imgs) == 1:
+            if ".gif" in imgs[0]:
+                message.reply_animation(imgraws[0], caption=caption)
+            else:
+                message.reply_photo(imgraws[0], caption=caption)
+        else:
+            media = [InputMediaPhoto(img) for img in imgraws]
+            media[0].caption=caption
+            message.reply_media_group(media)
+
     for url in urls:
-        user, content, imgs, dynamic_id = dynamic_parser(url)
+        s, user, content, imgs, dynamic_id = dynamic_parser(url)
         caption = f"@{user}:\n{content}\nhttps://t.bilibili.com/{dynamic_id}"
-        print(imgs)
         if not imgs:
             message.reply_text(caption)
-        elif len(imgs) == 1:
-            if ".gif" in imgs[0]:
-                message.reply_animation(imgs[0], caption=caption)
-            else:
-                message.reply_photo(imgs[0], caption=caption)
         else:
-            media = [InputMediaPhoto(img) for img in imgs]
-            media[0] = InputMediaPhoto(imgs[0], caption=caption)
-            message.reply_media_group(media)
+            try:
+                callback(imgs, caption, imgs)
+            except BadRequest:
+                imgraws = get_imgs(s, imgs)
+                callback(imgs, caption, imgraws)
 
 
 @run_async
