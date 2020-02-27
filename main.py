@@ -92,8 +92,9 @@ def parse(update, context):
                 )
         else:
             media = [InputMediaPhoto(img) for img in imgraws]
-            media[0].caption = caption
-            message.reply_media_group(media, reply_markup=reply_markup)
+            message.reply_media_group(media)
+            message.reply_text(caption, reply_markup=reply_markup, quote=False)
+
 
     for url in urls:
         s, user, content, imgs, dynamic_id = dynamic_parser(url)
