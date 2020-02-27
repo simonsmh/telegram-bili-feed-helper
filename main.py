@@ -98,19 +98,17 @@ def parse(update, context):
             logger.warning("解析错误！")
             return
         dynamic_url = f"https://t.bilibili.com/{dynamic_id}"
-        caption = f"@{user}:\n{content}\n{dynamic_url}"
+        caption = f"@{user}:\n{content}"
         reply_markup = InlineKeyboardMarkup(
             [[InlineKeyboardButton(text="动态源地址", url=dynamic_url)]]
         )
         if imgs:
             try:
                 callback(caption, dynamic_url, reply_markup, imgs, imgs)
-            except (TimedOut, BadRequest):
-                logger.info(f"下载中: {dynamic_id}")
-                loop = asyncio.new_event_loop()
+            except (TimedOut, BadRequest) as err:
+                logger.info(f"{err} -> 下载中: {dynamic_id}")
                 tasks = [get_img(s, img) for img in imgs]
-                imgraws = loop.run_until_complete(asyncio.gather(*tasks, loop=loop))
-                loop.close()
+                imgraws = await asyncio.gather(*tasks)
                 logger.info(f"上传中: {dynamic_id}")
                 callback(caption, dynamic_url, reply_markup, imgs, imgraws)
         else:
