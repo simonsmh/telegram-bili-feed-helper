@@ -17,7 +17,7 @@ from telegram import (
     InputMediaPhoto,
     InputTextMessageContent,
 )
-from telegram.error import BadRequest
+from telegram.error import BadRequest, TimedOut
 from telegram.ext import InlineQueryHandler, MessageHandler, Updater
 from telegram.ext.dispatcher import run_async
 from telegram.ext.filters import Filters
@@ -43,7 +43,10 @@ def dynamic_parser(url):
         "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/get_dynamic_detail",
         params={"dynamic_id": dynamic_id},
     ).json()
-    detail = json.loads(data.get("data").get("card").get("card"))
+    try:
+        detail = json.loads(data.get("data").get("card").get("card"))
+    except AttributeError:
+        return
     logger.debug(f"动态解析: {detail}")
     user = detail.get("user").get("name", detail.get("user").get("uname"))
     content = detail.get("item").get("description", detail.get("item").get("content"))
@@ -65,22 +68,15 @@ def parse(update, context):
     )
     logger.info(f"Parse: {urls}")
 
-    def get_imgs(s, urls):
-        async def get_img(s, url):
-            imgraw = await loop.run_in_executor(None, s.get, url)
-            img = BytesIO(imgraw.content)
-            img.seek(0)
-            while not imgraw.ok:
-                asyncio.sleep(1)
-            return img
+    async def get_img(s, url):
+        imgraw = await loop.run_in_executor(None, s.get, url)
+        img = BytesIO(imgraw.content)
+        img.seek(0)
+        while not imgraw.ok:
+            asyncio.sleep(1)
+        return img
 
-        loop = asyncio.new_event_loop()
-        tasks = [get_img(s, img) for img in urls]
-        results = loop.run_until_complete(asyncio.gather(*tasks, loop=loop))
-        loop.close()
-        return results
-
-    def callback(imgs, caption, reply_markup, imgraws):
+    def callback(caption, dynamic_url, reply_markup, imgs, imgraws):
         if len(imgs) == 1:
             if ".gif" in imgs[0]:
                 message.reply_animation(
@@ -95,23 +91,35 @@ def parse(update, context):
             message.reply_media_group(media)
             message.reply_text(caption, reply_markup=reply_markup, quote=False)
 
-
-    for url in urls:
-        s, user, content, imgs, dynamic_id = dynamic_parser(url)
+    async def parse_queue(url):
+        try:
+            s, user, content, imgs, dynamic_id = dynamic_parser(url)
+        except TypeError:
+            logger.warning("解析错误！")
+            return
         dynamic_url = f"https://t.bilibili.com/{dynamic_id}"
         caption = f"@{user}:\n{content}\n{dynamic_url}"
         reply_markup = InlineKeyboardMarkup(
             [[InlineKeyboardButton(text="动态源地址", url=dynamic_url)]]
         )
         if imgs:
-            # try:
-            #     callback(imgs, caption, reply_markup, imgs)
-            # except BadRequest:
-            logger.info("Uploading by bot")
-            imgraws = get_imgs(s, imgs)
-            callback(imgs, caption, reply_markup, imgraws)
+            try:
+                callback(caption, dynamic_url, reply_markup, imgs, imgs)
+            except (TimedOut, BadRequest):
+                logger.info(f"下载中: {dynamic_id}")
+                loop = asyncio.new_event_loop()
+                tasks = [get_img(s, img) for img in imgs]
+                imgraws = loop.run_until_complete(asyncio.gather(*tasks, loop=loop))
+                loop.close()
+                logger.info(f"上传中: {dynamic_id}")
+                callback(caption, dynamic_url, reply_markup, imgs, imgraws)
         else:
             message.reply_text(caption, reply_markup=reply_markup)
+
+    loop = asyncio.new_event_loop()
+    tasks = [parse_queue(url) for url in urls]
+    loop.run_until_complete(asyncio.gather(*tasks, loop=loop))
+    loop.close()
 
 
 @run_async
@@ -150,7 +158,11 @@ def inlineparse(update, context):
         inline_query.answer(helpmsg)
         return
     logger.info(f"Inline: {url}")
-    _, user, content, imgs, dynamic_id = dynamic_parser(url)
+    try:
+        _, user, content, imgs, dynamic_id = dynamic_parser(url)
+    except TypeError:
+        logger.warning("解析错误！")
+        return
     dynamic_url = f"https://t.bilibili.com/{dynamic_id}"
     caption = f"@{user}:\n{content}"
     reply_markup = InlineKeyboardMarkup(
