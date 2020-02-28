@@ -59,6 +59,10 @@ def dynamic_parser(url):
     return s, user, content, imgs, dynamic_id
 
 
+def tag_parser(content):
+    return re.sub(r"#([^#?=\s|$]+)#?", lambda x: f"#{x.group(1)} ", content)
+
+
 @run_async
 def parse(update, context):
     message = update.message
@@ -98,7 +102,7 @@ def parse(update, context):
             logger.warning("解析错误！")
             return
         dynamic_url = f"https://t.bilibili.com/{dynamic_id}"
-        caption = f"@{user}:\n{content}"
+        caption = f"@{user}:\n{tag_parser(content)}"
         reply_markup = InlineKeyboardMarkup(
             [[InlineKeyboardButton(text="动态源地址", url=dynamic_url)]]
         )
@@ -162,7 +166,7 @@ def inlineparse(update, context):
         logger.warning("解析错误！")
         return
     dynamic_url = f"https://t.bilibili.com/{dynamic_id}"
-    caption = f"@{user}:\n{content}"
+    caption = f"@{user}:\n{tag_parser(content)}"
     reply_markup = InlineKeyboardMarkup(
         [[InlineKeyboardButton(text="动态源地址", url=dynamic_url)]]
     )
