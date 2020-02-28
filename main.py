@@ -181,6 +181,8 @@ def inlineparse(update, context):
             InlineQueryResultGif(
                 id=uuid4(),
                 caption=caption,
+                title=user,
+                description=caption,
                 reply_markup=reply_markup,
                 gif_url=img,
                 thumb_url=img,
@@ -189,14 +191,16 @@ def inlineparse(update, context):
             else InlineQueryResultPhoto(
                 id=uuid4(),
                 caption=caption,
+                title=user,
+                description=caption,
                 reply_markup=reply_markup,
                 photo_url=img,
                 thumb_url=img + "@428w_428h_1e_1c.png",
             )
             for img in imgs
         ]
-        results[0].title = user
-        results[0].description = caption
+        if len(imgs) == 1:
+            results.extend(helpmsg)
     inline_query.answer(results)
 
 
