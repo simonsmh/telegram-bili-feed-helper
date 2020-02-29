@@ -175,7 +175,7 @@ def inlineparse(update, context):
             InlineQueryResultArticle(
                 id=uuid4(),
                 title=user,
-                description=caption,
+                description=content,
                 reply_markup=reply_markup,
                 input_message_content=InputTextMessageContent(caption),
             )
@@ -185,8 +185,7 @@ def inlineparse(update, context):
             InlineQueryResultGif(
                 id=uuid4(),
                 caption=caption,
-                title=user,
-                description=caption,
+                title=f"{user}: {content}",
                 reply_markup=reply_markup,
                 gif_url=img,
                 thumb_url=img,
@@ -196,7 +195,7 @@ def inlineparse(update, context):
                 id=uuid4(),
                 caption=caption,
                 title=user,
-                description=caption,
+                description=content,
                 reply_markup=reply_markup,
                 photo_url=img,
                 thumb_url=img + "@428w_428h_1e_1c.png",
