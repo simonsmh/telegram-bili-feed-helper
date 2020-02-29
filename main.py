@@ -54,6 +54,7 @@ def dynamic_parser(url):
         content = detail.get("item").get(
             "description", detail.get("item").get("content")
         )
+        imgs = list()
         if detail.get("item").get("pictures"):
             imgs = [t.get("img_src") for t in detail.get("item").get("pictures")]
         elif detail.get("item").get("video_playurl"):
