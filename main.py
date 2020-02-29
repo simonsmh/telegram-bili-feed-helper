@@ -91,6 +91,14 @@ def tag_parser(content):
     return re.sub(r"#([^#?=\s|$]+)#?", lambda x: f"#{x.group(1)} ", content)
 
 
+def make_url(dynamic_id):
+    return (
+        f"https://t.bilibili.com/{dynamic_id}"
+        if len(dynamic_id) > 15
+        else f"https://vc.bilibili.com/video/{dynamic_id}"
+    )
+
+
 @run_async
 def parse(update, context):
     message = update.message
@@ -134,7 +142,7 @@ def parse(update, context):
         except TypeError:
             logger.warning("解析错误！")
             return
-        dynamic_url = f"https://t.bilibili.com/{dynamic_id}"
+        dynamic_url = make_url(dynamic_id)
         caption = f"@{user}:\n{tag_parser(content)}"
         reply_markup = InlineKeyboardMarkup(
             [[InlineKeyboardButton(text="动态源地址", url=dynamic_url)]]
@@ -198,7 +206,7 @@ def inlineparse(update, context):
     except TypeError:
         logger.warning("解析错误！")
         return
-    dynamic_url = f"https://t.bilibili.com/{dynamic_id}"
+    dynamic_url = make_url(dynamic_id)
     caption = f"@{user}:\n{tag_parser(content)}"
     reply_markup = InlineKeyboardMarkup(
         [[InlineKeyboardButton(text="动态源地址", url=dynamic_url)]]
