@@ -13,6 +13,8 @@ Telegram bot for Bili Feed Helper.
 
 ## Credit
 
-Bilibili API: https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/get_dynamic_detail
+Bilibili API: 
+- https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/get_dynamic_detail
+- https://api.vc.bilibili.com/clip/v1/video/detail
 
 Copyright © 2020 Simon Shi <simonsmh@gmail.com>

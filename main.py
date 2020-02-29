@@ -14,6 +14,7 @@ from telegram import (
     InlineQueryResultArticle,
     InlineQueryResultGif,
     InlineQueryResultPhoto,
+    InlineQueryResultVideo,
     InputMediaPhoto,
     InputTextMessageContent,
 )
@@ -37,26 +38,53 @@ def dynamic_parser(url):
         }
     )
     post = s.get(url)
-    dynamic_id = re.search(r"t\.bilibili\.com.*\/(\d+)", post.url).group(1)
-    logger.info(f"动态ID: {dynamic_id}")
-    data = s.get(
-        "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/get_dynamic_detail",
-        params={"dynamic_id": dynamic_id},
-    ).json()
-    try:
-        detail = json.loads(data.get("data").get("card").get("card"))
-    except AttributeError:
+    if match := re.search(r"t\.bilibili\.com.*\/(\d+)", post.url):
+        dynamic_id = match.group(1)
+        logger.info(f"动态ID: {dynamic_id}")
+        data = s.get(
+            "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/get_dynamic_detail",
+            params={"dynamic_id": dynamic_id},
+        ).json()
+        try:
+            detail = json.loads(data.get("data").get("card").get("card"))
+        except AttributeError:
+            return
+        logger.debug(f"动态解析: {detail}")
+        user = detail.get("user").get("name", detail.get("user").get("uname"))
+        content = detail.get("item").get(
+            "description", detail.get("item").get("content")
+        )
+        if detail.get("item").get("pictures"):
+            imgs = [t.get("img_src") for t in detail.get("item").get("pictures")]
+        elif detail.get("item").get("video_playurl"):
+            imgs = [
+                detail.get("item").get("video_playurl"),
+                detail.get("item").get("cover").get("unclipped"),
+            ]
+        logger.debug(f"用户: {user}\n内容: {content}\n图片: {imgs}")
+        return s, user, content, imgs, dynamic_id
+    elif match := re.search(r"vc\.bilibili\.com[\D]*(\d+)", post.url):
+        video_id = match.group(1)
+        logger.info(f"短视频ID: {video_id}")
+        data = s.get(
+            "https://api.vc.bilibili.com/clip/v1/video/detail",
+            params={"video_id": video_id},
+        ).json()
+        try:
+            detail = data.get("data")
+        except AttributeError:
+            return
+        logger.debug(f"动态解析: {detail}")
+        user = detail.get("user").get("name")
+        content = detail.get("item").get("description")
+        clip = [
+            detail.get("item").get("video_playurl"),
+            detail.get("item").get("first_pic"),
+        ]
+        logger.debug(f"用户: {user}\n内容: {content}\n视频: {clip}")
+        return s, user, content, clip, video_id
+    else:
         return
-    logger.debug(f"动态解析: {detail}")
-    user = detail.get("user").get("name", detail.get("user").get("uname"))
-    content = detail.get("item").get("description", detail.get("item").get("content"))
-    imgs = (
-        [t.get("img_src") for t in detail.get("item").get("pictures")]
-        if detail.get("item").get("pictures")
-        else []
-    )
-    logger.debug(f"用户: {user}\n内容: {content}\n图片: {imgs}")
-    return s, user, content, imgs, dynamic_id
 
 
 def tag_parser(content):
@@ -68,7 +96,8 @@ def parse(update, context):
     message = update.message
     data = message.text
     urls = re.findall(
-        r"https?:\/\/t\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+", data,
+        r"https?:\/\/vc\.bilibili\.com[\D]*\d+|https?:\/\/t\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+",
+        data,
     )
     logger.info(f"Parse: {urls}")
 
@@ -81,18 +110,22 @@ def parse(update, context):
         return img
 
     def callback(caption, dynamic_url, reply_markup, imgs, imgraws):
-        if len(imgs) == 1:
+        if ".mp4" in imgs[0]:
+            message.reply_video(
+                imgraws[0], caption=caption, reply_markup=reply_markup, timeout=120
+            )
+        elif len(imgs) == 1:
             if ".gif" in imgs[0]:
                 message.reply_animation(
-                    imgraws[0], caption=caption, reply_markup=reply_markup
+                    imgraws[0], caption=caption, reply_markup=reply_markup, timeout=60
                 )
             else:
                 message.reply_photo(
-                    imgraws[0], caption=caption, reply_markup=reply_markup
+                    imgraws[0], caption=caption, reply_markup=reply_markup, timeout=60
                 )
         else:
             media = [InputMediaPhoto(img) for img in imgraws]
-            message.reply_media_group(media)
+            message.reply_media_group(media, timeout=120)
             message.reply_text(caption, reply_markup=reply_markup, quote=False)
 
     async def parse_queue(url):
@@ -153,7 +186,7 @@ def inlineparse(update, context):
         return
     try:
         url = re.search(
-            r"https?:\/\/t\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+",
+            r"https?:\/\/vc\.bilibili\.com[\D]*\d+|https?:\/\/t\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+",
             query,
         ).group(0)
     except AttributeError:
@@ -181,28 +214,42 @@ def inlineparse(update, context):
             )
         ]
     else:
-        results = [
-            InlineQueryResultGif(
-                id=uuid4(),
-                caption=caption,
-                title=f"{user}: {content}",
-                reply_markup=reply_markup,
-                gif_url=img,
-                thumb_url=img,
-            )
-            if ".gif" in img
-            else InlineQueryResultPhoto(
-                id=uuid4(),
-                caption=caption,
-                title=user,
-                description=content,
-                reply_markup=reply_markup,
-                photo_url=img,
-                thumb_url=img + "@428w_428h_1e_1c.png",
-            )
-            for img in imgs
-        ]
-        if len(imgs) == 1:
+        if ".mp4" in imgs[0]:
+            results = [
+                InlineQueryResultVideo(
+                    id=uuid4(),
+                    caption=caption,
+                    title=user,
+                    description=content,
+                    reply_markup=reply_markup,
+                    mime_type="video/mp4",
+                    video_url=imgs[0],
+                    thumb_url=imgs[1],
+                )
+            ]
+        else:
+            results = [
+                InlineQueryResultGif(
+                    id=uuid4(),
+                    caption=caption,
+                    title=f"{user}: {content}",
+                    reply_markup=reply_markup,
+                    gif_url=img,
+                    thumb_url=img,
+                )
+                if ".gif" in img
+                else InlineQueryResultPhoto(
+                    id=uuid4(),
+                    caption=caption,
+                    title=user,
+                    description=content,
+                    reply_markup=reply_markup,
+                    photo_url=img,
+                    thumb_url=img + "@428w_428h_1e_1c.png",
+                )
+                for img in imgs
+            ]
+        if len(results) == 1:
             results.extend(helpmsg)
     inline_query.answer(results)
 
@@ -237,7 +284,7 @@ if __name__ == "__main__":
     updater.dispatcher.add_handler(
         MessageHandler(
             Filters.regex(
-                r"https?:\/\/t\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+"
+                r"https?:\/\/vc\.bilibili\.com[\D]*\d+|https?:\/\/t\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+"
             ),
             parse,
         )
