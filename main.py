@@ -133,7 +133,7 @@ def parse(update, context):
                     imgraws[0], caption=caption, reply_markup=reply_markup, timeout=60
                 )
         else:
-            media = [InputMediaPhoto(img) for img in imgraws]
+            media = [InputMediaPhoto(img, caption=caption) for img in imgraws]
             message.reply_media_group(media, timeout=120)
             message.reply_text(caption, reply_markup=reply_markup, quote=False)
 
