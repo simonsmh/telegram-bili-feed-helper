@@ -39,7 +39,7 @@ def dynamic_parser(url):
     )
     post = s.get(url)
     if match := re.search(r"[th]\.bilibili\.com[\/\w]*\/(\d+)", post.url):
-        if "type=2" or "h.bilibili.com" in match.group(0):
+        if "type=2" in match.group(0) or "h.bilibili.com" in match.group(0):
             rid = match.group(1)
             data = s.get(
                 "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/get_dynamic_detail",
@@ -54,24 +54,36 @@ def dynamic_parser(url):
                 params={"dynamic_id": dynamic_id},
             ).json()
         try:
-            detail = json.loads(data.get("data").get("card").get("card"))
+            card = json.loads(data.get("data").get("card").get("card"))
         except AttributeError:
             return
-        logger.debug(f"动态解析: {detail}")
-        user = detail.get("user").get("name", detail.get("user").get("uname"))
-        content = detail.get("item").get(
-            "description", detail.get("item").get("content")
-        )
-        imgs = list()
-        if detail.get("item").get("pictures"):
-            imgs = [t.get("img_src") for t in detail.get("item").get("pictures")]
-        elif detail.get("item").get("video_playurl"):
-            imgs = [
-                detail.get("item").get("video_playurl"),
-                detail.get("item").get("cover").get("unclipped"),
-            ]
+        logger.debug(f"动态解析: {card}")
+        if origin := card.get("origin"):
+            detail = json.loads(origin)
+            logger.debug(f"源动态解析: {detail}")
+        else:
+            detail = card
+        if av_id := detail.get("aid"):
+            user = detail.get("owner").get("name")
+            content = f"{detail.get('dynamic')}\n{detail.get('title')}\nhttps://b23.tv/av{av_id}"
+            imgs = [detail.get("pic")]
+        else:
+            user = detail.get("user").get("name")
+            content = detail.get("item").get("description")
+            imgs = list()
+            if detail.get("item").get("pictures"):
+                imgs = [t.get("img_src") for t in detail.get("item").get("pictures")]
+            elif detail.get("item").get("video_playurl"):
+                imgs = [
+                    detail.get("item").get("video_playurl"),
+                    detail.get("item").get("cover").get("unclipped"),
+                ]
+        url = f"https://t.bilibili.com/{dynamic_id}"
+        if forward_user := card.get("user").get("uname"):
+            content = f"{card.get('item').get('content')}//@{user}:{content}"
+            user = forward_user
         logger.debug(f"用户: {user}\n内容: {content}\n图片: {imgs}")
-        return s, user, content, imgs, f"https://t.bilibili.com/{dynamic_id}"
+        return s, user, content, imgs, url
     elif match := re.search(r"vc\.bilibili\.com[\D]*(\d+)", post.url):
         video_id = match.group(1)
         logger.info(f"短视频ID: {video_id}")
