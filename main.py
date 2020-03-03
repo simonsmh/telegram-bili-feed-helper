@@ -38,13 +38,21 @@ def dynamic_parser(url):
         }
     )
     post = s.get(url)
-    if match := re.search(r"t\.bilibili\.com.*\/(\d+)", post.url):
-        dynamic_id = match.group(1)
-        logger.info(f"动态ID: {dynamic_id}")
-        data = s.get(
-            "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/get_dynamic_detail",
-            params={"dynamic_id": dynamic_id},
-        ).json()
+    if match := re.search(r"[th]\.bilibili\.com[\/\w]*\/(\d+)", post.url):
+        if "type=2" or "h.bilibili.com" in match.group(0):
+            rid = match.group(1)
+            data = s.get(
+                "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/get_dynamic_detail",
+                params={"rid": rid, "type": 2},
+            ).json()
+            dynamic_id = data.get("data").get("card").get("desc").get("dynamic_id_str")
+        else:
+            dynamic_id = match.group(1)
+            logger.info(f"动态ID: {dynamic_id}")
+            data = s.get(
+                "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/get_dynamic_detail",
+                params={"dynamic_id": dynamic_id},
+            ).json()
         try:
             detail = json.loads(data.get("data").get("card").get("card"))
         except AttributeError:
@@ -63,7 +71,7 @@ def dynamic_parser(url):
                 detail.get("item").get("cover").get("unclipped"),
             ]
         logger.debug(f"用户: {user}\n内容: {content}\n图片: {imgs}")
-        return s, user, content, imgs, dynamic_id
+        return s, user, content, imgs, f"https://t.bilibili.com/{dynamic_id}"
     elif match := re.search(r"vc\.bilibili\.com[\D]*(\d+)", post.url):
         video_id = match.group(1)
         logger.info(f"短视频ID: {video_id}")
@@ -83,7 +91,7 @@ def dynamic_parser(url):
             detail.get("item").get("first_pic"),
         ]
         logger.debug(f"用户: {user}\n内容: {content}\n视频: {clip}")
-        return s, user, content, clip, video_id
+        return s, user, content, clip, f"https://vc.bilibili.com/video/{video_id}"
     else:
         return
 
@@ -92,20 +100,12 @@ def tag_parser(content):
     return re.sub(r"#([^#?=\s|$]+)#?", lambda x: f"#{x.group(1)} ", content)
 
 
-def make_url(dynamic_id):
-    return (
-        f"https://t.bilibili.com/{dynamic_id}"
-        if len(dynamic_id) > 15
-        else f"https://vc.bilibili.com/video/{dynamic_id}"
-    )
-
-
 @run_async
 def parse(update, context):
     message = update.message
     data = message.text
     urls = re.findall(
-        r"https?:\/\/vc\.bilibili\.com[\D]*\d+|https?:\/\/t\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+",
+        r"https?:\/\/vc\.bilibili\.com[\D]*\d+|https?:\/\/[th]\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+",
         data,
     )
     logger.info(f"Parse: {urls}")
@@ -139,11 +139,10 @@ def parse(update, context):
 
     async def parse_queue(url):
         try:
-            s, user, content, imgs, dynamic_id = dynamic_parser(url)
+            s, user, content, imgs, dynamic_url = dynamic_parser(url)
         except TypeError:
             logger.warning("解析错误！")
             return
-        dynamic_url = make_url(dynamic_id)
         caption = f"@{user}:\n{tag_parser(content)}"
         reply_markup = InlineKeyboardMarkup(
             [[InlineKeyboardButton(text="动态源地址", url=dynamic_url)]]
@@ -152,10 +151,10 @@ def parse(update, context):
             try:
                 callback(caption, dynamic_url, reply_markup, imgs, imgs)
             except (TimedOut, BadRequest) as err:
-                logger.info(f"{err} -> 下载中: {dynamic_id}")
+                logger.info(f"{err} -> 下载中: {dynamic_url}")
                 tasks = [get_img(s, img) for img in imgs]
                 imgraws = await asyncio.gather(*tasks)
-                logger.info(f"上传中: {dynamic_id}")
+                logger.info(f"上传中: {dynamic_url}")
                 callback(caption, dynamic_url, reply_markup, imgs, imgraws)
         else:
             message.reply_text(caption, reply_markup=reply_markup)
@@ -195,7 +194,7 @@ def inlineparse(update, context):
         return
     try:
         url = re.search(
-            r"https?:\/\/vc\.bilibili\.com[\D]*\d+|https?:\/\/t\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+",
+            r"https?:\/\/vc\.bilibili\.com[\D]*\d+|https?:\/\/[th]\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+",
             query,
         ).group(0)
     except AttributeError:
@@ -203,11 +202,10 @@ def inlineparse(update, context):
         return
     logger.info(f"Inline: {url}")
     try:
-        _, user, content, imgs, dynamic_id = dynamic_parser(url)
+        _, user, content, imgs, dynamic_url = dynamic_parser(url)
     except TypeError:
         logger.warning("解析错误！")
         return
-    dynamic_url = make_url(dynamic_id)
     caption = f"@{user}:\n{tag_parser(content)}"
     reply_markup = InlineKeyboardMarkup(
         [[InlineKeyboardButton(text="动态源地址", url=dynamic_url)]]
@@ -293,7 +291,7 @@ if __name__ == "__main__":
     updater.dispatcher.add_handler(
         MessageHandler(
             Filters.regex(
-                r"https?:\/\/vc\.bilibili\.com[\D]*\d+|https?:\/\/t\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+"
+                r"https?:\/\/vc\.bilibili\.com[\D]*\d+|https?:\/\/[th]\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+"
             ),
             parse,
         )
