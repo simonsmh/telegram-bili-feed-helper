@@ -80,7 +80,9 @@ def dynamic_parser(url):
                 ]
         url = f"https://t.bilibili.com/{dynamic_id}"
         if forward_user := card.get("user").get("uname"):
-            content = f"{card.get('item').get('content')}//@{user}:{content}"
+            content = card.get("item").get("content")
+            if origin:
+                content += f"//@{user}:{content}"
             user = forward_user
         logger.debug(f"用户: {user}\n内容: {content}\n图片: {imgs}")
         return s, user, content, imgs, url
