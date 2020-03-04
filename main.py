@@ -67,6 +67,10 @@ def dynamic_parser(url):
             user = detail.get("owner").get("name")
             content = f"{detail.get('dynamic')}\n{detail.get('title')}\nhttps://b23.tv/av{av_id}"
             imgs = [detail.get("pic")]
+        elif cv_id := detail.get("id"):
+            user = detail.get("author").get("name")
+            content = f"{detail.get('dynamic')}\n{detail.get('title')}\nhttps://www.bilibili.com/read/cv{cv_id}"
+            imgs = [detail.get("banner_url")]
         else:
             user = detail.get("user").get("name")
             content = detail.get("item").get("description")
