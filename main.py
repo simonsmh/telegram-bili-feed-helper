@@ -187,6 +187,7 @@ def parse(update, context):
                 caption,
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.MARKDOWN,
+                disable_web_page_preview=True,
                 quote=False,
             )
 
@@ -271,7 +272,9 @@ def inlineparse(update, context):
                 description=content,
                 reply_markup=reply_markup,
                 input_message_content=InputTextMessageContent(
-                    caption, parse_mode=ParseMode.MARKDOWN
+                    caption,
+                    parse_mode=ParseMode.MARKDOWN,
+                    disable_web_page_preview=True,
                 ),
             )
         ]
