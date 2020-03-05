@@ -31,6 +31,8 @@ logging.basicConfig(
 
 logger = logging.getLogger("Telegram_Bili_Feed_Helper")
 
+regex = r"https?:\/\/vc\.bilibili\.com[\D]*\d+|https?:\/\/[th]\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av|ep)\w+"
+
 
 def dynamic_parser(url):
     s = requests.Session()
@@ -137,10 +139,7 @@ def tag_parser(content):
 def parse(update, context):
     message = update.message
     data = message.text
-    urls = re.findall(
-        r"https?:\/\/vc\.bilibili\.com[\D]*\d+|https?:\/\/[th]\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+",
-        data,
-    )
+    urls = re.findall(regex, data)
     logger.info(f"Parse: {urls}")
 
     async def get_img(s, url):
@@ -247,10 +246,7 @@ def inlineparse(update, context):
         inline_query.answer(helpmsg)
         return
     try:
-        url = re.search(
-            r"https?:\/\/vc\.bilibili\.com[\D]*\d+|https?:\/\/[th]\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+",
-            query,
-        ).group(0)
+        url = re.search(regex, query).group(0)
     except AttributeError:
         inline_query.answer(helpmsg)
         return
@@ -349,14 +345,7 @@ if __name__ == "__main__":
     else:
         config = load_json()
     updater = Updater(config.get("TOKEN"), use_context=True)
-    updater.dispatcher.add_handler(
-        MessageHandler(
-            Filters.regex(
-                r"https?:\/\/vc\.bilibili\.com[\D]*\d+|https?:\/\/[th]\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!av)\w+"
-            ),
-            parse,
-        )
-    )
+    updater.dispatcher.add_handler(MessageHandler(Filters.regex(regex), parse))
     updater.dispatcher.add_handler(InlineQueryHandler(inlineparse))
     updater.dispatcher.add_error_handler(error)
     updater.start_polling()
