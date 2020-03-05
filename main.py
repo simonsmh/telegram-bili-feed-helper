@@ -72,11 +72,18 @@ def dynamic_parser(url):
             user_markdown = f"[@{user}](https://space.bilibili.com/{detail.get('owner').get('mid')})"
             content = f"{escape_markdown(detail.get('dynamic'))}\n[{detail.get('title')}](https://b23.tv/av{av_id})"
             imgs = [detail.get("pic")]
-        elif cv_id := detail.get("id"):
+        elif detail.get("words"):
+            cv_id = detail.get("id")
             user = detail.get("author").get("name")
             user_markdown = f"[@{user}](https://space.bilibili.com/{detail.get('author').get('mid')})"
             content = f"{escape_markdown(detail.get('dynamic'))}\n[{detail.get('title')}](https://www.bilibili.com/read/cv{cv_id})"
             imgs = [detail.get("banner_url")]
+        elif detail.get("typeInfo"):
+            au_id = detail.get("id")
+            user = detail.get("upper")
+            user_markdown = f"[@{user}](https://space.bilibili.com/{detail.get('upId')})"
+            content = f"{escape_markdown(detail.get('intro'))}\n[{detail.get('title')}](https://www.bilibili.com/audio/au{au_id})"
+            imgs = [detail.get("cover")]
         else:
             user = detail.get("user").get("name")
             user_markdown = (
