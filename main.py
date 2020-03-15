@@ -81,7 +81,9 @@ def dynamic_parser(url):
         elif detail.get("typeInfo"):
             au_id = detail.get("id")
             user = detail.get("upper")
-            user_markdown = f"[@{user}](https://space.bilibili.com/{detail.get('upId')})"
+            user_markdown = (
+                f"[@{user}](https://space.bilibili.com/{detail.get('upId')})"
+            )
             content = f"{escape_markdown(detail.get('intro'))}\n[{detail.get('title')}](https://www.bilibili.com/audio/au{au_id})"
             imgs = [detail.get("cover")]
         else:
@@ -89,7 +91,8 @@ def dynamic_parser(url):
             user_markdown = (
                 f"[@{user}](https://space.bilibili.com/{detail.get('user').get('uid')})"
             )
-            content = escape_markdown(detail.get("item").get("description"))
+            if content := detail.get("item").get("description"):
+                content = escape_markdown(content)
             imgs = list()
             if detail.get("item").get("pictures"):
                 imgs = [t.get("img_src") for t in detail.get("item").get("pictures")]
@@ -200,7 +203,8 @@ def parse(update, context):
     async def parse_queue(url):
         try:
             s, _, user_markdown, content, imgs, dynamic_url = dynamic_parser(url)
-        except TypeError:
+        except TypeError as err:
+            logger.exception(err)
             logger.warning("解析错误！")
             return
         caption = f"{user_markdown}:\n{tag_parser(content)}"
@@ -211,13 +215,16 @@ def parse(update, context):
             try:
                 callback(caption, dynamic_url, reply_markup, imgs, imgs)
             except (TimedOut, BadRequest) as err:
+                logger.exception(err)
                 logger.info(f"{err} -> 下载中: {dynamic_url}")
                 tasks = [get_img(s, img) for img in imgs]
                 imgraws = await asyncio.gather(*tasks)
                 logger.info(f"上传中: {dynamic_url}")
                 callback(caption, dynamic_url, reply_markup, imgs, imgraws)
         else:
-            message.reply_text(caption, reply_markup=reply_markup)
+            message.reply_text(
+                caption, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN
+            )
 
     loop = asyncio.new_event_loop()
     tasks = [parse_queue(url) for url in urls]
@@ -260,7 +267,8 @@ def inlineparse(update, context):
     logger.info(f"Inline: {url}")
     try:
         _, user, user_markdown, content, imgs, dynamic_url = dynamic_parser(url)
-    except TypeError:
+    except TypeError as err:
+        logger.exception(err)
         logger.warning("解析错误！")
         return
     caption = f"{user_markdown}:\n{tag_parser(content)}"
