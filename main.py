@@ -147,7 +147,7 @@ def tag_parser(content):
 
 @run_async
 def parse(update, context):
-    if (message := update.channel_post) is None:
+    if not (message := update.channel_post):
         message = update.message
     data = message.text
     urls = re.findall(regex, data)
