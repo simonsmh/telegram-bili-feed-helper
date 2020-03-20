@@ -102,15 +102,16 @@ def dynamic_parser(url):
                     detail.get("item").get("cover").get("unclipped"),
                 ]
         url = f"https://t.bilibili.com/{dynamic_id}"
-        if forward_user := card.get("user").get("uname"):
-            forward_content = escape_markdown(card.get("item").get("content"))
-            if origin:
-                forward_content += f"//{user_markdown}:\n{content}"
-            user = forward_user
-            content = forward_content
-            user_markdown = (
-                f"[@{user}](https://space.bilibili.com/{card.get('user').get('uid')})"
-            )
+        if card.get("user"):
+            if forward_user := card.get("user").get("uname"):
+                forward_content = escape_markdown(card.get("item").get("content"))
+                if origin:
+                    forward_content += f"//{user_markdown}:\n{content}"
+                user = forward_user
+                content = forward_content
+                user_markdown = (
+                    f"[@{user}](https://space.bilibili.com/{card.get('user').get('uid')})"
+                )
         logger.debug(f"用户: {user_markdown}\n内容: {content}\n图片: {imgs}")
         return s, user, user_markdown, content, imgs, url
     elif match := re.search(r"vc\.bilibili\.com[\D]*(\d+)", post.url):
