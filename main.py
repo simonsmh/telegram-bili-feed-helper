@@ -31,7 +31,7 @@ logging.basicConfig(
 
 logger = logging.getLogger("Telegram_Bili_Feed_Helper")
 
-regex = r"(?i)https?:\/\/vc\.bilibili\.com[\D]*\d+|https?:\/\/[th]\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!(a|b)v|ep)\w+"
+regex = r"(?i)https?:\/\/vc\.bilibili\.com[\D]*\d+|https?:\/\/[th]\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!ep|av|bv)\w+"
 
 
 def dynamic_parser(url):
@@ -95,7 +95,7 @@ def dynamic_parser(url):
                 content = escape_markdown(content)
             imgs = list()
             if detail.get("item").get("pictures"):
-                imgs = [t.get("img_src") for t in detail.get("item").get("pictures")]
+                imgs = [t.get("img_src") + "@1280w_1e_1c" for t in detail.get("item").get("pictures")]
             elif detail.get("item").get("video_playurl"):
                 imgs = [
                     detail.get("item").get("video_playurl"),
@@ -324,8 +324,8 @@ def inlineparse(update, context):
                     title=user,
                     description=content,
                     reply_markup=reply_markup,
-                    photo_url=img,
-                    thumb_url=img + "@428w_428h_1e_1c.png",
+                    photo_url=img + "@1280w_1e_1c",
+                    thumb_url=img + "@512w_512h_1e_1c",
                     parse_mode=ParseMode.MARKDOWN,
                 )
                 for img in imgs
