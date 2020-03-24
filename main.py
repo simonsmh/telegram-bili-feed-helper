@@ -95,7 +95,7 @@ def dynamic_parser(url):
                 content = escape_markdown(content)
             imgs = list()
             if detail.get("item").get("pictures"):
-                imgs = [t.get("img_src") + "@1280w_1e_1c" for t in detail.get("item").get("pictures")]
+                imgs = [t.get("img_src") for t in detail.get("item").get("pictures")]
             elif detail.get("item").get("video_playurl"):
                 imgs = [
                     detail.get("item").get("video_playurl"),
@@ -215,6 +215,7 @@ def parse(update, context):
         )
         if imgs:
             try:
+                imgs = [ i + "@1280w_1e_1c" if not ".mp4" in i and not ".gif" in i else i for i in imgs]
                 callback(caption, dynamic_url, reply_markup, imgs, imgs)
             except (TimedOut, BadRequest) as err:
                 logger.exception(err)
