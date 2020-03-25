@@ -87,11 +87,11 @@ def dynamic_parser(url):
             content = f"{escape_markdown(detail.get('intro'))}\n[{detail.get('title')}](https://www.bilibili.com/audio/au{au_id})"
             imgs = [detail.get("cover")]
         else:
-            user = detail.get("user").get("name")
+            user = detail.get("user").get("name", detail.get("user").get("uname"))
             user_markdown = (
                 f"[@{user}](https://space.bilibili.com/{detail.get('user').get('uid')})"
             )
-            if content := detail.get("item").get("description"):
+            if content := detail.get("item").get("description", detail.get("item").get("content")):
                 content = escape_markdown(content)
             imgs = list()
             if detail.get("item").get("pictures"):
