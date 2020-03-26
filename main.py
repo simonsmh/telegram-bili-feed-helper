@@ -20,7 +20,13 @@ from telegram import (
     ParseMode,
 )
 from telegram.error import BadRequest, TimedOut
-from telegram.ext import InlineQueryHandler, MessageHandler, Updater
+from telegram.ext import (
+    CommandHandler,
+    Filters,
+    InlineQueryHandler,
+    MessageHandler,
+    Updater,
+)
 from telegram.ext.dispatcher import run_async
 from telegram.ext.filters import Filters
 from telegram.utils.helpers import escape_markdown
@@ -91,7 +97,9 @@ def dynamic_parser(url):
             user_markdown = (
                 f"[@{user}](https://space.bilibili.com/{detail.get('user').get('uid')})"
             )
-            if content := detail.get("item").get("description", detail.get("item").get("content")):
+            if content := detail.get("item").get(
+                "description", detail.get("item").get("content")
+            ):
                 content = escape_markdown(content)
             imgs = list()
             if detail.get("item").get("pictures"):
@@ -109,9 +117,7 @@ def dynamic_parser(url):
                     forward_content += f"//{user_markdown}:\n{content}"
                 user = forward_user
                 content = forward_content
-                user_markdown = (
-                    f"[@{user}](https://space.bilibili.com/{card.get('user').get('uid')})"
-                )
+                user_markdown = f"[@{user}](https://space.bilibili.com/{card.get('user').get('uid')})"
         logger.debug(f"用户: {user_markdown}\n内容: {content}\n图片: {imgs}")
         return s, user, user_markdown, content, imgs, url
     elif match := re.search(r"vc\.bilibili\.com[\D]*(\d+)", post.url):
@@ -215,7 +221,10 @@ def parse(update, context):
         )
         if imgs:
             try:
-                imgs = [ i + "@1280w_1e_1c" if not ".mp4" in i and not ".gif" in i else i for i in imgs]
+                imgs = [
+                    i + "@1280w_1e_1c" if not ".mp4" in i and not ".gif" in i else i
+                    for i in imgs
+                ]
                 callback(caption, dynamic_url, reply_markup, imgs, imgs)
             except (TimedOut, BadRequest) as err:
                 logger.exception(err)
@@ -357,12 +366,32 @@ def load_json(filename="config.json"):
     return config
 
 
+@run_async
+def start(update, context):
+    update.message.reply_text(
+        "欢迎使用 @bilifeedbot 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组自动匹配消息。",
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        text="源代码",
+                        url="https://github.com/simonsmh/telegram-bili-feed-helper",
+                    )
+                ]
+            ]
+        )
+    )
+
+
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and os.path.exists(sys.argv[1]):
         config = load_json(sys.argv[1])
     else:
         config = load_json()
     updater = Updater(config.get("TOKEN"), use_context=True)
+    updater.dispatcher.add_handler(
+        CommandHandler("start", start, filters=Filters.private)
+    )
     updater.dispatcher.add_handler(MessageHandler(Filters.regex(regex), parse))
     updater.dispatcher.add_handler(InlineQueryHandler(inlineparse))
     updater.dispatcher.add_error_handler(error)
