@@ -40,6 +40,59 @@ logger = logging.getLogger("Telegram_Bili_Feed_Helper")
 regex = r"(?i)https?:\/\/vc\.bilibili\.com[\D]*\d+|https?:\/\/[th]\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!ep|av|bv)\w+"
 
 
+class feed:
+    def __init__(self, rawurl):
+        self.rawurl = rawurl
+        self.rawcontent = None
+        self.dynamic_id = None
+        self.video_id = None
+        self.user = None
+        self.uid = None
+        self.content = None
+        self.forward_user = None
+        self.forward_uid = None
+        self.forward_content = None
+        self.mediaurls = list()
+        self.mediatype = None
+
+    def user_markdown(self, forward=False):
+        return f"[@{self.forward_user if forward else self.user}](https://space.bilibili.com/{self.forward_uid if forward else self.uid})"
+
+    def forward_card(self):
+        return json.loads(self.rawcontent.get("data").get("card").get("card"))
+
+    def has_forward(self):
+        return bool(self.forward_card().get("origin"))
+
+    def card(self):
+        return (
+            json.loads(self.forward_card().get("origin"))
+            if self.has_forward()
+            else self.forward_card()
+        )
+
+    def final_user(self, markdown=True):
+        return (
+            (self.user_markdown(forward=True) if markdown else self.forward_user)
+            if self.dynamic_id and self.has_forward()
+            else (self.user_markdown() if markdown else self.user)
+        )
+
+    def final_content(self, markdown=True):
+        return (
+            f"{self.forward_content}//{self.user_markdown() if markdown else self.user}:\n{self.content}"
+            if self.dynamic_id and self.has_forward()
+            else self.content
+        )
+
+    def url(self):
+        if self.dynamic_id:
+            return f"https://t.bilibili.com/{self.dynamic_id}"
+        elif self.video_id:
+            return f"https://vc.bilibili.com/video/{self.video_id}"
+        return
+
+
 def dynamic_parser(url):
     s = requests.Session()
     s.headers.update(
@@ -48,104 +101,115 @@ def dynamic_parser(url):
         }
     )
     post = s.get(url)
+    # dynamic
     if match := re.search(r"[th]\.bilibili\.com[\/\w]*\/(\d+)", post.url):
-        if "type=2" in match.group(0) or "h.bilibili.com" in match.group(0):
-            rid = match.group(1)
-            data = s.get(
-                "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/get_dynamic_detail",
-                params={"rid": rid, "type": 2},
-            ).json()
-            dynamic_id = data.get("data").get("card").get("desc").get("dynamic_id_str")
-        else:
-            dynamic_id = match.group(1)
-            logger.info(f"动态ID: {dynamic_id}")
-            data = s.get(
-                "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/get_dynamic_detail",
-                params={"dynamic_id": dynamic_id},
-            ).json()
+        f = feed(url)
+        f.rawcontent = s.get(
+            "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/get_dynamic_detail",
+            params={"rid": match.group(1), "type": 2}
+            if "type=2" in match.group(0) or "h.bilibili.com" in match.group(0)
+            else {"dynamic_id": match.group(1)},
+        ).json()
         try:
-            card = json.loads(data.get("data").get("card").get("card"))
+            f.dynamic_id = (
+                f.rawcontent.get("data").get("card").get("desc").get("dynamic_id_str")
+            )
         except AttributeError:
-            return
-        logger.debug(f"动态解析: {card}")
-        if origin := card.get("origin"):
-            detail = json.loads(origin)
-            logger.debug(f"源动态解析: {detail}")
-        else:
-            detail = card
+            logger.warning(f"动态解析错误: {url}")
+            return s, None
+        logger.info(f"动态ID: {f.dynamic_id}")
+        detail = f.card()
+        # bv video
         if av_id := detail.get("aid"):
-            user = detail.get("owner").get("name")
-            user_markdown = f"[@{user}](https://space.bilibili.com/{detail.get('owner').get('mid')})"
-            content = f"{escape_markdown(detail.get('dynamic'))}\n[{detail.get('title')}](https://b23.tv/av{av_id})"
-            imgs = [detail.get("pic")]
+            f.user = detail.get("owner").get("name")
+            f.uid = detail.get("owner").get("mid")
+            f.content = f"{escape_markdown(detail.get('dynamic')) if detail.get('dynamic') else None}\n[{escape_markdown(detail.get('title'))}](https://b23.tv/av{av_id})"
+            f.mediaurls = [detail.get("pic")]
+            f.mediatype = "picture"
+        # cv article
         elif detail.get("words"):
             cv_id = detail.get("id")
-            user = detail.get("author").get("name")
-            user_markdown = f"[@{user}](https://space.bilibili.com/{detail.get('author').get('mid')})"
-            content = f"{escape_markdown(detail.get('dynamic'))}\n[{detail.get('title')}](https://www.bilibili.com/read/cv{cv_id})"
-            imgs = [detail.get("banner_url")]
+            f.user = detail.get("author").get("name")
+            f.uid = detail.get("author").get("mid")
+            f.content = f"{escape_markdown(detail.get('dynamic')) if detail.get('dynamic') else None}\n[{escape_markdown(detail.get('title'))}](https://www.bilibili.com/read/cv{cv_id})"
+            if detail.get("banner_url"):
+                f.mediaurls = detail.get("banner_url")
+            else:
+                f.mediaurls.extend(detail.get("image_urls"))
+            f.mediatype = "picture"
+        # au audio
         elif detail.get("typeInfo"):
             au_id = detail.get("id")
-            user = detail.get("upper")
-            user_markdown = (
-                f"[@{user}](https://space.bilibili.com/{detail.get('upId')})"
-            )
-            content = f"{escape_markdown(detail.get('intro'))}\n[{detail.get('title')}](https://www.bilibili.com/audio/au{au_id})"
-            imgs = [detail.get("cover")]
-        else:
-            user = detail.get("user").get("name", detail.get("user").get("uname"))
-            user_markdown = (
-                f"[@{user}](https://space.bilibili.com/{detail.get('user').get('uid')})"
-            )
-            if content := detail.get("item").get(
-                "description", detail.get("item").get("content")
-            ):
-                content = escape_markdown(content)
-            imgs = list()
+            f.user = detail.get("upper")
+            f.uid = detail.get("upId")
+            f.content = f"{escape_markdown(detail.get('intro'))}\n[{escape_markdown(detail.get('title'))}](https://www.bilibili.com/audio/au{au_id})"
+            f.mediaurls = [detail.get("cover")]
+            f.mediatype = "picture"
+        # live
+        elif detail.get("roomid"):
+            room_id = detail.get("roomid")
+            f.user = detail.get("uname")
+            f.uid = detail.get("uid")
+            f.content = f"[{escape_markdown(detail.get('title'))}](https://live.bilibili.com/{room_id})"
+            f.mediaurls = [detail.get("user_cover")]
+            f.mediatype = "picture"
+        # dynamic pictures/gifs/videos
+        elif detail.get("user").get("name"):
+            f.user = detail.get("user").get("name")
+            f.uid = detail.get("user").get("uid")
+            f.content = escape_markdown(detail.get("item").get("description"))
             if detail.get("item").get("pictures"):
-                imgs = [t.get("img_src") for t in detail.get("item").get("pictures")]
+                f.mediaurls = [
+                    t.get("img_src") for t in detail.get("item").get("pictures")
+                ]
+                f.mediatype = "picture"
             elif detail.get("item").get("video_playurl"):
-                imgs = [
+                f.mediaurls = [
                     detail.get("item").get("video_playurl"),
                     detail.get("item").get("cover").get("unclipped"),
                 ]
-        url = f"https://t.bilibili.com/{dynamic_id}"
-        if card.get("user"):
-            if forward_user := card.get("user").get("uname"):
-                forward_content = escape_markdown(card.get("item").get("content"))
-                if origin:
-                    forward_content += f"//{user_markdown}:\n{content}"
-                user = forward_user
-                content = forward_content
-                user_markdown = f"[@{user}](https://space.bilibili.com/{card.get('user').get('uid')})"
-        logger.debug(f"用户: {user_markdown}\n内容: {content}\n图片: {imgs}")
-        return s, user, user_markdown, content, imgs, url
+                f.mediatype = "video"
+        # dynamic text
+        elif detail.get("user").get("uname"):
+            f.user = detail.get("user").get("uname")
+            f.uid = detail.get("user").get("uid")
+            f.content = escape_markdown(detail.get("item").get("content"))
+        # forward text
+        if f.has_forward():
+            forward_detail = f.forward_card()
+            f.forward_user = forward_detail.get("user").get("uname")
+            f.forward_uid = forward_detail.get("user").get("uid")
+            f.forward_content = escape_markdown(
+                forward_detail.get("item").get("content")
+            )
+    # vc video
     elif match := re.search(r"vc\.bilibili\.com[\D]*(\d+)", post.url):
-        video_id = match.group(1)
-        logger.info(f"短视频ID: {video_id}")
-        data = s.get(
+        f = feed(url)
+        f.video_id = match.group(1)
+        f.rawcontent = s.get(
             "https://api.vc.bilibili.com/clip/v1/video/detail",
-            params={"video_id": video_id},
+            params={"video_id": f.video_id},
         ).json()
         try:
-            detail = data.get("data")
+            detail = f.rawcontent.get("data")
         except AttributeError:
-            return
-        logger.debug(f"短视频解析: {detail}")
-        user = detail.get("user").get("name")
-        user_markdown = (
-            f"[@{user}](https://space.bilibili.com/{detail.get('user').get('uid')})"
-        )
-        content = escape_markdown(detail.get("item").get("description"))
-        clip = [
+            logger.warning(f"短视频解析错误: {url}")
+            return s, None
+        logger.info(f"短视频ID: {f.video_id}")
+        f.user = detail.get("user").get("name")
+        f.uid = detail.get("user").get("uid")
+        f.content = escape_markdown(detail.get("item").get("description"))
+        f.mediaurls = [
             detail.get("item").get("video_playurl"),
             detail.get("item").get("first_pic"),
         ]
-        url = f"https://vc.bilibili.com/video/{video_id}"
-        logger.debug(f"用户: {user_markdown}\n内容: {content}\n视频: {clip}")
-        return s, user, user_markdown, content, clip, url
+        f.mediatype = "video"
     else:
-        return
+        return s, None
+    logger.info(
+        f"用户: {f.final_user()}\n内容: {f.final_content()}\n媒体: {f.mediaurls}\n链接: {f.url()}"
+    )
+    return s, f
 
 
 def tag_parser(content):
@@ -168,7 +232,7 @@ def parse(update, context):
             asyncio.sleep(1)
         return img
 
-    def callback(caption, dynamic_url, reply_markup, imgs, imgraws):
+    def callback(caption, reply_markup, imgs, imgraws):
         if ".mp4" in imgs[0]:
             message.reply_video(
                 imgraws[0],
@@ -209,30 +273,28 @@ def parse(update, context):
             )
 
     async def parse_queue(url):
-        try:
-            s, _, user_markdown, content, imgs, dynamic_url = dynamic_parser(url)
-        except TypeError as err:
-            logger.exception(err)
+        s, f = dynamic_parser(url)
+        if not f:
             logger.warning("解析错误！")
             return
-        caption = f"{user_markdown}:\n{tag_parser(content)}"
+        caption = f"{f.final_user()}:\n{tag_parser(f.final_content())}"
         reply_markup = InlineKeyboardMarkup(
-            [[InlineKeyboardButton(text="动态源地址", url=dynamic_url)]]
+            [[InlineKeyboardButton(text="动态源地址", url=f.url())]]
         )
-        if imgs:
+        if f.mediaurls:
             try:
-                imgs = [
-                    i + "@1280w_1e_1c" if not ".mp4" in i and not ".gif" in i else i
-                    for i in imgs
+                f.mediaurls = [
+                    i + "@1280w_1e_1c.jpg" if not ".mp4" in i and not ".gif" in i else i
+                    for i in f.mediaurls
                 ]
-                callback(caption, dynamic_url, reply_markup, imgs, imgs)
+                callback(caption, reply_markup, f.mediaurls, f.mediaurls)
             except (TimedOut, BadRequest) as err:
                 logger.exception(err)
-                logger.info(f"{err} -> 下载中: {dynamic_url}")
-                tasks = [get_img(s, img) for img in imgs]
+                logger.info(f"{err} -> 下载中: {f.url()}")
+                tasks = [get_img(s, img) for img in f.mediaurls]
                 imgraws = await asyncio.gather(*tasks)
-                logger.info(f"上传中: {dynamic_url}")
-                callback(caption, dynamic_url, reply_markup, imgs, imgraws)
+                logger.info(f"上传中: {f.url()}")
+                callback(caption, reply_markup, f.mediaurls, imgraws)
         else:
             message.reply_text(
                 caption, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN
@@ -277,22 +339,20 @@ def inlineparse(update, context):
         inline_query.answer(helpmsg)
         return
     logger.info(f"Inline: {url}")
-    try:
-        _, user, user_markdown, content, imgs, dynamic_url = dynamic_parser(url)
-    except TypeError as err:
-        logger.exception(err)
+    _, f = dynamic_parser(url)
+    if not f:
         logger.warning("解析错误！")
         return
-    caption = f"{user_markdown}:\n{tag_parser(content)}"
+    caption = f"{f.final_user()}:\n{tag_parser(f.final_content())}"
     reply_markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton(text="动态源地址", url=dynamic_url)]]
+        [[InlineKeyboardButton(text="动态源地址", url=f.url())]]
     )
-    if not imgs:
+    if not f.mediaurls:
         results = [
             InlineQueryResultArticle(
                 id=uuid4(),
-                title=user,
-                description=content,
+                title=f.final_user(markdown=False),
+                description=f.final_content(markdown=False),
                 reply_markup=reply_markup,
                 input_message_content=InputTextMessageContent(
                     caption,
@@ -302,17 +362,17 @@ def inlineparse(update, context):
             )
         ]
     else:
-        if ".mp4" in imgs[0]:
+        if ".mp4" in f.mediaurls[0]:
             results = [
                 InlineQueryResultVideo(
                     id=uuid4(),
                     caption=caption,
-                    title=user,
-                    description=content,
+                    title=f.final_user(markdown=False),
+                    description=f.final_content(markdown=False),
                     reply_markup=reply_markup,
                     mime_type="video/mp4",
-                    video_url=imgs[0],
-                    thumb_url=imgs[1],
+                    video_url=f.mediaurls[0],
+                    thumb_url=f.mediaurls[1],
                     parse_mode=ParseMode.MARKDOWN,
                 )
             ]
@@ -321,7 +381,7 @@ def inlineparse(update, context):
                 InlineQueryResultGif(
                     id=uuid4(),
                     caption=caption,
-                    title=f"{user}: {content}",
+                    title=f"{f.final_user(markdown=False)}: {f.final_content(markdown=False)}",
                     reply_markup=reply_markup,
                     gif_url=img,
                     thumb_url=img,
@@ -331,14 +391,14 @@ def inlineparse(update, context):
                 else InlineQueryResultPhoto(
                     id=uuid4(),
                     caption=caption,
-                    title=user,
-                    description=content,
+                    title=f.final_user(markdown=False),
+                    description=f.final_content(markdown=False),
                     reply_markup=reply_markup,
-                    photo_url=img + "@1280w_1e_1c",
-                    thumb_url=img + "@512w_512h_1e_1c",
+                    photo_url=img + "@1280w_1e_1c.jpg",
+                    thumb_url=img + "@512w_512h_1e_1c.jpg",
                     parse_mode=ParseMode.MARKDOWN,
                 )
-                for img in imgs
+                for img in f.mediaurls
             ]
         if len(results) == 1:
             results.extend(helpmsg)
@@ -379,7 +439,7 @@ def start(update, context):
                     )
                 ]
             ]
-        )
+        ),
     )
 
 
