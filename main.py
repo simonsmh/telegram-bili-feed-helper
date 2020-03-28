@@ -117,9 +117,9 @@ def parse(update, context):
         if not f:
             logger.warning("解析错误！")
             return
-        caption = f"{f.final_user()}:\n{tag_parser(f.final_content())}"
+        caption = f"{f.user_markdown}:\n{tag_parser(f.content_markdown)}"
         reply_markup = InlineKeyboardMarkup(
-            [[InlineKeyboardButton(text="动态源地址", url=f.url())]]
+            [[InlineKeyboardButton(text="动态源地址", url=f.url)]]
         )
         if f.mediaurls:
             try:
@@ -130,10 +130,10 @@ def parse(update, context):
                 callback(caption, reply_markup, f.mediaurls, f.mediaurls)
             except (TimedOut, BadRequest) as err:
                 logger.exception(err)
-                logger.info(f"{err} -> 下载中: {f.url()}")
+                logger.info(f"{err} -> 下载中: {f.url}")
                 tasks = [get_img(s, img) for img in f.mediaurls]
                 imgraws = await asyncio.gather(*tasks)
-                logger.info(f"上传中: {f.url()}")
+                logger.info(f"上传中: {f.url}")
                 callback(caption, reply_markup, f.mediaurls, imgraws)
         else:
             message.reply_text(
@@ -174,16 +174,16 @@ def inlineparse(update, context):
     if not f:
         logger.warning("解析错误！")
         return
-    caption = f"{f.final_user()}:\n{tag_parser(f.final_content())}"
+    caption = f"{f.user_markdown}:\n{tag_parser(f.content_markdown)}"
     reply_markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton(text="动态源地址", url=f.url())]]
+        [[InlineKeyboardButton(text="动态源地址", url=f.url)]]
     )
     if not f.mediaurls:
         results = [
             InlineQueryResultArticle(
                 id=uuid4(),
-                title=f.final_user(markdown=False),
-                description=f.final_content(markdown=False),
+                title=f.user,
+                description=f.content,
                 reply_markup=reply_markup,
                 input_message_content=InputTextMessageContent(
                     caption,
@@ -198,8 +198,8 @@ def inlineparse(update, context):
                 InlineQueryResultVideo(
                     id=uuid4(),
                     caption=caption,
-                    title=f.final_user(markdown=False),
-                    description=f.final_content(markdown=False),
+                    title=f.user,
+                    description=f.content,
                     reply_markup=reply_markup,
                     mime_type="video/mp4",
                     video_url=f.mediaurls[0],
@@ -212,7 +212,7 @@ def inlineparse(update, context):
                 InlineQueryResultGif(
                     id=uuid4(),
                     caption=caption,
-                    title=f"{f.final_user(markdown=False)}: {f.final_content(markdown=False)}",
+                    title=f"{f.user}: {f.content}",
                     reply_markup=reply_markup,
                     gif_url=img,
                     thumb_url=img,
@@ -222,8 +222,8 @@ def inlineparse(update, context):
                 else InlineQueryResultPhoto(
                     id=uuid4(),
                     caption=caption,
-                    title=f.final_user(markdown=False),
-                    description=f.final_content(markdown=False),
+                    title=f.user,
+                    description=f.content,
                     reply_markup=reply_markup,
                     photo_url=img + "@1280w_1e_1c.jpg",
                     thumb_url=img + "@512w_512h_1e_1c.jpg",
