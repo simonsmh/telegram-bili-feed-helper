@@ -12,6 +12,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InlineQueryResultArticle,
+    InlineQueryResultAudio,
     InlineQueryResultGif,
     InlineQueryResultPhoto,
     InlineQueryResultVideo,
@@ -31,7 +32,7 @@ from telegram.ext.dispatcher import run_async
 from telegram.ext.filters import Filters
 from telegram.utils.helpers import escape_markdown
 
-from feedparser import dynamic_parser
+from feedparser import feedparser
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -39,7 +40,7 @@ logging.basicConfig(
 
 logger = logging.getLogger("Telegram_Bili_Feed_Helper")
 
-regex = r"(?i)https?:\/\/vc\.bilibili\.com[\D]*\d+|https?:\/\/[th]\.bilibili\.com[\/\w]*\/\d+|https?:\/\/b23\.tv\/(?!ep|av|bv)\w+"
+regex = r"(?i)https?:\/\/(?:vc\.bilibili\.com[\D]*\d+|[th]\.bilibili\.com[\/\w]*\/\d+|b23\.tv\/(?!ep|av|bv)\w+|(?:www.)bilibili\.com\/audio\/au\d+)"
 
 sourcecodemarkup = InlineKeyboardMarkup(
     [
@@ -72,19 +73,34 @@ def parse(update, context):
             asyncio.sleep(1)
         return img
 
-    def callback(caption, reply_markup, imgs, imgraws):
-        if ".mp4" in imgs[0]:
+    def callback(caption, reply_markup, f):
+        if f.mediaraws:
+            media = f.mediaraws
+        else:
+            media = f.mediaurls
+        if f.mediatype == "video":
             message.reply_video(
-                imgraws[0],
+                media[0],
                 caption=caption,
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.MARKDOWN,
+                thumb=f.mediathumb,
                 timeout=120,
             )
-        elif len(imgs) == 1:
-            if ".gif" in imgs[0]:
+        elif f.mediatype == "audio":
+            message.reply_audio(
+                media[0],
+                caption=caption,
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.MARKDOWN,
+                thumb=f.mediathumb,
+                title=f.mediatitle,
+                timeout=120,
+            )
+        elif len(f.mediaurls) == 1:
+            if ".gif" in f.mediaurls[0]:
                 message.reply_animation(
-                    imgraws[0],
+                    media[0],
                     caption=caption,
                     reply_markup=reply_markup,
                     parse_mode=ParseMode.MARKDOWN,
@@ -92,7 +108,7 @@ def parse(update, context):
                 )
             else:
                 message.reply_photo(
-                    imgraws[0],
+                    media[0],
                     caption=caption,
                     reply_markup=reply_markup,
                     parse_mode=ParseMode.MARKDOWN,
@@ -101,7 +117,7 @@ def parse(update, context):
         else:
             media = [
                 InputMediaPhoto(img, caption=caption, parse_mode=ParseMode.MARKDOWN)
-                for img in imgraws
+                for img in media
             ]
             message.reply_media_group(media, timeout=120)
             message.reply_text(
@@ -113,28 +129,29 @@ def parse(update, context):
             )
 
     async def parse_queue(url):
-        s, f = dynamic_parser(url)
+        s, f = feedparser(url)
         if not f:
             logger.warning("解析错误！")
             return
         caption = f"{f.user_markdown}:\n{tag_parser(f.content_markdown)}"
         reply_markup = InlineKeyboardMarkup(
-            [[InlineKeyboardButton(text="动态源地址", url=f.url)]]
+            [[InlineKeyboardButton(text="原链接", url=f.url)]]
         )
         if f.mediaurls:
             try:
-                f.mediaurls = [
-                    i + "@1280w_1e_1c.jpg" if not ".mp4" in i and not ".gif" in i else i
-                    for i in f.mediaurls
-                ]
-                callback(caption, reply_markup, f.mediaurls, f.mediaurls)
+                if f.mediatype == "picture":
+                    f.mediaurls = [
+                        i + "@1280w_1e_1c.jpg" if not ".gif" in i else i
+                        for i in f.mediaurls
+                    ]
+                callback(caption, reply_markup, f)
             except (TimedOut, BadRequest) as err:
                 logger.exception(err)
                 logger.info(f"{err} -> 下载中: {f.url}")
                 tasks = [get_img(s, img) for img in f.mediaurls]
-                imgraws = await asyncio.gather(*tasks)
+                f.mediaraws = await asyncio.gather(*tasks)
                 logger.info(f"上传中: {f.url}")
-                callback(caption, reply_markup, f.mediaurls, imgraws)
+                callback(caption, reply_markup, f)
         else:
             message.reply_text(
                 caption, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN
@@ -170,13 +187,13 @@ def inlineparse(update, context):
         inline_query.answer(helpmsg)
         return
     logger.info(f"Inline: {url}")
-    _, f = dynamic_parser(url)
+    _, f = feedparser(url)
     if not f:
         logger.warning("解析错误！")
         return
     caption = f"{f.user_markdown}:\n{tag_parser(f.content_markdown)}"
     reply_markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton(text="动态源地址", url=f.url)]]
+        [[InlineKeyboardButton(text="原链接", url=f.url)]]
     )
     if not f.mediaurls:
         results = [
@@ -193,7 +210,7 @@ def inlineparse(update, context):
             )
         ]
     else:
-        if ".mp4" in f.mediaurls[0]:
+        if f.mediatype == "video":
             results = [
                 InlineQueryResultVideo(
                     id=uuid4(),
@@ -203,7 +220,20 @@ def inlineparse(update, context):
                     reply_markup=reply_markup,
                     mime_type="video/mp4",
                     video_url=f.mediaurls[0],
-                    thumb_url=f.mediaurls[1],
+                    thumb_url=f.mediathumb,
+                    parse_mode=ParseMode.MARKDOWN,
+                )
+            ]
+        if f.mediatype == "audio":
+            results = [
+                InlineQueryResultAudio(
+                    id=uuid4(),
+                    caption=caption,
+                    title=f.user,
+                    description=f.content,
+                    reply_markup=reply_markup,
+                    audio_url=f.mediaurls[0],
+                    thumb_url=f.mediathumb,
                     parse_mode=ParseMode.MARKDOWN,
                 )
             ]
