@@ -40,7 +40,7 @@ logging.basicConfig(
 
 logger = logging.getLogger("Telegram_Bili_Feed_Helper")
 
-regex = r"(?i)https?:\/\/(?:vc\.bilibili\.com[\D]*\d+|[th]\.bilibili\.com[\/\w]*\/\d+|b23\.tv\/(?!ep|av|bv)\w+|(?:www\.|m\.)bilibili\.com\/audio\/au\d+|live\.bilibili\.com\/\d+)"
+regex = r"(?i)https?:\/\/(?:vc\.bilibili\.com[\D]*\d+|[th]\.bilibili\.com[\/\w]*\/\d+|b23\.tv\/(?!ep)\w+|(?:www\.|m\.)?(?:bilibili\.com/audio/au\d+|(?:bilibili\.com/video|acg\.tv)/(?:av\d+|bv\w+))|live\.bilibili\.com/\d+)"
 
 sourcecodemarkup = InlineKeyboardMarkup(
     [
@@ -73,9 +73,11 @@ def parse(update, context):
             asyncio.sleep(1)
         return img
 
-    def callback(caption, reply_markup, f):
+    async def callback(caption, reply_markup, s, f):
         if f.mediaraws:
-            media = f.mediaraws
+            tasks = [get_img(s, img) for img in f.mediaurls]
+            media = await asyncio.gather(*tasks)
+            logger.info(f"上传中: {f.url}")
         else:
             media = f.mediaurls
         if f.mediatype == "video":
@@ -144,14 +146,12 @@ def parse(update, context):
                         i + "@1280w_1e_1c.jpg" if not ".gif" in i else i
                         for i in f.mediaurls
                     ]
-                callback(caption, reply_markup, f)
+                await callback(caption, reply_markup, s, f)
             except (TimedOut, BadRequest) as err:
                 logger.exception(err)
                 logger.info(f"{err} -> 下载中: {f.url}")
-                tasks = [get_img(s, img) for img in f.mediaurls]
-                f.mediaraws = await asyncio.gather(*tasks)
-                logger.info(f"上传中: {f.url}")
-                callback(caption, reply_markup, f)
+                f.mediaraws = True
+                await callback(caption, reply_markup, s, f)
         else:
             message.reply_text(
                 caption, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN

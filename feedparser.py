@@ -146,6 +146,20 @@ class live(feed):
         return f"https://live.bilibili.com/{self.room_id}"
 
 
+class video(feed):
+    def __init__(self, rawurl):
+        super(video, self).__init__(rawurl)
+        self.aid = None
+        self.cid = None
+        self.cidcontent = None
+        self.infocontent = None
+        self.mediacontent = None
+
+    @cached_property
+    def url(self):
+        return f"https://www.bilibili.com/video/av{self.aid}"
+
+
 def dynamic_parser(s, url):
     match = re.search(r"[th]\.bilibili\.com[\/\w]*\/(\d+)", url)
     f = dynamic(url)
@@ -223,6 +237,7 @@ def dynamic_parser(s, url):
         f.forward_user = f.forward_card.get("user").get("uname")
         f.forward_uid = f.forward_card.get("user").get("uid")
         f.forward_content = escape_markdown(f.forward_card.get("item").get("content"))
+    s.headers.update({"Referer": f.url})
     return s, f
 
 
@@ -246,6 +261,7 @@ def clip_parser(s, url):
     f.mediaurls = [detail.get("item").get("video_playurl")]
     f.mediathumb = detail.get("item").get("first_pic")
     f.mediatype = "video"
+    s.headers.update({"Referer": f.url})
     return s, f
 
 
@@ -271,6 +287,7 @@ def audio_parser(s, url):
     f.mediathumb = detail.get("cover")
     f.mediatitle = detail.get("title")
     f.mediatype = "audio"
+    s.headers.update({"Referer": f.url})
     return s, f
 
 
@@ -292,11 +309,45 @@ def live_parser(s, url):
     f.content = escape_markdown(
         f"{roominfo.get('title')} - {roominfo.get('area_name')} - {roominfo.get('parent_area_name')}"
     )
-    f.mediaurls = [
-        roominfo.get("cover"),
-        roominfo.get("keyframe"),
-    ]
+    f.mediaurls = [roominfo.get("keyframe")]
     f.mediatype = "picture"
+    s.headers.update({"Referer": f.url})
+    return s, f
+
+
+def video_parser(s, url):
+    match = re.search(
+        r"(?i)(?:www\.|m\.)?(?:bilibili\.com/video|b23\.tv|acg\.tv)/(?:av(?P<aid>\d+)|(?P<bvid>bv\w+))",
+        url,
+    )
+    f = video(url)
+    if bvid := match.group("bvid"):
+        params = {"bvid": bvid}
+    elif aid := match.group("aid"):
+        params = {"aid": aid}
+    f.infocontent = s.get(
+        "https://api.bilibili.com/x/web-interface/view", params=params,
+    ).json()
+    if not (detail := f.infocontent.get("data")):
+        logger.warning(f"视频解析错误: {url}")
+        return s, None
+    f.aid = detail.get("aid")
+    logger.info(f"视频ID: {f.aid}")
+    f.cid = detail.get("cid")
+    f.user = detail.get("owner").get("name")
+    f.uid = detail.get("owner").get("mid")
+    f.content = escape_markdown(f"{detail.get('dynamic')}\n{detail.get('title')}")
+    f.mediacontent = s.get(
+        "https://api.bilibili.com/x/player/playurl",
+        params={"avid": f.aid, "cid": f.cid, "fnval": 16},
+    ).json()
+    f.mediaurls = [
+        f.mediacontent.get("data").get("dash").get("video")[0].get("base_url")
+    ]
+    f.mediathumb = detail.get("pic")
+    f.mediatype = "video"
+    f.mediaraws = True
+    s.headers.update({"Referer": f.url})
     return s, f
 
 
@@ -309,17 +360,20 @@ def feedparser(url):
     )
     post = s.get(url)
     # dynamic
-    if re.search(r"[th]\.bilibili\.com[\/\w]*\/(\d+)", post.url):
+    if re.search(r"[th]\.bilibili\.com", post.url):
         s, f = dynamic_parser(s, post.url)
+    # live picture
+    elif re.search(r"live\.bilibili\.com", post.url):
+        s, f = live_parser(s, post.url)
     # vc video
-    elif re.search(r"vc\.bilibili\.com[\D]*(\d+)", post.url):
+    elif re.search(r"vc\.bilibili\.com", post.url):
         s, f = clip_parser(s, post.url)
     # au audio
-    elif re.search(r"bilibili\.com\/audio\/au(\d+)", post.url):
-        s, f = audio_parser(s, post.url)
-    # live picture
-    elif re.search(r"live.bilibili\.com\/(\d+)", post.url):
-        s, f = live_parser(s, post.url)
+    # elif re.search(r"bilibili\.com/audio", post.url):
+    #     s, f = audio_parser(s, post.url)
+    # main video
+    # elif re.search(r"bilibili\.com/video", post.url):
+    #     s, f = video_parser(s, post.url)
     else:
         return s, None
     logger.info(

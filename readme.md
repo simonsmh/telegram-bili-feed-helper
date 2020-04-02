@@ -19,5 +19,7 @@ Bilibili API:
 - https://www.bilibili.com/audio/music-service-c/web/song/info
 - https://www.bilibili.com/audio/music-service-c/web/url
 - https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom
+- https://api.bilibili.com/x/web-interface/view
+- https://api.bilibili.com/x/player/playurl
 
 Copyright © 2020 Simon Shi <simonsmh@gmail.com>

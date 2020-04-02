@@ -21,6 +21,7 @@ def test_dynamic_parser():
         "https://t.bilibili.com/h5/dynamic/detail/371333904522848558", #文章（不带动态）
         "https://www.bilibili.com/audio/au1360511", #音频
         "https://live.bilibili.com/115?visit_id=7zr5hnihuiw0", #直播
+        "https://www.bilibili.com/video/BV1g64y1u7RT", #视频
     ]
     for i in urls:
         feedparser(i)
