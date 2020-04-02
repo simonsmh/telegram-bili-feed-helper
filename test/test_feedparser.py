@@ -20,6 +20,7 @@ def test_dynamic_parser():
         "https://b23.tv/xZCcov", #引用带图
         "https://t.bilibili.com/h5/dynamic/detail/371333904522848558", #文章（不带动态）
         "https://www.bilibili.com/audio/au1360511", #音频
+        "https://live.bilibili.com/115?visit_id=7zr5hnihuiw0", #直播
     ]
     for i in urls:
         feedparser(i)

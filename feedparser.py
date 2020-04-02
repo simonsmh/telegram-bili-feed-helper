@@ -135,6 +135,17 @@ class audio(feed):
         return f"https://www.bilibili.com/audio/au{self.audio_id}"
 
 
+class live(feed):
+    def __init__(self, rawurl):
+        super(live, self).__init__(rawurl)
+        self.rawcontent = None
+        self.room_id = None
+
+    @cached_property
+    def url(self):
+        return f"https://live.bilibili.com/{self.room_id}"
+
+
 def dynamic_parser(s, url):
     match = re.search(r"[th]\.bilibili\.com[\/\w]*\/(\d+)", url)
     f = dynamic(url)
@@ -263,6 +274,32 @@ def audio_parser(s, url):
     return s, f
 
 
+def live_parser(s, url):
+    match = re.search(r"live.bilibili\.com\/(\d+)", url)
+    f = live(url)
+    f.room_id = match.group(1)
+    f.rawcontent = s.get(
+        "https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom",
+        params={"room_id": f.room_id},
+    ).json()
+    if not (detail := f.rawcontent.get("data")):
+        logger.warning(f"直播解析错误: {url}")
+        return s, None
+    logger.info(f"直播ID: {f.room_id}")
+    f.user = detail.get("anchor_info").get("base_info").get("uname")
+    roominfo = detail.get("room_info")
+    f.uid = roominfo.get("uid")
+    f.content = escape_markdown(
+        f"{roominfo.get('title')} - {roominfo.get('area_name')} - {roominfo.get('parent_area_name')}"
+    )
+    f.mediaurls = [
+        roominfo.get("cover"),
+        roominfo.get("keyframe"),
+    ]
+    f.mediatype = "picture"
+    return s, f
+
+
 def feedparser(url):
     s = requests.Session()
     s.headers.update(
@@ -280,6 +317,9 @@ def feedparser(url):
     # au audio
     elif re.search(r"bilibili\.com\/audio\/au(\d+)", post.url):
         s, f = audio_parser(s, post.url)
+    # live picture
+    elif re.search(r"live.bilibili\.com\/(\d+)", post.url):
+        s, f = live_parser(s, post.url)
     else:
         return s, None
     logger.info(
