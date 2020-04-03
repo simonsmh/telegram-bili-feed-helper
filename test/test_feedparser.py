@@ -1,6 +1,8 @@
 from feedparser import feedparser
+import pytest
 
-def test_dynamic_parser():
+@pytest.mark.asyncio
+async def test_dynamic_parser():
     urls = [
         "https://t.bilibili.com/371426091702577219?tab=2",
         "https://t.bilibili.com/371425855481471758?tab=2",
@@ -24,4 +26,4 @@ def test_dynamic_parser():
         "https://www.bilibili.com/video/BV1g64y1u7RT", #视频
     ]
     for i in urls:
-        feedparser(i)
+        await feedparser(i)
