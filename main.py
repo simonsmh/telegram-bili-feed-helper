@@ -294,11 +294,12 @@ def start(update, context):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) >= 2 and os.path.exists(sys.argv[1]):
-        config = load_json(sys.argv[1])
-    else:
-        config = load_json()
-    updater = Updater(config.get("TOKEN"), use_context=True)
+    if not (TOKEN := os.environ.get("TOKEN")):
+        if len(sys.argv) >= 2 and os.path.exists(sys.argv[1]):
+            TOKEN = load_json(sys.argv[1]).get("TOKEN")
+        else:
+            TOKEN = load_json().get("TOKEN")
+    updater = Updater(TOKEN, use_context=True)
     updater.dispatcher.add_handler(
         CommandHandler("start", start, filters=Filters.private)
     )
