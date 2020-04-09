@@ -4,7 +4,7 @@ import logging
 import os
 import re
 import sys
-from io import BytesIO, BufferedReader
+from io import BytesIO
 from uuid import uuid4
 
 import aiohttp
@@ -74,6 +74,7 @@ def parse(update, context):
             pil.save(outpil, "JPEG", optimize=True)
             logger.info(f"压缩比: {inpil.__sizeof__()/outpil.__sizeof__()}")
             return outpil
+
         async with aiohttp.ClientSession(headers=headers) as session:
             async with session.get(url, headers={"Referer": f.url}) as resp:
                 img = BytesIO(await resp.read())
@@ -96,39 +97,39 @@ def parse(update, context):
             message.reply_video(
                 media[0],
                 caption=caption,
-                reply_markup=reply_markup,
                 parse_mode=ParseMode.MARKDOWN_V2,
-                thumb=mediathumb,
+                reply_markup=reply_markup,
                 supports_streaming=True,
+                thumb=mediathumb,
                 timeout=120,
             )
         elif f.mediatype == "audio":
             message.reply_audio(
                 media[0],
                 caption=caption,
-                reply_markup=reply_markup,
+                duration=f.mediaduration,
                 parse_mode=ParseMode.MARKDOWN_V2,
                 performer=f.user,
+                reply_markup=reply_markup,
                 thumb=mediathumb,
-                title=f.mediatitle,
-                duration=f.mediaduration,
                 timeout=120,
+                title=f.mediatitle,
             )
         elif len(f.mediaurls) == 1:
             if ".gif" in f.mediaurls[0]:
                 message.reply_animation(
                     media[0],
                     caption=caption,
-                    reply_markup=reply_markup,
                     parse_mode=ParseMode.MARKDOWN_V2,
+                    reply_markup=reply_markup,
                     timeout=60,
                 )
             else:
                 message.reply_photo(
                     media[0],
                     caption=caption,
-                    reply_markup=reply_markup,
                     parse_mode=ParseMode.MARKDOWN_V2,
+                    reply_markup=reply_markup,
                     timeout=60,
                 )
         else:
@@ -139,10 +140,10 @@ def parse(update, context):
             message.reply_media_group(media, timeout=120)
             message.reply_text(
                 caption,
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.MARKDOWN_V2,
                 disable_web_page_preview=True,
+                parse_mode=ParseMode.MARKDOWN_V2,
                 quote=False,
+                reply_markup=reply_markup,
             )
 
     async def parse_queue(url):
@@ -169,7 +170,7 @@ def parse(update, context):
                 await callback(caption, reply_markup, f)
         else:
             message.reply_text(
-                caption, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2
+                caption, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=reply_markup
             )
 
     loop = asyncio.new_event_loop()
@@ -230,11 +231,11 @@ def inlineparse(update, context):
                     caption=caption,
                     title=f.user,
                     description=f.content,
-                    reply_markup=reply_markup,
                     mime_type="video/mp4",
-                    video_url=f.mediaurls[0],
-                    thumb_url=f.mediathumb,
                     parse_mode=ParseMode.MARKDOWN_V2,
+                    reply_markup=reply_markup,
+                    thumb_url=f.mediathumb,
+                    video_url=f.mediaurls[0],
                 )
             ]
         if f.mediatype == "audio":
@@ -244,12 +245,12 @@ def inlineparse(update, context):
                     caption=caption,
                     title=f.mediatitle,
                     description=f.content,
-                    reply_markup=reply_markup,
-                    audio_url=f.mediaurls[0],
-                    thumb_url=f.mediathumb,
-                    performer=f.user,
                     audio_duration=f.mediaduration,
+                    audio_url=f.mediaurls[0],
                     parse_mode=ParseMode.MARKDOWN_V2,
+                    performer=f.user,
+                    reply_markup=reply_markup,
+                    thumb_url=f.mediathumb,
                 )
             ]
         else:
@@ -258,10 +259,10 @@ def inlineparse(update, context):
                     id=uuid4(),
                     caption=caption,
                     title=f"{f.user}: {f.content}",
-                    reply_markup=reply_markup,
                     gif_url=img,
-                    thumb_url=img,
                     parse_mode=ParseMode.MARKDOWN_V2,
+                    reply_markup=reply_markup,
+                    thumb_url=img,
                 )
                 if ".gif" in img
                 else InlineQueryResultPhoto(
@@ -269,10 +270,10 @@ def inlineparse(update, context):
                     caption=caption,
                     title=f.user,
                     description=f.content,
-                    reply_markup=reply_markup,
-                    photo_url=img + "@1280w_1e_1c.jpg",
-                    thumb_url=img + "@512w_512h_1e_1c.jpg",
                     parse_mode=ParseMode.MARKDOWN_V2,
+                    photo_url=img + "@1280w_1e_1c.jpg",
+                    reply_markup=reply_markup,
+                    thumb_url=img + "@512w_512h_1e_1c.jpg",
                 )
                 for img in f.mediaurls
             ]

@@ -216,6 +216,7 @@ async def dynamic_parser(s, url):
         f.mediatype = fu.mediatype
         f.mediathumb = fu.mediathumb
         f.mediatitle = fu.mediatitle
+        f.mediaduration = fu.mediaduration
     # live
     elif f.card.get("roomid"):
         room_id = f.card.get("roomid")
