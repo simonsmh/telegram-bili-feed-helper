@@ -4,10 +4,11 @@ import logging
 import os
 import re
 import sys
-from io import BytesIO
+from io import BytesIO, BufferedReader
 from uuid import uuid4
 
 import aiohttp
+from PIL import Image
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -65,14 +66,26 @@ def parse(update, context):
     urls = re.findall(regex, data)
     logger.info(f"Parse: {urls}")
 
-    async def get_img(f, url):
+    async def get_img(f, url, size=1280, compression=True):
+        def compress(inpil):
+            pil = Image.open(inpil)
+            pil.thumbnail((size, size), Image.LANCZOS)
+            outpil = BytesIO()
+            pil.save(outpil, "JPEG", optimize=True)
+            logger.info(f"压缩比: {inpil.__sizeof__()/outpil.__sizeof__()}")
+            return outpil
         async with aiohttp.ClientSession(headers=headers) as session:
             async with session.get(url, headers={"Referer": f.url}) as resp:
                 img = BytesIO(await resp.read())
+        if compression:
+            if ".jpg" in url:
+                img = compress(img)
         img.seek(0)
         return img
 
     async def callback(caption, reply_markup, f):
+        if f.mediathumb:
+            mediathumb = await get_img(f, f.mediathumb, size=320)
         if f.mediaraws:
             tasks = [get_img(f, img) for img in f.mediaurls]
             media = await asyncio.gather(*tasks)
@@ -85,7 +98,7 @@ def parse(update, context):
                 caption=caption,
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.MARKDOWN_V2,
-                thumb=f.mediathumb,
+                thumb=mediathumb,
                 supports_streaming=True,
                 timeout=120,
             )
@@ -95,8 +108,10 @@ def parse(update, context):
                 caption=caption,
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.MARKDOWN_V2,
-                thumb=f.mediathumb,
+                performer=f.user,
+                thumb=mediathumb,
                 title=f.mediatitle,
+                duration=f.mediaduration,
                 timeout=120,
             )
         elif len(f.mediaurls) == 1:
@@ -227,11 +242,13 @@ def inlineparse(update, context):
                 InlineQueryResultAudio(
                     id=uuid4(),
                     caption=caption,
-                    title=f.user,
+                    title=f.mediatitle,
                     description=f.content,
                     reply_markup=reply_markup,
                     audio_url=f.mediaurls[0],
                     thumb_url=f.mediathumb,
+                    performer=f.user,
+                    audio_duration=f.mediaduration,
                     parse_mode=ParseMode.MARKDOWN_V2,
                 )
             ]
@@ -269,22 +286,6 @@ def error(update, context):
     logger.warning(f"Update {context} caused error {error}")
 
 
-def load_json(filename="config.json"):
-    try:
-        with open(filename, "r") as file:
-            config = json.load(file)
-    except FileNotFoundError:
-        try:
-            filename = f"{os.path.split(os.path.realpath(__file__))[0]}/{filename}"
-            with open(filename, "r") as file:
-                config = json.load(file)
-        except FileNotFoundError:
-            logger.exception(f"Cannot find {filename}.")
-            sys.exit(1)
-    logger.info(f"Json: Loaded {filename}")
-    return config
-
-
 @run_async
 def start(update, context):
     update.message.reply_text(
@@ -294,11 +295,14 @@ def start(update, context):
 
 
 if __name__ == "__main__":
-    if not (TOKEN := os.environ.get("TOKEN")):
-        if len(sys.argv) >= 2 and os.path.exists(sys.argv[1]):
-            TOKEN = load_json(sys.argv[1]).get("TOKEN")
-        else:
-            TOKEN = load_json().get("TOKEN")
+    if os.environ.get("TOKEN"):
+        TOKEN = os.environ.get("TOKEN")
+    elif len(sys.argv) >= 2:
+        TOKEN = sys.argv[1]
+    else:
+        logger.exception(f"Need TOKEN.")
+        sys.exit(1)
+    logger.info("Starting...")
     updater = Updater(TOKEN, use_context=True)
     updater.dispatcher.add_handler(
         CommandHandler("start", start, filters=Filters.private)

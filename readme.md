@@ -16,8 +16,8 @@ Telegram bot for Bili Feed Helper.
 Bilibili API: 
 - https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/get_dynamic_detail
 - https://api.vc.bilibili.com/clip/v1/video/detail
-- https://www.bilibili.com/audio/music-service-c/web/song/info
-- https://www.bilibili.com/audio/music-service-c/web/url
+- https://api.bilibili.com/audio/music-service-c/songs/playing
+- https://api.bilibili.com/audio/music-service-c/url
 - https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom
 - https://api.bilibili.com/x/web-interface/view
 - https://api.bilibili.com/x/player/playurl

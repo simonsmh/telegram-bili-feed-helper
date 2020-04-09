@@ -30,6 +30,7 @@ class feed:
         self.mediaraws = None
         self.mediatype = None
         self.mediathumb = None
+        self.mediaduration = None
         self.mediatitle = None
 
     @staticmethod
@@ -276,26 +277,28 @@ async def audio_parser(s, url):
     match = re.search(r"bilibili\.com\/audio\/au(\d+)", url)
     f = audio(url)
     f.audio_id = match.group(1)
-    params = {"sid": f.audio_id}
     async with s.get(
-        "https://www.bilibili.com/audio/music-service-c/web/song/info", params=params,
+        "https://api.bilibili.com/audio/music-service-c/songs/playing", params={"song_id": f.audio_id},
     ) as resp:
         f.infocontent = await resp.json(content_type="application/json")
-    async with s.get(
-        "https://www.bilibili.com/audio/music-service-c/web/url", params=params,
-    ) as resp:
-        f.mediacontent = await resp.json(content_type="application/json")
     if not (detail := f.infocontent.get("data")):
         logger.warning(f"音频解析错误: {url}")
         return
+    mid = detail.get("mid")
+    async with s.get(
+        "https://api.bilibili.com/audio/music-service-c/url", params={"songid": f.audio_id, "mid": mid, "privilege": 2, "quality":3, "platform": ""},
+    ) as resp:
+        f.mediacontent = await resp.json(content_type="application/json")
     logger.info(f"音频ID: {f.audio_id}")
-    f.user = escape_markdown(detail.get("uname"))
+    f.user = escape_markdown(detail.get("author"))
     f.uid = detail.get("uid")
     f.content = escape_markdown(detail.get("intro"))
-    f.mediaurls = f.mediacontent.get("data").get("cdns")
-    f.mediathumb = detail.get("cover")
+    f.mediathumb = detail.get("cover_url")
     f.mediatitle = detail.get("title")
+    f.mediaduration = detail.get("duration")
+    f.mediaurls = f.mediacontent.get("data").get("cdns")
     f.mediatype = "audio"
+    f.mediaraws = True
     return f
 
 
@@ -357,7 +360,6 @@ async def video_parser(s, url):
     f.mediathumb = detail.get("pic")
     f.mediatype = "video"
     f.mediaraws = True
-    s.headers.update({"Referer": f.url})
     return f
 
 
@@ -375,8 +377,8 @@ async def feedparser(url):
             elif re.search(r"vc\.bilibili\.com", url):
                 f = await clip_parser(s, url)
             # au audio
-            # elif re.search(r"bilibili\.com/audio", url):
-            #     f = await audio_parser(s, url)
+            elif re.search(r"bilibili\.com/audio", url):
+                f = await audio_parser(s, url)
             # main video
             # elif re.search(r"bilibili\.com/video", url):
             #     f = await video_parser(s, url)
