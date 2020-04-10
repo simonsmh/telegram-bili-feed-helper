@@ -27,7 +27,7 @@ class feed:
         self.uid = None
         self.content = None
         self.mediaurls = list()
-        self.mediaraws = None
+        self.mediaraws = False
         self.mediatype = None
         self.mediathumb = None
         self.mediaduration = None
@@ -48,6 +48,13 @@ class feed:
     @cached_property
     def url(self):
         return self.rawurl
+
+    @cached_property
+    def mediafilename(self):
+        return [
+            re.search(r"\/([^\/]*\.\w{3,4})(?:$|\?)", i).group(1)
+            for i in self.mediaurls
+        ]
 
 
 class dynamic(feed):
@@ -192,7 +199,7 @@ async def dynamic_parser(s, url):
         f.uid = f.card.get("owner").get("mid")
         f.content = f"{escape_markdown(f.card.get('dynamic')) if f.card.get('dynamic') else None}\n[{escape_markdown(f.card.get('title'))}](https://b23.tv/av{av_id})"
         f.mediaurls = [f.card.get("pic")]
-        f.mediatype = "picture"
+        f.mediatype = "image"
     # cv article
     elif f.card.get("words"):
         cv_id = f.card.get("id")
@@ -203,7 +210,7 @@ async def dynamic_parser(s, url):
             f.mediaurls = f.card.get("banner_url")
         else:
             f.mediaurls.extend(f.card.get("image_urls"))
-        f.mediatype = "picture"
+        f.mediatype = "image"
     # au audio
     elif f.card.get("typeInfo"):
         au_id = f.card.get("id")
@@ -224,15 +231,15 @@ async def dynamic_parser(s, url):
         f.uid = f.card.get("uid")
         f.content = f"[{escape_markdown(f.card.get('title'))}](https://live.bilibili.com/{room_id})"
         f.mediaurls = [f.card.get("user_cover")]
-        f.mediatype = "picture"
-    # dynamic pictures/gifs/videos
+        f.mediatype = "image"
+    # dynamic images/videos
     elif f.card.get("user").get("name"):
         f.user = escape_markdown(f.card.get("user").get("name"))
         f.uid = f.card.get("user").get("uid")
         f.content = escape_markdown(f.card.get("item").get("description"))
         if f.card.get("item").get("pictures"):
             f.mediaurls = [t.get("img_src") for t in f.card.get("item").get("pictures")]
-            f.mediatype = "picture"
+            f.mediatype = "image"
         elif f.card.get("item").get("video_playurl"):
             f.mediaurls = [f.card.get("item").get("video_playurl")]
             f.mediathumb = f.card.get("item").get("cover").get("unclipped")
@@ -279,7 +286,8 @@ async def audio_parser(s, url):
     f = audio(url)
     f.audio_id = match.group(1)
     async with s.get(
-        "https://api.bilibili.com/audio/music-service-c/songs/playing", params={"song_id": f.audio_id},
+        "https://api.bilibili.com/audio/music-service-c/songs/playing",
+        params={"song_id": f.audio_id},
     ) as resp:
         f.infocontent = await resp.json(content_type="application/json")
     if not (detail := f.infocontent.get("data")):
@@ -287,7 +295,14 @@ async def audio_parser(s, url):
         return
     mid = detail.get("mid")
     async with s.get(
-        "https://api.bilibili.com/audio/music-service-c/url", params={"songid": f.audio_id, "mid": mid, "privilege": 2, "quality":3, "platform": ""},
+        "https://api.bilibili.com/audio/music-service-c/url",
+        params={
+            "songid": f.audio_id,
+            "mid": mid,
+            "privilege": 2,
+            "quality": 3,
+            "platform": "",
+        },
     ) as resp:
         f.mediacontent = await resp.json(content_type="application/json")
     logger.info(f"音频ID: {f.audio_id}")
@@ -323,7 +338,7 @@ async def live_parser(s, url):
         f"{roominfo.get('title')} - {roominfo.get('area_name')} - {roominfo.get('parent_area_name')}"
     )
     f.mediaurls = [roominfo.get("keyframe")]
-    f.mediatype = "picture"
+    f.mediatype = "image"
     return f
 
 
@@ -371,7 +386,7 @@ async def feedparser(url):
             # dynamic
             if re.search(r"[th]\.bilibili\.com", url):
                 f = await dynamic_parser(s, url)
-            # live picture
+            # live image
             elif re.search(r"live\.bilibili\.com", url):
                 f = await live_parser(s, url)
             # vc video

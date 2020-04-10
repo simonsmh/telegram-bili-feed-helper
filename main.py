@@ -58,6 +58,29 @@ def tag_parser(content):
     return re.sub(r"#([^#?=\s|$]+)#?", lambda x: f"#{x.group(1)} ", content)
 
 
+def origin_link(content):
+    return InlineKeyboardMarkup([[InlineKeyboardButton(text="原链接", url=content)]])
+
+
+async def get_media(f, url, size=1280, compression=True):
+    def compress(inpil):
+        pil = Image.open(inpil)
+        pil.thumbnail((size, size), Image.LANCZOS)
+        pil.save(outpil := BytesIO(), "PNG", optimize=True)
+        return outpil
+
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.get(url, headers={"Referer": f.url}) as resp:
+            media = BytesIO(await resp.read())
+            mediatype = resp.headers["Content-Type"]
+    if compression:
+        if mediatype in ["image/jpeg", "image/png"]:
+            logger.info(f"压缩: {url} {mediatype}")
+            media = compress(media)
+    media.seek(0)
+    return media
+
+
 @run_async
 def parse(update, context):
     if not (message := update.channel_post):
@@ -66,29 +89,11 @@ def parse(update, context):
     urls = re.findall(regex, data)
     logger.info(f"Parse: {urls}")
 
-    async def get_img(f, url, size=1280, compression=True):
-        def compress(inpil):
-            pil = Image.open(inpil)
-            pil.thumbnail((size, size), Image.LANCZOS)
-            outpil = BytesIO()
-            pil.save(outpil, "JPEG", optimize=True)
-            logger.info(f"压缩比: {inpil.__sizeof__()/outpil.__sizeof__()}")
-            return outpil
-
-        async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.get(url, headers={"Referer": f.url}) as resp:
-                img = BytesIO(await resp.read())
-        if compression:
-            if ".jpg" in url:
-                img = compress(img)
-        img.seek(0)
-        return img
-
-    async def callback(caption, reply_markup, f):
+    async def callback(f, caption):
         if f.mediathumb:
-            mediathumb = await get_img(f, f.mediathumb, size=320)
+            mediathumb = await get_media(f, f.mediathumb, size=320)
         if f.mediaraws:
-            tasks = [get_img(f, img) for img in f.mediaurls]
+            tasks = [get_media(f, img) for img in f.mediaurls]
             media = await asyncio.gather(*tasks)
             logger.info(f"上传中: {f.url}")
         else:
@@ -98,7 +103,7 @@ def parse(update, context):
                 media[0],
                 caption=caption,
                 parse_mode=ParseMode.MARKDOWN_V2,
-                reply_markup=reply_markup,
+                reply_markup=origin_link(f.url),
                 supports_streaming=True,
                 thumb=mediathumb,
                 timeout=120,
@@ -110,7 +115,7 @@ def parse(update, context):
                 duration=f.mediaduration,
                 parse_mode=ParseMode.MARKDOWN_V2,
                 performer=f.user,
-                reply_markup=reply_markup,
+                reply_markup=origin_link(f.url),
                 thumb=mediathumb,
                 timeout=120,
                 title=f.mediatitle,
@@ -121,7 +126,7 @@ def parse(update, context):
                     media[0],
                     caption=caption,
                     parse_mode=ParseMode.MARKDOWN_V2,
-                    reply_markup=reply_markup,
+                    reply_markup=origin_link(f.url),
                     timeout=60,
                 )
             else:
@@ -129,7 +134,7 @@ def parse(update, context):
                     media[0],
                     caption=caption,
                     parse_mode=ParseMode.MARKDOWN_V2,
-                    reply_markup=reply_markup,
+                    reply_markup=origin_link(f.url),
                     timeout=60,
                 )
         else:
@@ -143,7 +148,7 @@ def parse(update, context):
                 disable_web_page_preview=True,
                 parse_mode=ParseMode.MARKDOWN_V2,
                 quote=False,
-                reply_markup=reply_markup,
+                reply_markup=origin_link(f.url),
             )
 
     async def parse_queue(url):
@@ -157,17 +162,18 @@ def parse(update, context):
         )
         if f.mediaurls:
             try:
-                if f.mediatype == "picture":
-                    f.mediaurls = [
-                        i + "@1280w_1e_1c.jpg" if not ".gif" in i else i
-                        for i in f.mediaurls
-                    ]
-                await callback(caption, reply_markup, f)
+                if not f.mediaraws:
+                    if f.mediatype == "image":
+                        f.mediaurls = [
+                            i if ".gif" in i else i + "@1280w_1e_1c.jpg"
+                            for i in f.mediaurls
+                        ]
+                await callback(f, caption)
             except (TimedOut, BadRequest) as err:
                 logger.exception(err)
                 logger.info(f"{err} -> 下载中: {f.url}")
                 f.mediaraws = True
-                await callback(caption, reply_markup, f)
+                await callback(f, caption)
         else:
             message.reply_text(
                 caption, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=reply_markup
@@ -175,6 +181,37 @@ def parse(update, context):
 
     loop = asyncio.new_event_loop()
     tasks = [parse_queue(url) for url in urls]
+    loop.run_until_complete(asyncio.gather(*tasks, loop=loop))
+    loop.close()
+
+
+@run_async
+def fetch(update, context):
+    if not (message := update.channel_post):
+        message = update.message
+    data = message.text
+    urls = re.findall(regex, data)
+    logger.info(f"Fetch: {urls}")
+
+    async def fetch_queue(url):
+        f = await feedparser(url)
+        if not f:
+            logger.warning("解析错误！")
+            return
+        if f.mediaurls:
+            tasks = [get_media(f, img, compression=False) for img in f.mediaurls]
+            medias = await asyncio.gather(*tasks)
+            logger.info(f"上传中: {f.url}")
+            for media, mediafilename in zip(medias, f.mediafilename):
+                message.reply_document(
+                    media,
+                    filename=mediafilename,
+                    reply_markup=origin_link(f.url),
+                    timeout=120,
+                )
+
+    loop = asyncio.new_event_loop()
+    tasks = [fetch_queue(url) for url in urls]
     loop.run_until_complete(asyncio.gather(*tasks, loop=loop))
     loop.close()
 
@@ -208,14 +245,13 @@ def inlineparse(update, context):
         logger.warning("解析错误！")
         return
     caption = f"{f.user_markdown}:\n{tag_parser(f.content_markdown)}"
-    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(text="原链接", url=f.url)]])
     if not f.mediaurls:
         results = [
             InlineQueryResultArticle(
                 id=uuid4(),
                 title=f.user,
                 description=f.content,
-                reply_markup=reply_markup,
+                reply_markup=origin_link(f.url),
                 input_message_content=InputTextMessageContent(
                     caption,
                     parse_mode=ParseMode.MARKDOWN_V2,
@@ -233,7 +269,7 @@ def inlineparse(update, context):
                     description=f.content,
                     mime_type="video/mp4",
                     parse_mode=ParseMode.MARKDOWN_V2,
-                    reply_markup=reply_markup,
+                    reply_markup=origin_link(f.url),
                     thumb_url=f.mediathumb,
                     video_url=f.mediaurls[0],
                 )
@@ -249,7 +285,7 @@ def inlineparse(update, context):
                     audio_url=f.mediaurls[0],
                     parse_mode=ParseMode.MARKDOWN_V2,
                     performer=f.user,
-                    reply_markup=reply_markup,
+                    reply_markup=origin_link(f.url),
                     thumb_url=f.mediathumb,
                 )
             ]
@@ -261,7 +297,7 @@ def inlineparse(update, context):
                     title=f"{f.user}: {f.content}",
                     gif_url=img,
                     parse_mode=ParseMode.MARKDOWN_V2,
-                    reply_markup=reply_markup,
+                    reply_markup=origin_link(f.url),
                     thumb_url=img,
                 )
                 if ".gif" in img
@@ -272,7 +308,7 @@ def inlineparse(update, context):
                     description=f.content,
                     parse_mode=ParseMode.MARKDOWN_V2,
                     photo_url=img + "@1280w_1e_1c.jpg",
-                    reply_markup=reply_markup,
+                    reply_markup=origin_link(f.url),
                     thumb_url=img + "@512w_512h_1e_1c.jpg",
                 )
                 for img in f.mediaurls
@@ -308,6 +344,7 @@ if __name__ == "__main__":
     updater.dispatcher.add_handler(
         CommandHandler("start", start, filters=Filters.private)
     )
+    updater.dispatcher.add_handler(CommandHandler("file", fetch))
     updater.dispatcher.add_handler(MessageHandler(Filters.regex(regex), parse))
     updater.dispatcher.add_handler(InlineQueryHandler(inlineparse))
     updater.dispatcher.add_error_handler(error)
