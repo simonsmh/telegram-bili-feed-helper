@@ -345,6 +345,7 @@ if __name__ == "__main__":
         CommandHandler("start", start, filters=Filters.private)
     )
     updater.dispatcher.add_handler(CommandHandler("file", fetch))
+    updater.dispatcher.add_handler(CommandHandler("parse", parse))
     updater.dispatcher.add_handler(MessageHandler(Filters.regex(regex), parse))
     updater.dispatcher.add_handler(InlineQueryHandler(inlineparse))
     updater.dispatcher.add_error_handler(error)
