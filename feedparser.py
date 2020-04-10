@@ -35,7 +35,7 @@ class feed:
 
     @staticmethod
     def make_user_markdown(user, uid):
-        return f"[@{user}](https://space.bilibili.com/{uid})"
+        return f"[@{escape_markdown(user)}](https://space.bilibili.com/{uid})"
 
     @cached_property
     def user_markdown(self):
@@ -43,7 +43,7 @@ class feed:
 
     @cached_property
     def content_markdown(self):
-        return self.content
+        return escape_markdown(self.content)
 
     @cached_property
     def url(self):
@@ -67,6 +67,7 @@ class dynamic(feed):
         self.forward_user = None
         self.forward_uid = None
         self.forward_content = None
+        self.extra_markdown = None
 
     @cached_property
     def forward_card(self):
@@ -117,9 +118,9 @@ class dynamic(feed):
     @cached_property
     def content_markdown(self):
         return (
-            f"{self.forward_content}//{self.make_user_markdown(self.__user, self.uid)}:\n{self.__content}"
+            f"{escape_markdown(self.forward_content)}//{self.make_user_markdown(self.__user, self.uid)}:\n{escape_markdown(self.__content)}\n{self.extra_markdown}"
             if self.has_forward
-            else self.__content
+            else escape_markdown(self.__content)
         )
 
     @cached_property
@@ -195,17 +196,21 @@ async def dynamic_parser(s, url):
     logger.info(f"动态ID: {f.dynamic_id}")
     # bv video
     if av_id := f.card.get("aid"):
-        f.user = escape_markdown(f.card.get("owner").get("name"))
+        f.user = f.card.get("owner").get("name")
         f.uid = f.card.get("owner").get("mid")
-        f.content = f"{escape_markdown(f.card.get('dynamic')) if f.card.get('dynamic') else None}\n[{escape_markdown(f.card.get('title'))}](https://b23.tv/av{av_id})"
+        f.content = f.card.get("dynamic") if f.card.get("dynamic") else str()
+        f.extra_markdown = f"[{escape_markdown(f.card.get('title'))}](https://b23.tv/av{av_id})"
         f.mediaurls = [f.card.get("pic")]
         f.mediatype = "image"
     # cv article
     elif f.card.get("words"):
         cv_id = f.card.get("id")
-        f.user = escape_markdown(f.card.get("author").get("name"))
+        f.user = f.card.get("author").get("name")
         f.uid = f.card.get("author").get("mid")
-        f.content = f"{escape_markdown(f.card.get('dynamic')) if f.card.get('dynamic') else None}\n[{escape_markdown(f.card.get('title'))}](https://www.bilibili.com/read/cv{cv_id})"
+        f.content = f.card.get("dynamic") if f.card.get("dynamic") else str()
+        f.extra_markdown = (
+            f"[{escape_markdown(f.card.get('title'))}](https://www.bilibili.com/read/cv{cv_id})"
+        )
         if f.card.get("banner_url"):
             f.mediaurls = f.card.get("banner_url")
         else:
@@ -214,9 +219,12 @@ async def dynamic_parser(s, url):
     # au audio
     elif f.card.get("typeInfo"):
         au_id = f.card.get("id")
-        f.user = escape_markdown(f.card.get("upper"))
+        f.user = f.card.get("upper")
         f.uid = f.card.get("upId")
-        f.content = f"{escape_markdown(f.card.get('intro'))}\n[{escape_markdown(f.card.get('title'))}](https://www.bilibili.com/audio/au{au_id})"
+        f.content = f.card.get("intro")
+        f.extra_markdown = (
+            f"[{escape_markdown(f.card.get('title'))}](https://www.bilibili.com/audio/au{au_id})"
+        )
         # Getting audio link from audio parser
         fu = await audio_parser(s, f"https://www.bilibili.com/audio/au{au_id}")
         f.mediaurls = fu.mediaurls
@@ -227,16 +235,19 @@ async def dynamic_parser(s, url):
     # live
     elif f.card.get("roomid"):
         room_id = f.card.get("roomid")
-        f.user = escape_markdown(f.card.get("uname"))
+        f.user = f.card.get("uname")
         f.uid = f.card.get("uid")
-        f.content = f"[{escape_markdown(f.card.get('title'))}](https://live.bilibili.com/{room_id})"
-        f.mediaurls = [f.card.get("user_cover")]
-        f.mediatype = "image"
+        f.extra_markdown = f"[{escape_markdown(f.card.get('title'))}](https://live.bilibili.com/{room_id})"
+        # Getting live link from live parser
+        fu = await live_parser(s, f"https://live.bilibili.com/{room_id}")
+        f.content = fu.content
+        f.mediaurls = fu.mediaurls
+        f.mediatype = fu.mediatype
     # dynamic images/videos
     elif f.card.get("user").get("name"):
-        f.user = escape_markdown(f.card.get("user").get("name"))
+        f.user = f.card.get("user").get("name")
         f.uid = f.card.get("user").get("uid")
-        f.content = escape_markdown(f.card.get("item").get("description"))
+        f.content = f.card.get("item").get("description")
         if f.card.get("item").get("pictures"):
             f.mediaurls = [t.get("img_src") for t in f.card.get("item").get("pictures")]
             f.mediatype = "image"
@@ -246,14 +257,14 @@ async def dynamic_parser(s, url):
             f.mediatype = "video"
     # dynamic text
     elif f.card.get("user").get("uname"):
-        f.user = escape_markdown(f.card.get("user").get("uname"))
+        f.user = f.card.get("user").get("uname")
         f.uid = f.card.get("user").get("uid")
-        f.content = escape_markdown(f.card.get("item").get("content"))
+        f.content = f.card.get("item").get("content")
     # forward text
     if f.has_forward:
-        f.forward_user = escape_markdown(f.forward_card.get("user").get("uname"))
+        f.forward_user = f.forward_card.get("user").get("uname")
         f.forward_uid = f.forward_card.get("user").get("uid")
-        f.forward_content = escape_markdown(f.forward_card.get("item").get("content"))
+        f.forward_content = f.forward_card.get("item").get("content")
     return f
 
 
@@ -272,9 +283,9 @@ async def clip_parser(s, url):
         logger.warning(f"短视频解析错误: {url}")
         return
     logger.info(f"短视频ID: {f.video_id}")
-    f.user = escape_markdown(detail.get("user").get("name"))
+    f.user = detail.get("user").get("name")
     f.uid = detail.get("user").get("uid")
-    f.content = escape_markdown(detail.get("item").get("description"))
+    f.content = detail.get("item").get("description")
     f.mediaurls = [detail.get("item").get("video_playurl")]
     f.mediathumb = detail.get("item").get("first_pic")
     f.mediatype = "video"
@@ -306,9 +317,9 @@ async def audio_parser(s, url):
     ) as resp:
         f.mediacontent = await resp.json(content_type="application/json")
     logger.info(f"音频ID: {f.audio_id}")
-    f.user = escape_markdown(detail.get("author"))
+    f.user = detail.get("author")
     f.uid = detail.get("uid")
-    f.content = escape_markdown(detail.get("intro"))
+    f.content = detail.get("intro")
     f.mediathumb = detail.get("cover_url")
     f.mediatitle = detail.get("title")
     f.mediaduration = detail.get("duration")
@@ -331,12 +342,10 @@ async def live_parser(s, url):
         logger.warning(f"直播解析错误: {url}")
         return
     logger.info(f"直播ID: {f.room_id}")
-    f.user = escape_markdown(detail.get("anchor_info").get("base_info").get("uname"))
+    f.user = detail.get("anchor_info").get("base_info").get("uname")
     roominfo = detail.get("room_info")
     f.uid = roominfo.get("uid")
-    f.content = escape_markdown(
-        f"{roominfo.get('title')} - {roominfo.get('area_name')} - {roominfo.get('parent_area_name')}"
-    )
+    f.content = f"{roominfo.get('title')} - {roominfo.get('area_name')} - {roominfo.get('parent_area_name')}"
     f.mediaurls = [roominfo.get("keyframe")]
     f.mediatype = "image"
     return f
@@ -362,9 +371,9 @@ async def video_parser(s, url):
     f.aid = detail.get("aid")
     logger.info(f"视频ID: {f.aid}")
     f.cid = detail.get("cid")
-    f.user = escape_markdown(detail.get("owner").get("name"))
+    f.user = detail.get("owner").get("name")
     f.uid = detail.get("owner").get("mid")
-    f.content = escape_markdown(f"{detail.get('dynamic')}\n{detail.get('title')}")
+    f.content = f"{detail.get('dynamic')}\n{detail.get('title')}"
     async with s.get(
         "https://api.bilibili.com/x/player/playurl",
         params={"avid": f.aid, "cid": f.cid, "fnval": 16},
