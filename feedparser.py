@@ -67,7 +67,7 @@ class dynamic(feed):
         self.forward_user = None
         self.forward_uid = None
         self.forward_content = None
-        self.extra_markdown = None
+        self.extra_markdown = str()
 
     @cached_property
     def forward_card(self):
