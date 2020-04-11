@@ -97,7 +97,10 @@ def parse(update, context):
             media = await asyncio.gather(*tasks)
             logger.info(f"上传中: {f.url}")
         else:
-            media = f.mediaurls
+            if f.mediatype == "image":
+                media = [i if ".gif" in i else i + "@1280w.jpg" for i in f.mediaurls]
+            else:
+                media = f.mediaurls
         if f.mediatype == "video":
             message.reply_video(
                 media[0],
@@ -162,12 +165,6 @@ def parse(update, context):
         )
         if f.mediaurls:
             try:
-                if not f.mediaraws:
-                    if f.mediatype == "image":
-                        f.mediaurls = [
-                            i if ".gif" in i else i + "@1280w_1e_1c.jpg"
-                            for i in f.mediaurls
-                        ]
                 await callback(f, caption)
             except (TimedOut, BadRequest) as err:
                 logger.exception(err)
@@ -307,7 +304,7 @@ def inlineparse(update, context):
                     title=f.user,
                     description=f.content,
                     parse_mode=ParseMode.MARKDOWN_V2,
-                    photo_url=img + "@1280w_1e_1c.jpg",
+                    photo_url=img + "@1280w.jpg",
                     reply_markup=origin_link(f.url),
                     thumb_url=img + "@512w_512h_1e_1c.jpg",
                 )
