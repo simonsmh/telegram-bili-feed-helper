@@ -336,7 +336,6 @@ if __name__ == "__main__":
     else:
         logger.exception(f"Need TOKEN.")
         sys.exit(1)
-    logger.info("Starting...")
     updater = Updater(TOKEN, use_context=True)
     updater.dispatcher.add_handler(
         CommandHandler("start", start, filters=Filters.private)
@@ -347,4 +346,6 @@ if __name__ == "__main__":
     updater.dispatcher.add_handler(InlineQueryHandler(inlineparse))
     updater.dispatcher.add_error_handler(error)
     updater.start_polling()
+    logger.info(f"Bot @{updater.bot.get_me().username} started.")
+    updater.bot.set_my_commands([["file", "获取匹配内容原始文件"], ["parse", "获取匹配内容"]])
     updater.idle()
