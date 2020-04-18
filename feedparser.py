@@ -153,9 +153,9 @@ class dynamic(feed):
     def comment_markdown(self):
         comment_markdown = str()
         if top := self.replycontent.get("data").get("upper").get("top"):
-            comment_markdown += f'置顶>{self.make_user_markdown(top.get("member").get("uname"), top.get("member").get("mid"))}:{escape_markdown(top.get("content").get("message"))}\n'
+            comment_markdown += f'置顶\>{self.make_user_markdown(top.get("member").get("uname"), top.get("member").get("mid"))}:{escape_markdown(top.get("content").get("message"))}\n'
         if hots := self.replycontent.get("data").get("hots"):
-            comment_markdown += f'热评>{self.make_user_markdown(hots[0].get("member").get("uname"), hots[0].get("member").get("mid"))}:{escape_markdown(hots[0].get("content").get("message"))}\n'
+            comment_markdown += f'热评\>{self.make_user_markdown(hots[0].get("member").get("uname"), hots[0].get("member").get("mid"))}:{escape_markdown(hots[0].get("content").get("message"))}\n'
         return comment_markdown
 
     @property
