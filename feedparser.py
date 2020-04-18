@@ -60,8 +60,10 @@ class feed:
 class dynamic(feed):
     def __init__(self, rawurl):
         super(dynamic, self).__init__(rawurl)
-        self.rawcontent = None
+        self.detailcontent = None
+        self.replycontent = None
         self.dynamic_id = None
+        self.rid = None
         self.__user = None
         self.__content = None
         self.forward_user = None
@@ -71,11 +73,47 @@ class dynamic(feed):
 
     @cached_property
     def forward_card(self):
-        return json.loads(self.rawcontent.get("data").get("card").get("card"))
+        return json.loads(self.detailcontent.get("data").get("card").get("card"))
 
     @cached_property
     def has_forward(self):
-        return bool(self.forward_card.get("origin"))
+        return bool(
+            self.detailcontent.get("data").get("card").get("desc").get("orig_type")
+        )
+
+    @cached_property
+    def forward_type(self):
+        return self.detailcontent.get("data").get("card").get("desc").get("type")
+
+    @cached_property
+    def origin_type(self):
+        return (
+            self.detailcontent.get("data").get("card").get("desc").get("orig_type")
+            if self.has_forward
+            else self.forward_type
+        )
+
+    @cached_property
+    def reply_type(self):
+        if self.forward_type == 2:
+            return 11
+        elif self.forward_type == 16:
+            return 5
+        elif self.forward_type == 64:
+            return 12
+        elif self.forward_type == 256:
+            return 14
+        elif self.forward_type in [8, 512, *range(4000, 4200)]:
+            return 1
+        elif self.forward_type in [1, 4, *range(4200, 4300), *range(2048, 2100)]:
+            return 17
+
+    @cached_property
+    def oid(self):
+        if self.forward_type in [1, 4, *range(4200, 4300), *range(2048, 2100)]:
+            return self.dynamic_id
+        else:
+            return self.rid
 
     @cached_property
     def card(self):
@@ -102,14 +140,30 @@ class dynamic(feed):
             else self.make_user_markdown(self.__user, self.uid)
         )
 
+    @cached_property
+    def comment(self):
+        comment = str()
+        if top := self.replycontent.get("data").get("upper").get("top"):
+            comment += f'置顶>@{top.get("member").get("uname")}:{top.get("content").get("message")}\n'
+        if hots := self.replycontent.get("data").get("hots"):
+            comment += f'热评>@{hots[0].get("member").get("uname")}:{hots[0].get("content").get("message")}\n'
+        return comment
+
+    @cached_property
+    def comment_markdown(self):
+        comment_markdown = str()
+        if top := self.replycontent.get("data").get("upper").get("top"):
+            comment_markdown += f'置顶>{self.make_user_markdown(top.get("member").get("uname"), top.get("member").get("mid"))}:{escape_markdown(top.get("content").get("message"))}\n'
+        if hots := self.replycontent.get("data").get("hots"):
+            comment_markdown += f'热评>{self.make_user_markdown(hots[0].get("member").get("uname"), hots[0].get("member").get("mid"))}:{escape_markdown(hots[0].get("content").get("message"))}\n'
+        return comment_markdown
+
     @property
     @lru_cache(maxsize=None)
     def content(self):
         return (
-            f"{self.forward_content}//{self.__user}:\n{self.__content}"
-            if self.has_forward
-            else self.__content
-        )
+            f"{self.forward_content}//{self.__user}:\n" if self.has_forward else str()
+        ) + f"{self.__content}\n\n{self.comment}"
 
     @content.setter
     def content(self, content):
@@ -118,9 +172,12 @@ class dynamic(feed):
     @cached_property
     def content_markdown(self):
         return (
-            f"{escape_markdown(self.forward_content)}//{self.make_user_markdown(self.__user, self.uid)}:\n{escape_markdown(self.__content)}\n{self.extra_markdown}"
-            if self.has_forward
-            else escape_markdown(self.__content)
+            (
+                f"{escape_markdown(self.forward_content)}//{self.make_user_markdown(self.__user, self.uid)}:\n"
+                if self.has_forward
+                else str()
+            )
+            + f"{escape_markdown(self.__content)}\n{self.extra_markdown}\n\n{self.comment_markdown}"
         )
 
     @cached_property
@@ -185,46 +242,65 @@ async def dynamic_parser(s, url):
         if "type=2" in match.group(0) or "h.bilibili.com" in match.group(0)
         else {"dynamic_id": match.group(1)},
     ) as resp:
-        f.rawcontent = await resp.json(content_type="application/json")
+        f.detailcontent = await resp.json(content_type="application/json")
     try:
-        f.dynamic_id = (
-            f.rawcontent.get("data").get("card").get("desc").get("dynamic_id_str")
-        )
+        f.type = f.detailcontent.get("data").get("card").get("desc").get("type")
     except AttributeError:
         logger.warning(f"动态解析错误: {url}")
         return
+    f.dynamic_id = (
+        f.detailcontent.get("data").get("card").get("desc").get("dynamic_id_str")
+    )
+    f.rid = f.detailcontent.get("data").get("card").get("desc").get("rid_str")
     logger.info(f"动态ID: {f.dynamic_id}")
+    # extract from detail.js
+    detail_types_list = {
+        # REPOST WORD
+        "WORD": [1, 4],
+        "PIC": [2],
+        "VIDEO": [8],
+        "CLIP": [16],
+        "ARTICLE": [64],
+        "MUSIC": [256],
+        # LIVE LIVE_ROOM
+        "LIVE": range(4200, 4300),
+        # H5_SHARE COMIC_SHARE
+        "SHARE": range(2048, 2100),
+        # BANGUMI PGC_BANGUMI FILM TV GUOCHUANG DOCUMENTARY
+        "EPS": [512, *range(4000, 4200)],
+        # NONE MEDIA_LIST CHEESE_SERIES CHEESE_UPDATE
+        "NONE": [2024, *range(4300, 4400)],
+    }
     # bv video
-    if av_id := f.card.get("aid"):
+    if f.origin_type in detail_types_list.get("VIDEO"):
+        av_id = f.card.get("aid")
         f.user = f.card.get("owner").get("name")
         f.uid = f.card.get("owner").get("mid")
         f.content = f.card.get("dynamic") if f.card.get("dynamic") else str()
-        f.extra_markdown = f"[{escape_markdown(f.card.get('title'))}](https://b23.tv/av{av_id})"
+        f.extra_markdown = (
+            f"[{escape_markdown(f.card.get('title'))}](https://b23.tv/av{av_id})"
+        )
         f.mediaurls = [f.card.get("pic")]
         f.mediatype = "image"
     # cv article
-    elif f.card.get("words"):
+    elif f.origin_type in detail_types_list.get("ARTICLE"):
         cv_id = f.card.get("id")
         f.user = f.card.get("author").get("name")
         f.uid = f.card.get("author").get("mid")
         f.content = f.card.get("dynamic") if f.card.get("dynamic") else str()
-        f.extra_markdown = (
-            f"[{escape_markdown(f.card.get('title'))}](https://www.bilibili.com/read/cv{cv_id})"
-        )
+        f.extra_markdown = f"[{escape_markdown(f.card.get('title'))}](https://www.bilibili.com/read/cv{cv_id})"
         if f.card.get("banner_url"):
             f.mediaurls = f.card.get("banner_url")
         else:
             f.mediaurls.extend(f.card.get("image_urls"))
         f.mediatype = "image"
     # au audio
-    elif f.card.get("typeInfo"):
+    elif f.origin_type in detail_types_list.get("MUSIC"):
         au_id = f.card.get("id")
         f.user = f.card.get("upper")
         f.uid = f.card.get("upId")
         f.content = f.card.get("intro")
-        f.extra_markdown = (
-            f"[{escape_markdown(f.card.get('title'))}](https://www.bilibili.com/audio/au{au_id})"
-        )
+        f.extra_markdown = f"[{escape_markdown(f.card.get('title'))}](https://www.bilibili.com/audio/au{au_id})"
         # Getting audio link from audio parser
         fu = await audio_parser(s, f"https://www.bilibili.com/audio/au{au_id}")
         f.mediaurls = fu.mediaurls
@@ -233,7 +309,7 @@ async def dynamic_parser(s, url):
         f.mediatitle = fu.mediatitle
         f.mediaduration = fu.mediaduration
     # live
-    elif f.card.get("roomid"):
+    elif f.origin_type in detail_types_list.get("LIVE"):
         room_id = f.card.get("roomid")
         f.user = f.card.get("uname")
         f.uid = f.card.get("uid")
@@ -244,19 +320,22 @@ async def dynamic_parser(s, url):
         f.mediaurls = fu.mediaurls
         f.mediatype = fu.mediatype
     # dynamic images/videos
-    elif f.card.get("user").get("name"):
+    elif f.origin_type in [
+        *detail_types_list.get("PIC"),
+        *detail_types_list.get("CLIP"),
+    ]:
         f.user = f.card.get("user").get("name")
         f.uid = f.card.get("user").get("uid")
         f.content = f.card.get("item").get("description")
-        if f.card.get("item").get("pictures"):
+        if f.origin_type in detail_types_list.get("PIC"):
             f.mediaurls = [t.get("img_src") for t in f.card.get("item").get("pictures")]
             f.mediatype = "image"
-        elif f.card.get("item").get("video_playurl"):
+        elif f.origin_type in detail_types_list.get("CLIP"):
             f.mediaurls = [f.card.get("item").get("video_playurl")]
             f.mediathumb = f.card.get("item").get("cover").get("unclipped")
             f.mediatype = "video"
     # dynamic text
-    elif f.card.get("user").get("uname"):
+    elif f.origin_type in detail_types_list.get("WORD"):
         f.user = f.card.get("user").get("uname")
         f.uid = f.card.get("user").get("uid")
         f.content = f.card.get("item").get("content")
@@ -265,6 +344,11 @@ async def dynamic_parser(s, url):
         f.forward_user = f.forward_card.get("user").get("uname")
         f.forward_uid = f.forward_card.get("user").get("uid")
         f.forward_content = f.forward_card.get("item").get("content")
+    async with s.get(
+        "https://api.bilibili.com/x/v2/reply",
+        params={"oid": f.oid, "type": f.reply_type},
+    ) as resp:
+        f.replycontent = await resp.json(content_type="application/json")
     return f
 
 
