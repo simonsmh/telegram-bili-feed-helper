@@ -17,7 +17,7 @@ headers = {
 
 
 def escape_markdown(text):
-    return re.sub(r"([_*\[\]()~`>\#\+\-=|{}\.!])", r"\\\1", text)
+    return re.sub(r"([_*\[\]()~`>\#\+\-=|{}\.!])", r"\\\1", text) if text else str()
 
 
 class feed:
@@ -35,7 +35,11 @@ class feed:
 
     @staticmethod
     def make_user_markdown(user, uid):
-        return f"[@{escape_markdown(user)}](https://space.bilibili.com/{uid})"
+        return (
+            f"[@{escape_markdown(user)}](https://space.bilibili.com/{uid})"
+            if user and uid
+            else str()
+        )
 
     @cached_property
     def user_markdown(self):
