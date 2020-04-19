@@ -20,12 +20,16 @@ def escape_markdown(text):
     return re.sub(r"([_*\[\]()~`>\#\+\-=|{}\.!])", r"\\\1", text) if text else str()
 
 
+def shrink_line(text):
+    return re.sub(r"\n*\n", r"\n", re.sub(r"\r\n", r"\n", text)) if text else str()
+
+
 class feed:
     def __init__(self, rawurl):
         self.rawurl = rawurl
         self.user = None
         self.uid = None
-        self.content = None
+        self.__content = None
         self.mediaurls = list()
         self.mediaraws = False
         self.mediatype = None
@@ -45,9 +49,18 @@ class feed:
     def user_markdown(self):
         return self.make_user_markdown(self.user, self.uid)
 
+    @property
+    @lru_cache(maxsize=None)
+    def content(self):
+        return shrink_line(self.__content)
+
+    @content.setter
+    def content(self, content):
+        self.__content = content
+
     @cached_property
     def content_markdown(self):
-        return escape_markdown(self.content)
+        return shrink_line(escape_markdown(self.content))
 
     @cached_property
     def url(self):
@@ -69,10 +82,10 @@ class dynamic(feed):
         self.dynamic_id = None
         self.rid = None
         self.__user = None
-        self.__content = None
+        self.__content = str()
         self.forward_user = None
         self.forward_uid = None
-        self.forward_content = None
+        self.forward_content = str()
         self.extra_markdown = str()
 
     @cached_property
@@ -165,9 +178,18 @@ class dynamic(feed):
     @property
     @lru_cache(maxsize=None)
     def content(self):
-        return (
-            f"{self.forward_content}//{self.__user}:\n" if self.has_forward else str()
-        ) + f"{self.__content}\n\n{self.comment}"
+        content = str()
+        if self.has_forward:
+            content = self.forward_content
+            if self.__user:
+                content += f"//@{self.__user}:\n"
+        content += shrink_line(self.__content)
+        if not content.endswith("\n"):
+            content += "\n\n"
+        elif not content.endswith("\n\n"):
+            content += "\n"
+        content += shrink_line(self.comment)
+        return content
 
     @content.setter
     def content(self, content):
@@ -175,14 +197,24 @@ class dynamic(feed):
 
     @cached_property
     def content_markdown(self):
-        return (
-            (
-                f"{escape_markdown(self.forward_content)}//{self.make_user_markdown(self.__user, self.uid)}:\n"
-                if self.has_forward
-                else str()
-            )
-            + f"{escape_markdown(self.__content)}\n{self.extra_markdown}\n\n{self.comment_markdown}"
-        )
+        content_markdown = str()
+        if self.has_forward:
+            content_markdown += escape_markdown(self.forward_content)
+            if self.__user:
+                content_markdown += (
+                    f"//{self.make_user_markdown(self.__user, self.uid)}:\n"
+                )
+        content_markdown += shrink_line(escape_markdown(self.__content))
+        if not content_markdown.endswith("\n"):
+            content_markdown += "\n"
+        if self.extra_markdown:
+            content_markdown += self.extra_markdown
+        if not content_markdown.endswith("\n"):
+            content_markdown += "\n\n"
+        elif not content_markdown.endswith("\n\n"):
+            content_markdown += "\n"
+        content_markdown += shrink_line(self.comment_markdown)
+        return content_markdown
 
     @cached_property
     def url(self):
@@ -499,7 +531,7 @@ async def feedparser(url):
                 return
     logger.info(
         f"用户: {f.user}\n"
-        f"内容: {f.content}\n"
+        f"内容: {f.content_markdown}\n"
         f"链接: {f.url}\n"
         f"媒体: {f.mediaurls}\n"
         f"媒体种类: {f.mediatype}\n"

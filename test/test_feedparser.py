@@ -4,6 +4,8 @@ import pytest
 @pytest.mark.asyncio
 async def test_dynamic_parser():
     urls = [
+        "https://t.bilibili.com/379910288494279916",
+        "https://t.bilibili.com/379593676394065939?tab=2",
         "https://t.bilibili.com/371426091702577219?tab=2",
         "https://t.bilibili.com/371425855481471758?tab=2",
         "https://t.bilibili.com/371425692269567902?tab=2",
