@@ -21,5 +21,6 @@ Bilibili API:
 - https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom
 - https://api.bilibili.com/x/web-interface/view
 - https://api.bilibili.com/x/player/playurl
+- https://api.bilibili.com/pgc/view/web/season
 
 Copyright © 2020 Simon Shi <simonsmh@gmail.com>

@@ -26,6 +26,9 @@ async def test_dynamic_parser():
         "https://www.bilibili.com/audio/au1360511", #音频
         "https://live.bilibili.com/115?visit_id=7zr5hnihuiw0", #直播
         "https://www.bilibili.com/video/BV1g64y1u7RT", #视频
+        "https://www.bilibili.com/bangumi/play/ep317535", #番剧集
+        "https://www.bilibili.com/bangumi/play/ss33055", #番剧季
+        
     ]
     for i in urls:
-        await feedparser(i)
+        await feedparser(i, video=False)

@@ -41,7 +41,7 @@ logging.basicConfig(
 
 logger = logging.getLogger("Telegram_Bili_Feed_Helper")
 
-regex = r"(?i)https?:\/\/(?:vc\.bilibili\.com[\D]*\d+|[th]\.bilibili\.com[\/\w]*\/\d+|b23\.tv\/(?!ep)\w+|(?:www\.|m\.)?(?:bilibili\.com/audio/au\d+|(?:bilibili\.com/video|acg\.tv)/(?:av\d+|bv\w+))|live\.bilibili\.com/\d+)"
+regex = r"(?i)https?:\/\/(?:vc\.bilibili\.com[\D]*\d+|[th]\.bilibili\.com[\/\w]*\/\d+|b23\.tv\/\w+|(?:www\.|m\.)?(?:bilibili\.com/audio/au\d+|(?:bilibili\.com/video|acg\.tv)/(?:av\d+|bv\w+))|live\.bilibili\.com/\d+)"
 
 sourcecodemarkup = InlineKeyboardMarkup(
     [
@@ -155,7 +155,7 @@ def parse(update, context):
             )
 
     async def parse_queue(url):
-        f = await feedparser(url)
+        f = await feedparser(url, video=False)
         if not f:
             logger.warning("解析错误！")
             return
