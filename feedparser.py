@@ -30,7 +30,7 @@ class feed:
         self.user = None
         self.uid = None
         self.__content = None
-        self.mediaurls = list()
+        self.__mediaurls = None
         self.mediaraws = False
         self.mediatype = None
         self.mediathumb = None
@@ -59,6 +59,18 @@ class feed:
     def content(self, content):
         self.__content = content
 
+    @property
+    @lru_cache(maxsize=None)
+    def mediaurls(self):
+        return self.__mediaurls
+
+    @mediaurls.setter
+    def mediaurls(self, content):
+        if isinstance(content, list):
+            self.__mediaurls = content
+        else:
+            self.__mediaurls = [content]
+
     @cached_property
     def content_markdown(self):
         content_markdown = shrink_line(escape_markdown(self.content))
@@ -74,10 +86,14 @@ class feed:
 
     @cached_property
     def mediafilename(self):
-        return [
-            re.search(r"\/([^\/]*\.\w{3,4})(?:$|\?)", i).group(1)
-            for i in self.mediaurls
-        ]
+        return (
+            [
+                re.search(r"\/([^\/]*\.\w{3,4})(?:$|\?)", i).group(1)
+                for i in self.__mediaurls
+            ]
+            if self.__mediaurls
+            else list()
+        )
 
 
 class dynamic(feed):
@@ -326,7 +342,7 @@ async def dynamic_parser(s, url):
         if f.card.get("banner_url"):
             f.mediaurls = f.card.get("banner_url")
         else:
-            f.mediaurls.extend(f.card.get("image_urls"))
+            f.mediaurls = f.card.get("image_urls")
         f.mediatype = "image"
     # extra parsers
     elif f.origin_type in [
@@ -367,7 +383,7 @@ async def dynamic_parser(s, url):
             f.mediaurls = [t.get("img_src") for t in f.card.get("item").get("pictures")]
             f.mediatype = "image"
         elif f.origin_type in detail_types_list.get("CLIP"):
-            f.mediaurls = [f.card.get("item").get("video_playurl")]
+            f.mediaurls = f.card.get("item").get("video_playurl")
             f.mediathumb = f.card.get("item").get("cover").get("unclipped")
             f.mediatype = "video"
     # dynamic text
@@ -406,7 +422,7 @@ async def clip_parser(s, url):
     f.user = detail.get("user").get("name")
     f.uid = detail.get("user").get("uid")
     f.content = detail.get("item").get("description")
-    f.mediaurls = [detail.get("item").get("video_playurl")]
+    f.mediaurls = detail.get("item").get("video_playurl")
     f.mediathumb = detail.get("item").get("first_pic")
     f.mediatype = "video"
     return f
@@ -467,7 +483,7 @@ async def live_parser(s, url):
     f.uid = roominfo.get("uid")
     f.content = f"{roominfo.get('title')} - {roominfo.get('area_name')} - {roominfo.get('parent_area_name')}"
     f.extra_markdown = f"[{escape_markdown(roominfo.get('title'))}]({f.url})"
-    f.mediaurls = [roominfo.get("keyframe")]
+    f.mediaurls = roominfo.get("keyframe")
     f.mediatype = "image"
     return f
 
@@ -526,9 +542,7 @@ async def video_parser(s, url):
     #     params={"avid": f.aid, "cid": f.cid, "fnval": 16},
     # ) as resp:
     #     f.mediacontent = await resp.json(content_type="application/json")
-    # f.mediaurls = [
-    #     f.mediacontent.get("data").get("dash").get("video")[0].get("base_url")
-    # ]
+    # f.mediaurls = f.mediacontent.get("data").get("dash").get("video")[0].get("base_url")
     # f.mediathumb = detail.get("pic")
     # f.mediatype = "video"
     # f.mediaraws = True
@@ -568,5 +582,6 @@ async def feedparser(url, video=True):
         f"媒体种类: {f.mediatype}\n"
         f"媒体预览: {f.mediathumb}\n"
         f"媒体标题: {f.mediatitle}\n"
+        f"媒体文件名: {f.mediafilename}"
     )
     return f
