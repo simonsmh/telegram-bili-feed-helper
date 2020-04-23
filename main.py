@@ -127,6 +127,7 @@ def parse(update, context):
                 media[0],
                 caption=captions(f),
                 parse_mode=ParseMode.MARKDOWN_V2,
+                quote=False,
                 reply_markup=origin_link(f.url),
                 supports_streaming=True,
                 thumb=mediathumb,
@@ -139,6 +140,7 @@ def parse(update, context):
                 duration=f.mediaduration,
                 parse_mode=ParseMode.MARKDOWN_V2,
                 performer=f.user,
+                quote=False,
                 reply_markup=origin_link(f.url),
                 thumb=mediathumb,
                 timeout=120,
@@ -150,6 +152,7 @@ def parse(update, context):
                     media[0],
                     caption=captions(f),
                     parse_mode=ParseMode.MARKDOWN_V2,
+                    quote=False,
                     reply_markup=origin_link(f.url),
                     timeout=60,
                 )
@@ -158,6 +161,7 @@ def parse(update, context):
                     media[0],
                     caption=captions(f),
                     parse_mode=ParseMode.MARKDOWN_V2,
+                    quote=False,
                     reply_markup=origin_link(f.url),
                     timeout=60,
                 )
@@ -168,7 +172,7 @@ def parse(update, context):
                 )
                 for img in media
             ]
-            message.reply_media_group(media, timeout=120)
+            message.reply_media_group(media, quote=False, timeout=120)
             message.reply_text(
                 captions(f),
                 disable_web_page_preview=True,
@@ -198,6 +202,7 @@ def parse(update, context):
                 captions(f),
                 disable_web_page_preview=True,
                 parse_mode=ParseMode.MARKDOWN_V2,
+                quote=False,
                 reply_markup=reply_markup,
             )
 
@@ -228,6 +233,7 @@ def fetch(update, context):
                 message.reply_document(
                     media,
                     filename=mediafilename,
+                    quote=False,
                     reply_markup=origin_link(f.url),
                     timeout=120,
                 )
