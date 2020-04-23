@@ -20,9 +20,6 @@ def escape_markdown(text):
     return re.sub(r"([_*\[\]()~`>\#\+\-=|{}\.!])", r"\\\1", text) if text else str()
 
 
-def shrink_line(text):
-    return re.sub(r"\n*\n", r"\n", re.sub(r"\r\n", r"\n", text)) if text else str()
-
 
 class feed:
     def __init__(self, rawurl):
@@ -37,6 +34,7 @@ class feed:
         self.mediaduration = None
         self.mediatitle = None
         self.extra_markdown = str()
+        self.replycontent = None
 
     @staticmethod
     def make_user_markdown(user, uid):
@@ -46,21 +44,29 @@ class feed:
             else str()
         )
 
+    @staticmethod
+    def shrink_line(text):
+        return (
+            re.sub(r"\n*\n", r"\n", re.sub(r"\r\n", r"\n", text.strip()))
+            if text
+            else str()
+        )
+
     @cached_property
     def user_markdown(self):
         return self.make_user_markdown(self.user, self.uid)
 
     @property
-    @lru_cache(maxsize=None)
+    @lru_cache(maxsize=1)
     def content(self):
-        return shrink_line(self.__content)
+        return self.shrink_line(self.__content)
 
     @content.setter
     def content(self, content):
         self.__content = content
 
     @property
-    @lru_cache(maxsize=None)
+    @lru_cache(maxsize=1)
     def mediaurls(self):
         return self.__mediaurls
 
@@ -73,12 +79,12 @@ class feed:
 
     @cached_property
     def content_markdown(self):
-        content_markdown = shrink_line(escape_markdown(self.content))
+        content_markdown = escape_markdown(self.content)
         if not content_markdown.endswith("\n"):
             content_markdown += "\n"
         if self.extra_markdown:
             content_markdown += self.extra_markdown
-        return content_markdown
+        return self.shrink_line(content_markdown)
 
     @cached_property
     def url(self):
@@ -95,12 +101,35 @@ class feed:
             else list()
         )
 
+    @cached_property
+    def has_comment(self):
+        return bool(self.replycontent)
+
+    @cached_property
+    def comment(self):
+        comment = str()
+        if self.has_comment:
+            if top := self.replycontent.get("data").get("upper").get("top"):
+                comment += f'置顶> @{top.get("member").get("uname")}:\n{top.get("content").get("message")}\n'
+            if hots := self.replycontent.get("data").get("hots"):
+                comment += f'热评> @{hots[0].get("member").get("uname")}:\n{hots[0].get("content").get("message")}\n'
+        return self.shrink_line(comment)
+
+    @cached_property
+    def comment_markdown(self):
+        comment_markdown = str()
+        if self.has_comment:
+            if top := self.replycontent.get("data").get("upper").get("top"):
+                comment_markdown += f'置顶\\> {self.make_user_markdown(top.get("member").get("uname"), top.get("member").get("mid"))}:\n{escape_markdown(top.get("content").get("message"))}\n'
+            if hots := self.replycontent.get("data").get("hots"):
+                comment_markdown += f'热评\\> {self.make_user_markdown(hots[0].get("member").get("uname"), hots[0].get("member").get("mid"))}:\n{escape_markdown(hots[0].get("content").get("message"))}\n'
+        return self.shrink_line(comment_markdown)
+
 
 class dynamic(feed):
     def __init__(self, rawurl):
         super(dynamic, self).__init__(rawurl)
         self.detailcontent = None
-        self.replycontent = None
         self.dynamic_id = None
         self.rid = None
         self.__user = None
@@ -162,7 +191,7 @@ class dynamic(feed):
         )
 
     @property
-    @lru_cache(maxsize=None)
+    @lru_cache(maxsize=1)
     def user(self):
         return self.forward_user if self.has_forward else self.__user
 
@@ -178,39 +207,16 @@ class dynamic(feed):
             else self.make_user_markdown(self.__user, self.uid)
         )
 
-    @cached_property
-    def comment(self):
-        comment = str()
-        if top := self.replycontent.get("data").get("upper").get("top"):
-            comment += f'置顶> @{top.get("member").get("uname")}:\n{top.get("content").get("message")}\n'
-        if hots := self.replycontent.get("data").get("hots"):
-            comment += f'热评> @{hots[0].get("member").get("uname")}:\n{hots[0].get("content").get("message")}\n'
-        return comment
-
-    @cached_property
-    def comment_markdown(self):
-        comment_markdown = str()
-        if top := self.replycontent.get("data").get("upper").get("top"):
-            comment_markdown += f'置顶\\> {self.make_user_markdown(top.get("member").get("uname"), top.get("member").get("mid"))}:\n{escape_markdown(top.get("content").get("message"))}\n'
-        if hots := self.replycontent.get("data").get("hots"):
-            comment_markdown += f'热评\\> {self.make_user_markdown(hots[0].get("member").get("uname"), hots[0].get("member").get("mid"))}:\n{escape_markdown(hots[0].get("content").get("message"))}\n'
-        return comment_markdown
-
     @property
-    @lru_cache(maxsize=None)
+    @lru_cache(maxsize=1)
     def content(self):
         content = str()
         if self.has_forward:
             content = self.forward_content
             if self.__user:
                 content += f"//@{self.__user}:\n"
-        content += shrink_line(self.__content)
-        if not content.endswith("\n"):
-            content += "\n\n"
-        elif not content.endswith("\n\n"):
-            content += "\n"
-        content += shrink_line(self.comment)
-        return content
+        content += self.__content
+        return self.shrink_line(content)
 
     @content.setter
     def content(self, content):
@@ -220,24 +226,19 @@ class dynamic(feed):
     def content_markdown(self):
         content_markdown = str()
         if self.has_forward:
-            content_markdown += shrink_line(escape_markdown(self.forward_content))
+            content_markdown += escape_markdown(self.forward_content)
             if self.uid:
                 content_markdown += (
                     f"//{self.make_user_markdown(self.__user, self.uid)}:\n"
                 )
             elif self.__user:
                 content_markdown += f"//@{escape_markdown(self.__user)}:\n"
-        content_markdown += shrink_line(escape_markdown(self.__content))
+        content_markdown += escape_markdown(self.__content)
         if not content_markdown.endswith("\n"):
             content_markdown += "\n"
         if self.extra_markdown:
             content_markdown += self.extra_markdown
-        if not content_markdown.endswith("\n"):
-            content_markdown += "\n\n"
-        elif not content_markdown.endswith("\n\n"):
-            content_markdown += "\n"
-        content_markdown += shrink_line(self.comment_markdown)
-        return content_markdown
+        return self.shrink_line(content_markdown)
 
     @cached_property
     def url(self):
@@ -249,6 +250,7 @@ class clip(feed):
         super(clip, self).__init__(rawurl)
         self.rawcontent = None
         self.video_id = None
+        self.reply_type = 5
 
     @cached_property
     def url(self):
@@ -261,6 +263,7 @@ class audio(feed):
         self.infocontent = None
         self.mediacontent = None
         self.audio_id = None
+        self.reply_type = 14
 
     @cached_property
     def url(self):
@@ -287,10 +290,18 @@ class video(feed):
         self.cidcontent = None
         self.infocontent = None
         self.mediacontent = None
+        self.reply_type = 1
 
     @cached_property
     def url(self):
         return f"https://www.bilibili.com/video/av{self.aid}"
+
+
+async def reply_parser(s, oid, reply_type):
+    async with s.get(
+        "https://api.bilibili.com/x/v2/reply", params={"oid": oid, "type": reply_type},
+    ) as resp:
+        return await resp.json(content_type="application/json")
 
 
 async def dynamic_parser(s, url):
@@ -396,11 +407,7 @@ async def dynamic_parser(s, url):
         f.forward_user = f.forward_card.get("user").get("uname")
         f.forward_uid = f.forward_card.get("user").get("uid")
         f.forward_content = f.forward_card.get("item").get("content")
-    async with s.get(
-        "https://api.bilibili.com/x/v2/reply",
-        params={"oid": f.oid, "type": f.reply_type},
-    ) as resp:
-        f.replycontent = await resp.json(content_type="application/json")
+    f.replycontent = await reply_parser(s, f.oid, f.reply_type)
     return f
 
 
@@ -425,6 +432,7 @@ async def clip_parser(s, url):
     f.mediaurls = detail.get("item").get("video_playurl")
     f.mediathumb = detail.get("item").get("first_pic")
     f.mediatype = "video"
+    f.replycontent = await reply_parser(s, f.video_id, f.reply_type)
     return f
 
 
@@ -462,6 +470,7 @@ async def audio_parser(s, url):
     f.mediaurls = f.mediacontent.get("data").get("cdns")
     f.mediatype = "audio"
     f.mediaraws = True
+    f.replycontent = await reply_parser(s, f.audio_id, f.reply_type)
     return f
 
 
@@ -537,6 +546,7 @@ async def video_parser(s, url):
     detail.get("title")
     f.mediaurls = detail.get("pic")
     f.mediatype = "image"
+    f.replycontent = await reply_parser(s, f.aid, f.reply_type)
     # async with s.get(
     #     "https://api.bilibili.com/x/player/playurl",
     #     params={"avid": f.aid, "cid": f.cid, "fnval": 16},
@@ -577,6 +587,7 @@ async def feedparser(url, video=True):
     logger.info(
         f"用户: {f.user_markdown}\n"
         f"内容: {f.content_markdown}\n"
+        f"评论: {f.comment_markdown}\n"
         f"链接: {f.url}\n"
         f"媒体: {f.mediaurls}\n"
         f"媒体种类: {f.mediatype}\n"

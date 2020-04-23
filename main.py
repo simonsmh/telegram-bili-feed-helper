@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import sys
+from functools import lru_cache
 from io import BytesIO
 from uuid import uuid4
 
@@ -54,12 +55,32 @@ sourcecodemarkup = InlineKeyboardMarkup(
 )
 
 
-def tag_parser(content):
-    return re.sub(r"#([^#?=\s|$]+)#?", lambda x: f"#{x.group(1)} ", content)
-
-
 def origin_link(content):
     return InlineKeyboardMarkup([[InlineKeyboardButton(text="原链接", url=content)]])
+
+
+@lru_cache(maxsize=16)
+def captions(f):
+    def parser_helper(content):
+        content = re.sub(
+            r"av(\d+)",
+            lambda x: f"[av{x.group(1)}](https://b23.tv/av{x.group(1)})",
+            content,
+        )
+        content = re.sub(
+            r"(?i)BV(\w+)",
+            lambda y: f"[BV{y.group(1)}](https://b23.tv/BV{y.group(1)})",
+            content,
+        )
+        content = re.sub(r"#([^#?=\s|$]+)#?", lambda z: f"#{z.group(1)} ", content)
+        return content
+
+    captions = f"{f.user_markdown}:\n"
+    if f.content_markdown:
+        captions += f.content_markdown
+    if f.comment_markdown:
+        captions += f"\n\\-\\-\\-\\-\\-\\-\n{f.comment_markdown}"
+    return parser_helper(captions)
 
 
 async def get_media(f, url, size=1280, compression=True):
@@ -104,7 +125,7 @@ def parse(update, context):
         if f.mediatype == "video":
             message.reply_video(
                 media[0],
-                caption=caption,
+                caption=captions(f),
                 parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=origin_link(f.url),
                 supports_streaming=True,
@@ -114,7 +135,7 @@ def parse(update, context):
         elif f.mediatype == "audio":
             message.reply_audio(
                 media[0],
-                caption=caption,
+                caption=captions(f),
                 duration=f.mediaduration,
                 parse_mode=ParseMode.MARKDOWN_V2,
                 performer=f.user,
@@ -127,7 +148,7 @@ def parse(update, context):
             if ".gif" in f.mediaurls[0]:
                 message.reply_animation(
                     media[0],
-                    caption=caption,
+                    caption=captions(f),
                     parse_mode=ParseMode.MARKDOWN_V2,
                     reply_markup=origin_link(f.url),
                     timeout=60,
@@ -135,19 +156,21 @@ def parse(update, context):
             else:
                 message.reply_photo(
                     media[0],
-                    caption=caption,
+                    caption=captions(f),
                     parse_mode=ParseMode.MARKDOWN_V2,
                     reply_markup=origin_link(f.url),
                     timeout=60,
                 )
         else:
             media = [
-                InputMediaPhoto(img, caption=caption, parse_mode=ParseMode.MARKDOWN_V2)
+                InputMediaPhoto(
+                    img, caption=captions(f), parse_mode=ParseMode.MARKDOWN_V2
+                )
                 for img in media
             ]
             message.reply_media_group(media, timeout=120)
             message.reply_text(
-                caption,
+                captions(f),
                 disable_web_page_preview=True,
                 parse_mode=ParseMode.MARKDOWN_V2,
                 quote=False,
@@ -159,21 +182,20 @@ def parse(update, context):
         if not f:
             logger.warning("解析错误！")
             return
-        caption = f"{f.user_markdown}:\n{tag_parser(f.content_markdown)}"
         reply_markup = InlineKeyboardMarkup(
             [[InlineKeyboardButton(text="原链接", url=f.url)]]
         )
         if f.mediaurls:
             try:
-                await callback(f, caption)
+                await callback(f, captions(f))
             except (TimedOut, BadRequest) as err:
                 logger.exception(err)
                 logger.info(f"{err} -> 下载中: {f.url}")
                 f.mediaraws = True
-                await callback(f, caption)
+                await callback(f, captions(f))
         else:
             message.reply_text(
-                caption,
+                captions(f),
                 disable_web_page_preview=True,
                 parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=reply_markup,
@@ -244,7 +266,6 @@ def inlineparse(update, context):
     if not f:
         logger.warning("解析错误！")
         return
-    caption = f"{f.user_markdown}:\n{tag_parser(f.content_markdown)}"
     if not f.mediaurls:
         results = [
             InlineQueryResultArticle(
@@ -253,7 +274,7 @@ def inlineparse(update, context):
                 description=f.content,
                 reply_markup=origin_link(f.url),
                 input_message_content=InputTextMessageContent(
-                    caption,
+                    captions(f),
                     parse_mode=ParseMode.MARKDOWN_V2,
                     disable_web_page_preview=True,
                 ),
@@ -264,7 +285,7 @@ def inlineparse(update, context):
             results = [
                 InlineQueryResultVideo(
                     id=uuid4(),
-                    caption=caption,
+                    caption=captions(f),
                     title=f.user,
                     description=f.content,
                     mime_type="video/mp4",
@@ -278,7 +299,7 @@ def inlineparse(update, context):
             results = [
                 InlineQueryResultAudio(
                     id=uuid4(),
-                    caption=caption,
+                    caption=captions(f),
                     title=f.mediatitle,
                     description=f.content,
                     audio_duration=f.mediaduration,
@@ -293,7 +314,7 @@ def inlineparse(update, context):
             results = [
                 InlineQueryResultGif(
                     id=uuid4(),
-                    caption=caption,
+                    caption=captions(f),
                     title=f"{f.user}: {f.content}",
                     gif_url=img,
                     parse_mode=ParseMode.MARKDOWN_V2,
@@ -303,7 +324,7 @@ def inlineparse(update, context):
                 if ".gif" in img
                 else InlineQueryResultPhoto(
                     id=uuid4(),
-                    caption=caption,
+                    caption=captions(f),
                     title=f.user,
                     description=f.content,
                     parse_mode=ParseMode.MARKDOWN_V2,
