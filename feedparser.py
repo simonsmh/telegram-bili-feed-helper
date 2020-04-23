@@ -20,7 +20,6 @@ def escape_markdown(text):
     return re.sub(r"([_*\[\]()~`>\#\+\-=|{}\.!])", r"\\\1", text) if text else str()
 
 
-
 class feed:
     def __init__(self, rawurl):
         self.rawurl = rawurl
@@ -65,18 +64,6 @@ class feed:
     def content(self, content):
         self.__content = content
 
-    @property
-    @lru_cache(maxsize=1)
-    def mediaurls(self):
-        return self.__mediaurls
-
-    @mediaurls.setter
-    def mediaurls(self, content):
-        if isinstance(content, list):
-            self.__mediaurls = content
-        else:
-            self.__mediaurls = [content]
-
     @cached_property
     def content_markdown(self):
         content_markdown = escape_markdown(self.content)
@@ -85,21 +72,6 @@ class feed:
         if self.extra_markdown:
             content_markdown += self.extra_markdown
         return self.shrink_line(content_markdown)
-
-    @cached_property
-    def url(self):
-        return self.rawurl
-
-    @cached_property
-    def mediafilename(self):
-        return (
-            [
-                re.search(r"\/([^\/]*\.\w{3,4})(?:$|\?)", i).group(1)
-                for i in self.__mediaurls
-            ]
-            if self.__mediaurls
-            else list()
-        )
 
     @cached_property
     def has_comment(self):
@@ -124,6 +96,33 @@ class feed:
             if hots := self.replycontent.get("data").get("hots"):
                 comment_markdown += f'热评\\> {self.make_user_markdown(hots[0].get("member").get("uname"), hots[0].get("member").get("mid"))}:\n{escape_markdown(hots[0].get("content").get("message"))}\n'
         return self.shrink_line(comment_markdown)
+
+    @property
+    @lru_cache(maxsize=1)
+    def mediaurls(self):
+        return self.__mediaurls
+
+    @mediaurls.setter
+    def mediaurls(self, content):
+        if isinstance(content, list):
+            self.__mediaurls = content
+        else:
+            self.__mediaurls = [content]
+
+    @cached_property
+    def mediafilename(self):
+        return (
+            [
+                re.search(r"\/([^\/]*\.\w{3,4})(?:$|\?)", i).group(1)
+                for i in self.__mediaurls
+            ]
+            if self.__mediaurls
+            else list()
+        )
+
+    @cached_property
+    def url(self):
+        return self.rawurl
 
 
 class dynamic(feed):

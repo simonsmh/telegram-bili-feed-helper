@@ -1,3 +1,3 @@
-python-telegram-bot
 aiohttp[speedups]
 pillow
+python-telegram-bot
