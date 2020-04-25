@@ -388,7 +388,7 @@ async def dynamic_parser(s, url):
     ]:
         f.user = f.card.get("user").get("name")
         f.uid = f.card.get("user").get("uid")
-        f.content = f.card.get("item").get("description")
+        f.content = f.card.get("item").get("title") + "\n" + f.card.get("item").get("description")
         if f.origin_type in detail_types_list.get("PIC"):
             f.mediaurls = [t.get("img_src") for t in f.card.get("item").get("pictures")]
             f.mediatype = "image"
