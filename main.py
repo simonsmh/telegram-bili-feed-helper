@@ -42,7 +42,7 @@ logging.basicConfig(
 
 logger = logging.getLogger("Telegram_Bili_Feed_Helper")
 
-regex = r"(?i)https?:\/\/(?:vc\.bilibili\.com[\D]*\d+|[th]\.bilibili\.com[\/\w]*\/\d+|b23\.tv\/\w+|(?:www\.|m\.)?(?:bilibili\.com/audio/au\d+|(?:bilibili\.com/video|acg\.tv)/(?:av\d+|bv\w+))|live\.bilibili\.com/\d+)"
+regex = r"(?i)\w*\.?(?:bilibili\.com|(?:b23|acg)\.tv)\S+"
 
 sourcecodemarkup = InlineKeyboardMarkup(
     [

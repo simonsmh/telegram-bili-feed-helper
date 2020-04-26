@@ -304,7 +304,9 @@ async def reply_parser(s, oid, reply_type):
 
 
 async def dynamic_parser(s, url):
-    match = re.search(r"[th]\.bilibili\.com[\/\w]*\/(\d+)", url)
+    if not (match := re.search(r"[th]\.bilibili\.com[\/\w]*\/(\d+)", url)):
+        logger.warning(f"动态解析错误: {url}")
+        return
     f = dynamic(url)
     async with s.get(
         "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/get_dynamic_detail",
@@ -388,7 +390,7 @@ async def dynamic_parser(s, url):
     ]:
         f.user = f.card.get("user").get("name")
         f.uid = f.card.get("user").get("uid")
-        f.content = f.card.get("item").get("title") + "\n" + f.card.get("item").get("description")
+        f.content = f'{f.card.get("item").get("title", str())}\n{f.card.get("item").get("description", str())}'
         if f.origin_type in detail_types_list.get("PIC"):
             f.mediaurls = [t.get("img_src") for t in f.card.get("item").get("pictures")]
             f.mediatype = "image"
@@ -411,7 +413,9 @@ async def dynamic_parser(s, url):
 
 
 async def clip_parser(s, url):
-    match = re.search(r"vc\.bilibili\.com[\D]*(\d+)", url)
+    if not (match := re.search(r"vc\.bilibili\.com[\D]*(\d+)", url)):
+        logger.warning(f"短视频解析错误: {url}")
+        return
     f = clip(url)
     f.video_id = match.group(1)
     async with s.get(
@@ -436,7 +440,9 @@ async def clip_parser(s, url):
 
 
 async def audio_parser(s, url):
-    match = re.search(r"bilibili\.com\/audio\/au(\d+)", url)
+    if not (match := re.search(r"bilibili\.com\/audio\/au(\d+)", url)):
+        logger.warning(f"音频解析错误: {url}")
+        return
     f = audio(url)
     f.audio_id = match.group(1)
     async with s.get(
@@ -474,7 +480,9 @@ async def audio_parser(s, url):
 
 
 async def live_parser(s, url):
-    match = re.search(r"live.bilibili\.com\/(\d+)", url)
+    if not (match := re.search(r"live.bilibili\.com\/(\d+)", url)):
+        logger.warning(f"直播解析错误: {url}")
+        return
     f = live(url)
     f.room_id = match.group(1)
     async with s.get(
@@ -497,10 +505,14 @@ async def live_parser(s, url):
 
 
 async def video_parser(s, url):
-    match = re.search(
-        r"(?i)(?:www\.|m\.)?(?:bilibili\.com/(?:video|bangumi/play)|b23\.tv|acg\.tv)/(?:(?P<bvid>bv\w+)|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+))",
-        url,
-    )
+    if not (
+        match := re.search(
+            r"(?i)(?:bilibili\.com/(?:video|bangumi/play)|b23\.tv|acg\.tv)/(?:(?P<bvid>bv\w+)|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+))",
+            url,
+        )
+    ):
+        logger.warning(f"视频解析错误: {url}")
+        return
     f = video(url)
     if bvid := match.group("bvid"):
         params = {"bvid": bvid}
@@ -559,6 +571,8 @@ async def video_parser(s, url):
 
 
 async def feedparser(url, video=True):
+    if not url.startswith(("http:", "https:")):
+        url = f"https://{url}"
     async with aiohttp.ClientSession(headers=headers) as s:
         async with s.get(url) as resp:
             url = str(resp.url)
@@ -583,15 +597,18 @@ async def feedparser(url, video=True):
                     return
             else:
                 return
-    logger.info(
-        f"用户: {f.user_markdown}\n"
-        f"内容: {f.content_markdown}\n"
-        f"评论: {f.comment_markdown}\n"
-        f"链接: {f.url}\n"
-        f"媒体: {f.mediaurls}\n"
-        f"媒体种类: {f.mediatype}\n"
-        f"媒体预览: {f.mediathumb}\n"
-        f"媒体标题: {f.mediatitle}\n"
-        f"媒体文件名: {f.mediafilename}"
-    )
-    return f
+    if f:
+        logger.info(
+            f"用户: {f.user_markdown}\n"
+            f"内容: {f.content_markdown}\n"
+            f"评论: {f.comment_markdown}\n"
+            f"链接: {f.url}\n"
+            f"媒体: {f.mediaurls}\n"
+            f"媒体种类: {f.mediatype}\n"
+            f"媒体预览: {f.mediathumb}\n"
+            f"媒体标题: {f.mediatitle}\n"
+            f"媒体文件名: {f.mediafilename}"
+        )
+        return f
+    else:
+        return
