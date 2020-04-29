@@ -62,17 +62,12 @@ def origin_link(content):
 @lru_cache(maxsize=16)
 def captions(f):
     def parser_helper(content):
+        charegex = r"\W"
         content = re.sub(
-            r"av(\d+)",
-            lambda x: f"[av{x.group(1)}](https://b23.tv/av{x.group(1)})",
+            r"\\#([^#]+)\\#?",
+            lambda x: f"\\#{re.sub(charegex, '', x.group(1))} ",
             content,
         )
-        content = re.sub(
-            r"(?i)BV(\w+)",
-            lambda y: f"[BV{y.group(1)}](https://b23.tv/BV{y.group(1)})",
-            content,
-        )
-        content = re.sub(r"#([^#?=\s|$]+)#?", lambda z: f"#{z.group(1)} ", content)
         return content
 
     captions = f"{f.user_markdown}:\n"
@@ -336,7 +331,7 @@ def inlineparse(update, context):
                     parse_mode=ParseMode.MARKDOWN_V2,
                     photo_url=img + "@1280w.jpg",
                     reply_markup=origin_link(f.url),
-                    thumb_url=img + "@512w_512h_1e_1c.jpg",
+                    thumb_url=img + "@512w_512h.jpg",
                 )
                 for img in f.mediaurls
             ]
