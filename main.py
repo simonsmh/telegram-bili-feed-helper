@@ -99,8 +99,7 @@ async def get_media(f, url, size=1280, compression=True):
 
 @run_async
 def parse(update, context):
-    if not (message := update.channel_post):
-        message = update.message
+    message = update.effective_message
     data = message.text
     urls = re.findall(regex, data)
     logger.info(f"Parse: {urls}")
@@ -209,8 +208,7 @@ def parse(update, context):
 
 @run_async
 def fetch(update, context):
-    if not (message := update.channel_post):
-        message = update.message
+    message = update.effective_message
     data = message.text
     urls = re.findall(regex, data)
     logger.info(f"Fetch: {urls}")
@@ -347,7 +345,7 @@ def error(update, context):
 
 @run_async
 def start(update, context):
-    update.message.reply_text(
+    update.effective_message.reply_text(
         "欢迎使用 @bilifeedbot 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组自动匹配消息。",
         reply_markup=sourcecodemarkup,
     )
