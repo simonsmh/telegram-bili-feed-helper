@@ -480,7 +480,7 @@ async def audio_parser(s, url):
 
 
 async def live_parser(s, url):
-    if not (match := re.search(r"live.bilibili\.com\/(\d+)", url)):
+    if not (match := re.search(r"live\.bilibili\.com[\/\w]*\/(\d+)", url)):
         logger.warning(f"直播解析错误: {url}")
         return
     f = live(url)
