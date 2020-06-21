@@ -17,7 +17,7 @@ headers = {
 
 
 def escape_markdown(text):
-    return re.sub(r"([_*\[\]()~`>\#\+\-=|{}\.!])", r"\\\1", text) if text else str()
+    return re.sub(r"([_*\[\]()~`>\#\+\-=|{}\.!\\])", r"\\\1", text) if text else str()
 
 
 class feed:
