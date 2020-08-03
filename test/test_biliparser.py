@@ -1,4 +1,4 @@
-from feedparser import feedparser
+from biliparser import biliparser
 import pytest
 
 @pytest.mark.asyncio
@@ -31,4 +31,4 @@ async def test_dynamic_parser():
         "b.acg.tv/xZCcov",
     ]
     for i in urls:
-        await feedparser(i)
+        await biliparser(i)

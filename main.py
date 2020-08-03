@@ -34,7 +34,7 @@ from telegram.ext.dispatcher import run_async
 from telegram.ext.filters import Filters
 from telegram.utils.helpers import escape_markdown
 
-from feedparser import feedparser, headers
+from biliparser import biliparser, headers
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -176,7 +176,7 @@ def parse(update, context):
             )
 
     async def parse_queue(url):
-        f = await feedparser(url, video=False)
+        f = await biliparser(url, video=False)
         if not f:
             logger.warning("解析错误！")
             return
@@ -214,7 +214,7 @@ def fetch(update, context):
     logger.info(f"Fetch: {urls}")
 
     async def fetch_queue(url):
-        f = await feedparser(url)
+        f = await biliparser(url)
         if not f:
             logger.warning("解析错误！")
             return
@@ -261,7 +261,7 @@ def inlineparse(update, context):
         inline_query.answer(helpmsg)
         return
     logger.info(f"Inline: {url}")
-    f = asyncio.run(feedparser(url))
+    f = asyncio.run(biliparser(url))
     if not f:
         logger.warning("解析错误！")
         return
