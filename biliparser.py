@@ -1,6 +1,8 @@
+import asyncio
 import json
 import logging
 import re
+import traceback
 from functools import cached_property, lru_cache
 
 import httpx
@@ -309,9 +311,12 @@ def safe_parser(func):
     async def inner_function(*args, **kwargs):
         try:
             return await func(*args, **kwargs)
-        except ParserException as err:
-            logging.error(err)
-            return
+        except Exception as err:
+            if err.__class__ == ParserException:
+                logger.error(err)
+            else:
+                logger.exception(err)
+            return err
 
     return inner_function
 
@@ -321,7 +326,11 @@ async def reply_parser(client, oid, reply_type):
     r = await client.get(
         "https://api.bilibili.com/x/v2/reply", params={"oid": oid, "type": reply_type},
     )
-    return r.json()
+    if r.json().get("data"):
+        logger.info(f"评论ID: {oid}, 评论类型: {reply_type}")
+        return r.json()
+    else:
+        raise ParserException("评论解析错误", f"{r.url} ->\n{r.json()}")
 
 
 @safe_parser
@@ -339,7 +348,7 @@ async def dynamic_parser(client, url):
     if f.detailcontent.get("data").get("card"):
         f.type = f.detailcontent.get("data").get("card").get("desc").get("type")
     else:
-        raise ParserException("动态解析错误", f"{url} ->\n{f.detailcontent}")
+        raise ParserException("动态解析错误", f"{r.url} ->\n{f.detailcontent}")
     f.dynamic_id = (
         f.detailcontent.get("data").get("card").get("desc").get("dynamic_id_str")
     )
@@ -449,7 +458,7 @@ async def clip_parser(client, url):
     if f.rawcontent.get("data").get("user"):
         detail = f.rawcontent.get("data")
     else:
-        raise ParserException("短视频解析错误", f"{url} ->\n{f.rawcontent}")
+        raise ParserException("短视频解析错误", f"{r.url} ->\n{f.rawcontent}")
     logger.info(f"短视频ID: {f.video_id}")
     f.user = detail.get("user").get("name")
     f.uid = detail.get("user").get("uid")
@@ -473,7 +482,7 @@ async def audio_parser(client, url):
     )
     f.infocontent = r.json()
     if not (detail := f.infocontent.get("data")):
-        raise ParserException("音频解析错误", f"{url} ->\n{f.infocontent}")
+        raise ParserException("音频解析错误", f"{r.url} ->\n{f.infocontent}")
     f.uid = detail.get("mid")
     r = await client.get(
         "https://api.bilibili.com/audio/music-service-c/url",
@@ -512,7 +521,7 @@ async def live_parser(client, url):
     )
     f.rawcontent = r.json()
     if not (detail := f.rawcontent.get("data")):
-        raise ParserException("直播解析错误", f"{url} ->\n{f.rawcontent}")
+        raise ParserException("直播解析错误", f"{r.url} ->\n{f.rawcontent}")
     logger.info(f"直播ID: {f.room_id}")
     f.user = detail.get("anchor_info").get("base_info").get("uname")
     roominfo = detail.get("room_info")
@@ -549,7 +558,7 @@ async def video_parser(client, url):
         f.infocontent = r.json()
         if not (detail := f.infocontent.get("result")):
             # Anime detects non-China IP
-            raise ParserException("番剧解析错误", f"{url} ->\n{f.infocontent}")
+            raise ParserException("番剧解析错误", f"{r.url} ->\n{f.infocontent}")
         f.sid = detail.get("season_id")
         logger.info(f"番剧ID: {f.sid}")
         if epid:
@@ -566,7 +575,7 @@ async def video_parser(client, url):
     # Video detects non-China IP
     f.infocontent = r.json()
     if not (detail := f.infocontent.get("data")):
-        raise ParserException("视频解析错误", f"{url} ->\n{f.infocontent}")
+        raise ParserException("视频解析错误", f"{r.url} ->\n{f.infocontent}")
     f.aid = detail.get("aid")
     f.cid = detail.get("cid")
     logger.info(f"视频ID: {f.aid}")
@@ -590,33 +599,53 @@ async def video_parser(client, url):
     return f
 
 
-async def biliparser(url, video=True):
-    if not url.startswith(("http:", "https:")):
-        url = f"https://{url}"
-    async with httpx.AsyncClient(headers=headers, http2=True) as client:
-        r = await client.get(url)
-        url = str(r.url)
-        # dynamic
-        if re.search(r"[th]\.bilibili\.com", url):
-            f = await dynamic_parser(client, url)
-        # live image
-        elif re.search(r"live\.bilibili\.com", url):
-            f = await live_parser(client, url)
-        # vc video
-        elif re.search(r"vc\.bilibili\.com", url):
-            f = await clip_parser(client, url)
-        # au audio
-        elif re.search(r"bilibili\.com/audio", url):
-            f = await audio_parser(client, url)
-        # main video
-        elif re.search(r"bilibili\.com/(?:video|bangumi/play)", url):
-            if video:
-                f = await video_parser(client, url)
-            else:
-                logger.info(f"暂不匹配视频内容: {url}")
-                return
-        if f:
+async def feed_parser(client, url, video=True):
+    r = await client.get(url)
+    url = str(r.url)
+    # dynamic
+    if re.search(r"[th]\.bilibili\.com", url):
+        return await dynamic_parser(client, url)
+    # live image
+    elif re.search(r"live\.bilibili\.com", url):
+        return await live_parser(client, url)
+    # vc video
+    elif re.search(r"vc\.bilibili\.com", url):
+        return await clip_parser(client, url)
+    # au audio
+    elif re.search(r"bilibili\.com/audio", url):
+        return await audio_parser(client, url)
+    # main video
+    elif re.search(r"bilibili\.com/(?:video|bangumi/play)", url):
+        if video:
+            return await video_parser(client, url)
+        else:
+            logger.info(f"暂不匹配视频内容: {url}")
+
+
+async def biliparser(urls, video=True):
+    if isinstance(urls, str):
+        urls = [urls]
+    elif isinstance(urls, tuple):
+        urls = list(urls)
+    async with httpx.AsyncClient(
+        headers=headers, http2=True, timeout=None, verify=False
+    ) as client:
+        tasks = list(
+            feed_parser(
+                client,
+                f"http://{url}" if not url.startswith(("http:", "https:")) else url,
+                video,
+            )
+            for url in urls
+        )
+    callbacks = [i for i in await asyncio.gather(*tasks)]
+    for num, f in enumerate(callbacks):
+        if isinstance(f, Exception):
+            logger.warn(f"排序: {num}\n异常: {f.args}\n")
+        else:
             logger.info(
+                f"排序: {num}\n"
+                f"类型: {type(f)}\n"
                 f"链接: {f.url}\n"
                 f"用户: {f.user_markdown}\n"
                 f"内容: {f.content_markdown}\n"
@@ -627,5 +656,4 @@ async def biliparser(url, video=True):
                 f"媒体标题: {f.mediatitle}\n"
                 f"媒体文件名: {f.mediafilename}"
             )
-            return f
-    return
+    return callbacks
