@@ -23,12 +23,13 @@ def escape_markdown(text):
 
 
 class ParserException(Exception):
-    def __init__(self, msg, url):
+    def __init__(self, msg, url, res):
         self.msg = msg
         self.url = url
+        self.res = res
 
     def __str__(self):
-        return f"{self.msg}: {self.url}"
+        return f"{self.msg}: {self.url} ->\n{self.res}"
 
 
 class feed:
@@ -330,13 +331,13 @@ async def reply_parser(client, oid, reply_type):
         logger.info(f"评论ID: {oid}, 评论类型: {reply_type}")
         return r.json()
     else:
-        raise ParserException("评论解析错误", f"{r.url} ->\n{r.json()}")
+        raise ParserException("评论解析错误", r.url, r.json())
 
 
 @safe_parser
 async def dynamic_parser(client, url):
     if not (match := re.search(r"[th]\.bilibili\.com[\/\w]*\/(\d+)", url)):
-        raise ParserException("动态链接错误", f"{url} -> {match}")
+        raise ParserException("动态链接错误", url, match)
     f = dynamic(url)
     r = await client.get(
         "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/get_dynamic_detail",
@@ -348,7 +349,7 @@ async def dynamic_parser(client, url):
     if f.detailcontent.get("data").get("card"):
         f.type = f.detailcontent.get("data").get("card").get("desc").get("type")
     else:
-        raise ParserException("动态解析错误", f"{r.url} ->\n{f.detailcontent}")
+        raise ParserException("动态解析错误", r.url, f.detailcontent)
     f.dynamic_id = (
         f.detailcontent.get("data").get("card").get("desc").get("dynamic_id_str")
     )
@@ -447,7 +448,7 @@ async def dynamic_parser(client, url):
 @safe_parser
 async def clip_parser(client, url):
     if not (match := re.search(r"vc\.bilibili\.com[\D]*(\d+)", url)):
-        raise ParserException("短视频链接错误", f"{url} -> {match}")
+        raise ParserException("短视频链接错误", url, match)
     f = clip(url)
     f.video_id = match.group(1)
     r = await client.get(
@@ -458,7 +459,7 @@ async def clip_parser(client, url):
     if f.rawcontent.get("data").get("user"):
         detail = f.rawcontent.get("data")
     else:
-        raise ParserException("短视频解析错误", f"{r.url} ->\n{f.rawcontent}")
+        raise ParserException("短视频解析错误", r.url, f.rawcontent)
     logger.info(f"短视频ID: {f.video_id}")
     f.user = detail.get("user").get("name")
     f.uid = detail.get("user").get("uid")
@@ -473,7 +474,7 @@ async def clip_parser(client, url):
 @safe_parser
 async def audio_parser(client, url):
     if not (match := re.search(r"bilibili\.com\/audio\/au(\d+)", url)):
-        raise ParserException("音频链接错误", f"{url} -> {match}")
+        raise ParserException("音频链接错误", url, match)
     f = audio(url)
     f.audio_id = match.group(1)
     r = await client.get(
@@ -482,7 +483,7 @@ async def audio_parser(client, url):
     )
     f.infocontent = r.json()
     if not (detail := f.infocontent.get("data")):
-        raise ParserException("音频解析错误", f"{r.url} ->\n{f.infocontent}")
+        raise ParserException("音频解析错误", r.url, f.infocontent)
     f.uid = detail.get("mid")
     r = await client.get(
         "https://api.bilibili.com/audio/music-service-c/url",
@@ -512,7 +513,7 @@ async def audio_parser(client, url):
 @safe_parser
 async def live_parser(client, url):
     if not (match := re.search(r"live\.bilibili\.com[\/\w]*\/(\d+)", url)):
-        raise ParserException("直播链接错误", f"{url} -> {match}")
+        raise ParserException("直播链接错误", url, match)
     f = live(url)
     f.room_id = match.group(1)
     r = await client.get(
@@ -521,7 +522,7 @@ async def live_parser(client, url):
     )
     f.rawcontent = r.json()
     if not (detail := f.rawcontent.get("data")):
-        raise ParserException("直播解析错误", f"{r.url} ->\n{f.rawcontent}")
+        raise ParserException("直播解析错误", r.url, f.rawcontent)
     logger.info(f"直播ID: {f.room_id}")
     f.user = detail.get("anchor_info").get("base_info").get("uname")
     roominfo = detail.get("room_info")
@@ -541,7 +542,7 @@ async def video_parser(client, url):
             url,
         )
     ):
-        raise ParserException("视频链接错误", f"{url} -> {match}")
+        raise ParserException("视频链接错误", url, match)
     f = video(url)
     if bvid := match.group("bvid"):
         params = {"bvid": bvid}
@@ -558,7 +559,7 @@ async def video_parser(client, url):
         f.infocontent = r.json()
         if not (detail := f.infocontent.get("result")):
             # Anime detects non-China IP
-            raise ParserException("番剧解析错误", f"{r.url} ->\n{f.infocontent}")
+            raise ParserException("番剧解析错误", r.url, f.infocontent)
         f.sid = detail.get("season_id")
         logger.info(f"番剧ID: {f.sid}")
         if epid:
@@ -575,7 +576,7 @@ async def video_parser(client, url):
     # Video detects non-China IP
     f.infocontent = r.json()
     if not (detail := f.infocontent.get("data")):
-        raise ParserException("视频解析错误", f"{r.url} ->\n{f.infocontent}")
+        raise ParserException("视频解析错误", r.url, f.infocontent)
     f.aid = detail.get("aid")
     f.cid = detail.get("cid")
     logger.info(f"视频ID: {f.aid}")
@@ -599,6 +600,7 @@ async def video_parser(client, url):
     return f
 
 
+@safe_parser
 async def feed_parser(client, url, video=True):
     r = await client.get(url)
     url = str(r.url)
@@ -641,7 +643,7 @@ async def biliparser(urls, video=True):
     callbacks = [i for i in await asyncio.gather(*tasks)]
     for num, f in enumerate(callbacks):
         if isinstance(f, Exception):
-            logger.warn(f"排序: {num}\n异常: {f.args}\n")
+            logger.warn(f"排序: {num}\n异常: {f}\n")
         else:
             logger.info(
                 f"排序: {num}\n"
