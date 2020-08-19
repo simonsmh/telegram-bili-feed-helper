@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import traceback
+from datetime import datetime, timedelta
 from functools import cached_property, lru_cache
 
 import httpx
@@ -341,7 +342,10 @@ def safe_parser(func):
 
 @safe_parser
 async def reply_parser(client, oid, reply_type):
-    if cache := await reply_cache.get_or_none(oid=oid, reply_type=reply_type).first():
+    if cache := await reply_cache.get_or_none(
+        query := Q(Q(oid=oid), Q(reply_type=reply_type)),
+        Q(created__gte=datetime.utcnow() - reply_cache.timeout),
+    ).first():
         logger.info(f"拉取评论缓存: {cache.created}")
         r = cache.content
     else:
@@ -355,10 +359,12 @@ async def reply_parser(client, oid, reply_type):
         raise ParserException("评论解析错误", r.url, r)
     logger.info(f"评论ID: {oid}, 评论类型: {reply_type}")
     if not cache:
-        logger.info(f"评论缓存")
-        await reply_cache(oid=oid, reply_type=reply_type, content=r).save(
-            force_create=True, force_update=True
-        )
+        logger.info(f"评论缓存: {oid}")
+        if cache := await reply_cache.get_or_none(query).first():
+            cache.content = r
+            await cache.save(update_fields=["content", "created"])
+        else:
+            await reply_cache(oid=oid, reply_type=reply_type, content=r).save()
     return r
 
 
@@ -368,9 +374,10 @@ async def dynamic_parser(client, url):
         raise ParserException("动态链接错误", url, match)
     f = dynamic(url)
     if cache := await dynamic_cache.get_or_none(
-        Q(rid=match.group(1))
+        query := Q(rid=match.group(1))
         if "type=2" in match.group(0)
-        else Q(dynamic_id=match.group(1))
+        else Q(dynamic_id=match.group(1)),
+        Q(created__gte=datetime.utcnow() - dynamic_cache.timeout),
     ).first():
         logger.info(f"拉取动态缓存: {cache.created}")
         f.detailcontent = cache.content
@@ -390,10 +397,14 @@ async def dynamic_parser(client, url):
     f.rid = f.detailcontent.get("data").get("card").get("desc").get("rid")
     logger.info(f"动态ID: {f.dynamic_id}")
     if not cache:
-        logger.info(f"动态缓存")
-        await dynamic_cache(
-            dynamic_id=f.dynamic_id, rid=f.rid, content=f.detailcontent
-        ).save(force_create=True, force_update=True)
+        logger.info(f"动态缓存: {f.dynamic_id}")
+        if cache := await dynamic_cache.get_or_none(query).first():
+            cache.content = f.detailcontent
+            await cache.save(update_fields=["content", "created"])
+        else:
+            await dynamic_cache(
+                dynamic_id=f.dynamic_id, rid=f.rid, content=f.detailcontent
+            ).save()
     # extract from detail.js
     detail_types_list = {
         # REPOST WORD
@@ -490,7 +501,10 @@ async def clip_parser(client, url):
         raise ParserException("短视频链接错误", url, match)
     f = clip(url)
     f.video_id = match.group(1)
-    if cache := await clip_cache.get_or_none(video_id=f.video_id).first():
+    if cache := await clip_cache.get_or_none(
+        query := Q(video_id=f.video_id),
+        Q(created__gte=datetime.utcnow() - clip_cache.timeout),
+    ).first():
         logger.info(f"拉取短视频缓存: {cache.created}")
         f.rawcontent = cache.content
     else:
@@ -506,9 +520,11 @@ async def clip_parser(client, url):
     logger.info(f"短视频ID: {f.video_id}")
     if not cache:
         logger.info(f"短视频缓存")
-        await clip_cache(video_id=f.video_id, content=f.rawcontent).save(
-            force_create=True, force_update=True
-        )
+        if cache := await clip_cache.get_or_none(query).first():
+            cache.content = f.rawcontent
+            await cache.save(update_fields=["content", "created"])
+        else:
+            await clip_cache(video_id=f.video_id, content=f.rawcontent).save()
     f.user = detail.get("user").get("name")
     f.uid = detail.get("user").get("uid")
     f.content = detail.get("item").get("description")
@@ -525,7 +541,10 @@ async def audio_parser(client, url):
         raise ParserException("音频链接错误", url, match)
     f = audio(url)
     f.audio_id = match.group(1)
-    if cache := await audio_cache.get_or_none(audio_id=f.audio_id).first():
+    if cache := await audio_cache.get_or_none(
+        query := Q(audio_id=f.audio_id),
+        Q(created__gte=datetime.utcnow() - audio_cache.timeout),
+    ).first():
         logger.info(f"拉取音频缓存: {cache.created}")
         f.infocontent = cache.content
     else:
@@ -539,9 +558,11 @@ async def audio_parser(client, url):
     logger.info(f"音频ID: {f.audio_id}")
     if not cache:
         logger.info(f"音频缓存: {f.audio_id}")
-        await audio_cache(audio_id=f.audio_id, content=f.infocontent).save(
-            force_create=True, force_update=True
-        )
+        if cache := await audio_cache.get_or_none(query).first():
+            cache.content = f.infocontent
+            await cache.save(update_fields=["content", "created"])
+        else:
+            await audio_cache(audio_id=f.audio_id, content=f.infocontent).save()
     f.uid = detail.get("mid")
     r = await client.get(
         "https://api.bilibili.com/audio/music-service-c/url",
@@ -573,7 +594,10 @@ async def live_parser(client, url):
         raise ParserException("直播链接错误", url, match)
     f = live(url)
     f.room_id = match.group(1)
-    if cache := await live_cache.get_or_none(room_id=f.room_id).first():
+    if cache := await live_cache.get_or_none(
+        query := Q(room_id=f.room_id),
+        Q(created__gte=datetime.utcnow() - live_cache.timeout),
+    ).first():
         logger.info(f"拉取直播缓存: {cache.created}")
         f.rawcontent = cache.content
     else:
@@ -587,9 +611,11 @@ async def live_parser(client, url):
     logger.info(f"直播ID: {f.room_id}")
     if not cache:
         logger.info(f"直播缓存: {f.room_id}")
-        await live_cache(room_id=f.room_id, content=f.rawcontent).save(
-            force_create=True, force_update=True
-        )
+        if cache := await live_cache.get_or_none(query).first():
+            cache.content = f.rawcontent
+            await cache.save(update_fields=["content", "created"])
+        else:
+            await live_cache(room_id=f.room_id, content=f.rawcontent).save()
     f.user = detail.get("anchor_info").get("base_info").get("uname")
     roominfo = detail.get("room_info")
     f.uid = roominfo.get("uid")
@@ -620,11 +646,12 @@ async def video_parser(client, url):
         params = {"season_id": ssid}
     if "ep_id" in params or "season_id" in params:
         if cache := await bangumi_cache.get_or_none(
-            Q(
+            query := Q(
                 Q(epid=params.get("ep_id")),
                 Q(ssid=params.get("season_id")),
                 join_type="OR",
-            )
+            ),
+            Q(created__gte=datetime.utcnow() - video_cache.timeout),
         ).first():
             logger.info(f"拉取番剧缓存: {cache.created}")
             f.infocontent = cache.content
@@ -647,13 +674,18 @@ async def video_parser(client, url):
         logger.info(f"番剧ID: {epid}")
         if not cache:
             logger.info(f"番剧缓存: {epid}")
-            await bangumi_cache(epid=epid, ssid=f.sid, content=f.infocontent).save(
-                force_create=True, force_update=True
-            )
+            if cache := await bangumi_cache.get_or_none(query).first():
+                cache.content = f.infocontent
+                await cache.save(update_fields=["content", "created"])
+            else:
+                await bangumi_cache(epid=epid, ssid=f.sid, content=f.infocontent).save()
         params = {"aid": f.aid}
     # elif "aid" in params or "bvid" in params:
     if cache := await video_cache.get_or_none(
-        Q(Q(aid=params.get("aid")), Q(bvid=params.get("bvid")), join_type="OR",)
+        query := Q(
+            Q(aid=params.get("aid")), Q(bvid=params.get("bvid")), join_type="OR"
+        ),
+        Q(created__gte=datetime.utcnow() - video_cache.timeout),
     ).first():
         logger.info(f"拉取视频缓存: {cache.created}")
         f.infocontent = cache.content
@@ -671,9 +703,11 @@ async def video_parser(client, url):
     logger.info(f"视频ID: {f.aid}")
     if not cache:
         logger.info(f"视频缓存: {f.aid}")
-        await video_cache(aid=f.aid, bvid=bvid, content=f.infocontent).save(
-            force_create=True, force_update=True
-        )
+        if cache := await video_cache.get_or_none(query).first():
+            cache.content = f.infocontent
+            await cache.save(update_fields=["content", "created"])
+        else:
+            await video_cache(aid=f.aid, bvid=bvid, content=f.infocontent).save()
     f.user = detail.get("owner").get("name")
     f.uid = detail.get("owner").get("mid")
     f.content = detail.get("dynamic")

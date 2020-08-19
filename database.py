@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from tortoise import fields
 from tortoise.models import Model
 
@@ -7,9 +9,10 @@ class reply_cache(Model):
     reply_type = fields.IntField()
     content = fields.JSONField()
     created = fields.DatetimeField(auto_now=True)
+    timeout = timedelta(minutes=20)
 
     class Meta:
-        table = "reply_cache_db"
+        table = "reply"
 
 
 class dynamic_cache(Model):
@@ -17,36 +20,40 @@ class dynamic_cache(Model):
     rid = fields.IntField(unique=True)
     content = fields.JSONField()
     created = fields.DatetimeField(auto_now=True)
+    timeout = timedelta(days=10)
 
     class Meta:
-        table = "dynamic_cache_db"
+        table = "dynamic"
 
 
 class clip_cache(Model):
     video_id = fields.IntField(pk=True, unique=True)
     content = fields.JSONField()
     created = fields.DatetimeField(auto_now=True)
+    timeout = timedelta(days=10)
 
     class Meta:
-        table = "clip_cache_db"
+        table = "clip"
 
 
 class audio_cache(Model):
     audio_id = fields.IntField(pk=True, unique=True)
     content = fields.JSONField()
     created = fields.DatetimeField(auto_now=True)
+    timeout = timedelta(days=10)
 
     class Meta:
-        table = "audio_cache_db"
+        table = "audio"
 
 
 class live_cache(Model):
     room_id = fields.IntField(pk=True, unique=True)
     content = fields.JSONField()
     created = fields.DatetimeField(auto_now=True)
+    timeout = timedelta(minutes=5)
 
     class Meta:
-        table = "live_cache_db"
+        table = "live"
 
 
 class bangumi_cache(Model):
@@ -54,9 +61,10 @@ class bangumi_cache(Model):
     ssid = fields.IntField()
     content = fields.JSONField()
     created = fields.DatetimeField(auto_now=True)
+    timeout = timedelta(days=10)
 
     class Meta:
-        table = "bangumi_cache_db"
+        table = "bangumi"
 
 
 class video_cache(Model):
@@ -64,6 +72,7 @@ class video_cache(Model):
     bvid = fields.CharField(max_length=12, unique=True)
     content = fields.JSONField()
     created = fields.DatetimeField(auto_now=True)
+    timeout = timedelta(days=10)
 
     class Meta:
-        table = "video_cache_db"
+        table = "video"
