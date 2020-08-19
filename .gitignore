@@ -5,3 +5,7 @@ data
 *.json
 !sample.json
 Pipfile*
+.stignore
+*.js
+*.db
+*.yml

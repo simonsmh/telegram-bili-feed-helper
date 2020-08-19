@@ -1,3 +1,5 @@
+aiosqlite
 httpx[http2]
 pillow
 python-telegram-bot
+tortoise-orm[accel]
