@@ -45,7 +45,7 @@ logging.basicConfig(
 
 logger = logging.getLogger("Telegram_Bili_Feed_Helper")
 
-regex = r"(?i)\w*\.?(?:bilibili\.com|(?:b23|acg)\.tv)\S+"
+regex = r"(?i)[\w\.]*?(?:bilibili\.com|(?:b23|acg)\.tv)\S+"
 
 
 sourcecodemarkup = InlineKeyboardMarkup(
@@ -74,6 +74,8 @@ def captions(f):
         )
         return content
 
+    if isinstance(f, Exception):
+        return parser_helper(f.__str__())
     captions = f"{f.user_markdown}:\n"
     if f.content_markdown:
         captions += f.content_markdown
@@ -177,13 +179,17 @@ def parse(update, context):
 
     async def parse_queue(urls):
         fs = await biliparser(urls, video=False)
-        for f in fs:
-            if not f:
-                logger.warning(f"解析错误！{f}")
-                return
-            reply_markup = InlineKeyboardMarkup(
-                [[InlineKeyboardButton(text="原链接", url=f.url)]]
-            )
+        for num, f in enumerate(fs):
+            if isinstance(f, Exception):
+                logger.warning(f"解析错误! {f}")
+                if data.startswith("/parse"):
+                    message.reply_text(
+                        captions(f),
+                        disable_web_page_preview=True,
+                        quote=False,
+                        reply_markup=origin_link(urls[num]),
+                    )
+                continue
             if f.mediaurls:
                 try:
                     await callback(f, captions(f))
@@ -198,7 +204,7 @@ def parse(update, context):
                     disable_web_page_preview=True,
                     parse_mode=ParseMode.MARKDOWN_V2,
                     quote=False,
-                    reply_markup=reply_markup,
+                    reply_markup=origin_link(f.url),
                 )
 
     asyncio.run(parse_queue(urls))
@@ -213,10 +219,16 @@ def fetch(update, context):
 
     async def fetch_queue(url):
         fs = await biliparser(urls)
-        for f in fs:
-            if not f:
-                logger.warning(f"解析错误！{f}")
-                return
+        for num, f in enumerate(fs):
+            if isinstance(f, Exception):
+                logger.warning(f"解析错误! {f}")
+                message.reply_text(
+                    captions(f),
+                    disable_web_page_preview=True,
+                    quote=False,
+                    reply_markup=origin_link(urls[num]),
+                )
+                continue
             if f.mediaurls:
                 tasks = [get_media(f, img, compression=False) for img in f.mediaurls]
                 medias = await asyncio.gather(*tasks)
@@ -257,79 +269,88 @@ def inlineparse(update, context):
         return
     logger.info(f"Inline: {url}")
     [f] = asyncio.run(biliparser(url))
-    if not f:
-        logger.warning("解析错误！")
-        return
-    if not f.mediaurls:
+    if isinstance(f, Exception):
+        logger.warning(f"解析错误! {f}")
         results = [
             InlineQueryResultArticle(
                 id=uuid4(),
-                title=f.user,
-                description=f.content,
-                reply_markup=origin_link(f.url),
+                title="解析错误!",
+                description=f.__str__(),
+                reply_markup=origin_link(url),
                 input_message_content=InputTextMessageContent(
-                    captions(f),
-                    parse_mode=ParseMode.MARKDOWN_V2,
-                    disable_web_page_preview=True,
+                    captions(f), disable_web_page_preview=True,
                 ),
             )
         ]
     else:
-        if f.mediatype == "video":
+        if not f.mediaurls:
             results = [
-                InlineQueryResultVideo(
+                InlineQueryResultArticle(
                     id=uuid4(),
-                    caption=captions(f),
                     title=f.user,
                     description=f.content,
-                    mime_type="video/mp4",
-                    parse_mode=ParseMode.MARKDOWN_V2,
                     reply_markup=origin_link(f.url),
-                    thumb_url=f.mediathumb,
-                    video_url=f.mediaurls[0],
-                )
-            ]
-        if f.mediatype == "audio":
-            results = [
-                InlineQueryResultAudio(
-                    id=uuid4(),
-                    caption=captions(f),
-                    title=f.mediatitle,
-                    description=f.content,
-                    audio_duration=f.mediaduration,
-                    audio_url=f.mediaurls[0],
-                    parse_mode=ParseMode.MARKDOWN_V2,
-                    performer=f.user,
-                    reply_markup=origin_link(f.url),
-                    thumb_url=f.mediathumb,
+                    input_message_content=InputTextMessageContent(
+                        captions(f),
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                        disable_web_page_preview=True,
+                    ),
                 )
             ]
         else:
-            results = [
-                InlineQueryResultGif(
-                    id=uuid4(),
-                    caption=captions(f),
-                    title=f"{f.user}: {f.content}",
-                    gif_url=img,
-                    parse_mode=ParseMode.MARKDOWN_V2,
-                    reply_markup=origin_link(f.url),
-                    thumb_url=img,
-                )
-                if ".gif" in img
-                else InlineQueryResultPhoto(
-                    id=uuid4(),
-                    caption=captions(f),
-                    title=f.user,
-                    description=f.content,
-                    parse_mode=ParseMode.MARKDOWN_V2,
-                    photo_url=img + "@1280w.jpg",
-                    reply_markup=origin_link(f.url),
-                    thumb_url=img + "@512w_512h.jpg",
-                )
-                for img in f.mediaurls
-            ]
-        if len(results) == 1:
-            results.extend(helpmsg)
+            if f.mediatype == "video":
+                results = [
+                    InlineQueryResultVideo(
+                        id=uuid4(),
+                        caption=captions(f),
+                        title=f.user,
+                        description=f.content,
+                        mime_type="video/mp4",
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                        reply_markup=origin_link(f.url),
+                        thumb_url=f.mediathumb,
+                        video_url=f.mediaurls[0],
+                    )
+                ]
+            if f.mediatype == "audio":
+                results = [
+                    InlineQueryResultAudio(
+                        id=uuid4(),
+                        caption=captions(f),
+                        title=f.mediatitle,
+                        description=f.content,
+                        audio_duration=f.mediaduration,
+                        audio_url=f.mediaurls[0],
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                        performer=f.user,
+                        reply_markup=origin_link(f.url),
+                        thumb_url=f.mediathumb,
+                    )
+                ]
+            else:
+                results = [
+                    InlineQueryResultGif(
+                        id=uuid4(),
+                        caption=captions(f),
+                        title=f"{f.user}: {f.content}",
+                        gif_url=img,
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                        reply_markup=origin_link(f.url),
+                        thumb_url=img,
+                    )
+                    if ".gif" in img
+                    else InlineQueryResultPhoto(
+                        id=uuid4(),
+                        caption=captions(f),
+                        title=f.user,
+                        description=f.content,
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                        photo_url=img + "@1280w.jpg",
+                        reply_markup=origin_link(f.url),
+                        thumb_url=img + "@512w_512h.jpg",
+                    )
+                    for img in f.mediaurls
+                ]
     inline_query.answer(results)
 
 
@@ -365,5 +386,7 @@ if __name__ == "__main__":
     updater.dispatcher.add_error_handler(error)
     updater.start_polling()
     logger.info(f"Bot @{updater.bot.get_me().username} started.")
-    updater.bot.set_my_commands([["start", "关于本 Bot"], ["file", "获取匹配内容原始文件"], ["parse", "获取匹配内容"]])
+    updater.bot.set_my_commands(
+        [["start", "关于本 Bot"], ["file", "获取匹配内容原始文件"], ["parse", "获取匹配内容"]]
+    )
     updater.idle()
