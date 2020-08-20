@@ -341,7 +341,7 @@ def error(update, context):
 @run_async
 def start(update, context):
     update.effective_message.reply_text(
-        "欢迎使用 @bilifeedbot 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组自动匹配消息。",
+        f"欢迎使用 @{context.bot.get_me().username} 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组自动匹配消息。",
         reply_markup=sourcecodemarkup,
     )
 
@@ -365,5 +365,5 @@ if __name__ == "__main__":
     updater.dispatcher.add_error_handler(error)
     updater.start_polling()
     logger.info(f"Bot @{updater.bot.get_me().username} started.")
-    updater.bot.set_my_commands([["file", "获取匹配内容原始文件"], ["parse", "获取匹配内容"]])
+    updater.bot.set_my_commands([["start", "关于本 Bot"], ["file", "获取匹配内容原始文件"], ["parse", "获取匹配内容"]])
     updater.idle()
