@@ -8,7 +8,7 @@ from functools import lru_cache
 from io import BytesIO
 from uuid import uuid4
 
-import aiohttp
+import httpx
 import uvloop
 from PIL import Image
 from telegram import (
@@ -91,10 +91,12 @@ async def get_media(f, url, size=1280, compression=True):
         pil.save(outpil := BytesIO(), "PNG", optimize=True)
         return outpil
 
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.get(url, headers={"Referer": f.url}) as resp:
-            media = BytesIO(await resp.read())
-            mediatype = resp.headers["Content-Type"]
+    async with httpx.AsyncClient(
+        headers=headers, http2=True, timeout=None, verify=False
+    ) as client:
+        r = await client.get(url, headers={"Referer": f.url})
+        media = BytesIO(r.read())
+        mediatype = r.headers.get("content-type")
     if compression:
         if mediatype in ["image/jpeg", "image/png"]:
             logger.info(f"压缩: {url} {mediatype}")
