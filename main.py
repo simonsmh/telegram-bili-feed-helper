@@ -9,6 +9,7 @@ from io import BytesIO
 from uuid import uuid4
 
 import aiohttp
+import uvloop
 from PIL import Image
 from telegram import (
     InlineKeyboardButton,
@@ -36,6 +37,8 @@ from telegram.utils.helpers import escape_markdown
 
 from biliparser import biliparser, headers
 
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO
 )
@@ -43,6 +46,7 @@ logging.basicConfig(
 logger = logging.getLogger("Telegram_Bili_Feed_Helper")
 
 regex = r"(?i)\w*\.?(?:bilibili\.com|(?:b23|acg)\.tv)\S+"
+
 
 sourcecodemarkup = InlineKeyboardMarkup(
     [
@@ -125,7 +129,6 @@ def parse(update, context):
                 reply_markup=origin_link(f.url),
                 supports_streaming=True,
                 thumb=mediathumb,
-                timeout=120,
             )
         elif f.mediatype == "audio":
             message.reply_audio(
@@ -137,7 +140,6 @@ def parse(update, context):
                 quote=False,
                 reply_markup=origin_link(f.url),
                 thumb=mediathumb,
-                timeout=120,
                 title=f.mediatitle,
             )
         elif len(f.mediaurls) == 1:
@@ -148,7 +150,6 @@ def parse(update, context):
                     parse_mode=ParseMode.MARKDOWN_V2,
                     quote=False,
                     reply_markup=origin_link(f.url),
-                    timeout=60,
                 )
             else:
                 message.reply_photo(
@@ -157,7 +158,6 @@ def parse(update, context):
                     parse_mode=ParseMode.MARKDOWN_V2,
                     quote=False,
                     reply_markup=origin_link(f.url),
-                    timeout=60,
                 )
         else:
             media = [
@@ -166,7 +166,7 @@ def parse(update, context):
                 )
                 for img in media
             ]
-            message.reply_media_group(media, quote=False, timeout=120)
+            message.reply_media_group(media, quote=False)
             message.reply_text(
                 captions(f),
                 disable_web_page_preview=True,
@@ -175,35 +175,33 @@ def parse(update, context):
                 reply_markup=origin_link(f.url),
             )
 
-    async def parse_queue(url):
-        f = await biliparser(url, video=False)
-        if not f:
-            logger.warning("解析错误！")
-            return
-        reply_markup = InlineKeyboardMarkup(
-            [[InlineKeyboardButton(text="原链接", url=f.url)]]
-        )
-        if f.mediaurls:
-            try:
-                await callback(f, captions(f))
-            except (TimedOut, BadRequest) as err:
-                logger.exception(err)
-                logger.info(f"{err} -> 下载中: {f.url}")
-                f.mediaraws = True
-                await callback(f, captions(f))
-        else:
-            message.reply_text(
-                captions(f),
-                disable_web_page_preview=True,
-                parse_mode=ParseMode.MARKDOWN_V2,
-                quote=False,
-                reply_markup=reply_markup,
+    async def parse_queue(urls):
+        fs = await biliparser(urls, video=False)
+        for f in fs:
+            if not f:
+                logger.warning(f"解析错误！{f}")
+                return
+            reply_markup = InlineKeyboardMarkup(
+                [[InlineKeyboardButton(text="原链接", url=f.url)]]
             )
+            if f.mediaurls:
+                try:
+                    await callback(f, captions(f))
+                except (TimedOut, BadRequest) as err:
+                    logger.exception(err)
+                    logger.info(f"{err} -> 下载中: {f.url}")
+                    f.mediaraws = True
+                    await callback(f, captions(f))
+            else:
+                message.reply_text(
+                    captions(f),
+                    disable_web_page_preview=True,
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                    quote=False,
+                    reply_markup=reply_markup,
+                )
 
-    loop = asyncio.new_event_loop()
-    tasks = [parse_queue(url) for url in urls]
-    loop.run_until_complete(asyncio.gather(*tasks, loop=loop))
-    loop.close()
+    asyncio.run(parse_queue(urls))
 
 
 @run_async
@@ -214,27 +212,24 @@ def fetch(update, context):
     logger.info(f"Fetch: {urls}")
 
     async def fetch_queue(url):
-        f = await biliparser(url)
-        if not f:
-            logger.warning("解析错误！")
-            return
-        if f.mediaurls:
-            tasks = [get_media(f, img, compression=False) for img in f.mediaurls]
-            medias = await asyncio.gather(*tasks)
-            logger.info(f"上传中: {f.url}")
-            for media, mediafilename in zip(medias, f.mediafilename):
-                message.reply_document(
-                    media,
-                    filename=mediafilename,
-                    quote=False,
-                    reply_markup=origin_link(f.url),
-                    timeout=120,
-                )
+        fs = await biliparser(urls)
+        for f in fs:
+            if not f:
+                logger.warning(f"解析错误！{f}")
+                return
+            if f.mediaurls:
+                tasks = [get_media(f, img, compression=False) for img in f.mediaurls]
+                medias = await asyncio.gather(*tasks)
+                logger.info(f"上传中: {f.url}")
+                for media, mediafilename in zip(medias, f.mediafilename):
+                    message.reply_document(
+                        media,
+                        filename=mediafilename,
+                        quote=False,
+                        reply_markup=origin_link(f.url),
+                    )
 
-    loop = asyncio.new_event_loop()
-    tasks = [fetch_queue(url) for url in urls]
-    loop.run_until_complete(asyncio.gather(*tasks, loop=loop))
-    loop.close()
+    asyncio.run(fetch_queue(urls))
 
 
 @run_async
@@ -261,7 +256,7 @@ def inlineparse(update, context):
         inline_query.answer(helpmsg)
         return
     logger.info(f"Inline: {url}")
-    f = asyncio.run(biliparser(url))
+    [f] = asyncio.run(biliparser(url))
     if not f:
         logger.warning("解析错误！")
         return

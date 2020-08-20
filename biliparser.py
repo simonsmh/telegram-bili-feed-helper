@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from functools import cached_property, lru_cache
 
 import httpx
+import uvloop
 from tortoise import Tortoise, fields
 from tortoise.exceptions import IntegrityError
 from tortoise.query_utils import Q
@@ -753,6 +754,7 @@ async def feed_parser(client, url, video=True):
 
 
 def db_init(func):
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     async def inner_function(*args, **kwargs):
         await Tortoise.init(
             db_url="sqlite://cache.db", modules={"models": ["database"]}
@@ -782,7 +784,7 @@ async def biliparser(urls, video=True):
             )
             for url in urls
         )
-    callbacks = [i for i in await asyncio.gather(*tasks)]
+    callbacks = await asyncio.gather(*tasks)
     for num, f in enumerate(callbacks):
         if isinstance(f, Exception):
             logger.warn(f"排序: {num}\n异常: {f}\n")
