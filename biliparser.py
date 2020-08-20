@@ -38,7 +38,7 @@ def escape_markdown(text):
 
 
 class ParserException(Exception):
-    def __init__(self, msg, url, res):
+    def __init__(self, msg, url, res=str()):
         self.msg = msg
         self.url = url
         self.res = res
@@ -733,8 +733,12 @@ async def video_parser(client, url):
 async def feed_parser(client, url, video=True):
     r = await client.get(url)
     url = str(r.url)
+    # API link
+    print(url)
+    if re.search(r"api\..*\.bilibili", url):
+        pass
     # dynamic
-    if re.search(r"[th]\.bilibili\.com", url):
+    elif re.search(r"[th]\.bilibili\.com", url):
         return await dynamic_parser(client, url)
     # live image
     elif re.search(r"live\.bilibili\.com", url):
@@ -751,6 +755,7 @@ async def feed_parser(client, url, video=True):
             return await video_parser(client, url)
         else:
             logger.info(f"暂不匹配视频内容: {url}")
+    raise ParserException("URL错误", url)
 
 
 def db_init(func):
