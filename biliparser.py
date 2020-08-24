@@ -487,11 +487,14 @@ async def dynamic_parser(client, url):
         f.user = f.card.get("user").get("uname")
         f.uid = f.card.get("user").get("uid")
         f.content = f.card.get("item").get("content")
-    # share text
+    # share images
     elif f.origin_type in detail_types_list.get("SHARE"):
         f.user = f.card.get("user").get("uname")
         f.uid = f.card.get("user").get("uid")
         f.content = f.card.get("vest").get("content")
+        f.extra_markdown = f"[{escape_markdown(f.card.get('sketch').get('title'))}\n{escape_markdown(f.card.get('sketch').get('desc_text'))}]({f.card.get('sketch').get('target_url')})"
+        f.mediaurls = f.card.get("sketch").get("cover_url")
+        f.mediatype = "image"
     else:
         logger.warning(ParserException(f"未知动态模板{f.origin_type}", f.url, f.card))
     # forward text
