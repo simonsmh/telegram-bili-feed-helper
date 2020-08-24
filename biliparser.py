@@ -487,6 +487,13 @@ async def dynamic_parser(client, url):
         f.user = f.card.get("user").get("uname")
         f.uid = f.card.get("user").get("uid")
         f.content = f.card.get("item").get("content")
+    # share text
+    elif f.origin_type in detail_types_list.get("SHARE"):
+        f.user = f.card.get("user").get("uname")
+        f.uid = f.card.get("user").get("uid")
+        f.content = f.card.get("vest").get("content")
+    else:
+        logger.warning(ParserException(f"未知动态模板{f.origin_type}", f.url, f.card))
     # forward text
     if f.has_forward:
         f.forward_user = f.forward_card.get("user").get("uname")
@@ -734,7 +741,6 @@ async def feed_parser(client, url, video=True):
     r = await client.get(url)
     url = str(r.url)
     # API link
-    print(url)
     if re.search(r"api\..*\.bilibili", url):
         pass
     # dynamic
