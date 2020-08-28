@@ -386,7 +386,13 @@ if __name__ == "__main__":
     updater.dispatcher.add_handler(MessageHandler(Filters.regex(regex), parse))
     updater.dispatcher.add_handler(InlineQueryHandler(inlineparse))
     updater.dispatcher.add_error_handler(error)
-    updater.start_polling()
+    if DOMAIN := os.environ.get("DOMAIN"):
+        updater.start_webhook(
+            listen="0.0.0.0", port=int(os.environ.get("PORT", 8443)), url_path=TOKEN
+        )
+        updater.bot.setWebhook(DOMAIN + TOKEN)
+    else:
+        updater.start_polling()
     logger.info(f"Bot @{updater.bot.get_me().username} started.")
     updater.bot.set_my_commands(
         [["start", "关于本 Bot"], ["file", "获取匹配内容原始文件"], ["parse", "获取匹配内容"]]
