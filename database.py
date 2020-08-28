@@ -5,7 +5,7 @@ from tortoise.models import Model
 
 
 class reply_cache(Model):
-    oid = fields.IntField(pk=True, unique=True)
+    oid = fields.BigIntField(pk=True, unique=True)
     reply_type = fields.IntField()
     content = fields.JSONField()
     created = fields.DatetimeField(auto_now=True)
@@ -16,8 +16,8 @@ class reply_cache(Model):
 
 
 class dynamic_cache(Model):
-    dynamic_id = fields.IntField(pk=True, unique=True)
-    rid = fields.IntField(unique=True)
+    dynamic_id = fields.BigIntField(pk=True, unique=True)
+    rid = fields.BigIntField(unique=True)
     content = fields.JSONField()
     created = fields.DatetimeField(auto_now=True)
     timeout = timedelta(days=10)
@@ -27,7 +27,7 @@ class dynamic_cache(Model):
 
 
 class clip_cache(Model):
-    video_id = fields.IntField(pk=True, unique=True)
+    video_id = fields.BigIntField(pk=True, unique=True)
     content = fields.JSONField()
     created = fields.DatetimeField(auto_now=True)
     timeout = timedelta(days=10)
@@ -68,7 +68,7 @@ class bangumi_cache(Model):
 
 
 class video_cache(Model):
-    aid = fields.IntField(pk=True, unique=True)
+    aid = fields.BigIntField(pk=True, unique=True)
     bvid = fields.CharField(max_length=12, unique=True)
     content = fields.JSONField()
     created = fields.DatetimeField(auto_now=True)
