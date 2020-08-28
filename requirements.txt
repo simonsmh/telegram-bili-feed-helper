@@ -1,4 +1,5 @@
 aiosqlite
+asyncpg
 httpx[http2]
 pillow
 python-telegram-bot

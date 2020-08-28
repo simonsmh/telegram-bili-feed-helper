@@ -1,17 +1,18 @@
 import asyncio
 import json
 import logging
+import os
 import re
 import traceback
 from datetime import datetime, timedelta
 from functools import cached_property, lru_cache
 
-import httpx
-import uvloop
 from tortoise import Tortoise, fields
 from tortoise.exceptions import IntegrityError
 from tortoise.query_utils import Q
 
+import httpx
+import uvloop
 from database import (
     audio_cache,
     bangumi_cache,
@@ -769,9 +770,11 @@ async def feed_parser(client, url, video=True):
 
 def db_init(func):
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+
     async def inner_function(*args, **kwargs):
         await Tortoise.init(
-            db_url="sqlite://cache.db", modules={"models": ["database"]}
+            db_url=os.environ.get("DATABASE_URL", "sqlite://cache.db"),
+            modules={"models": ["database"]},
         )
         await Tortoise.generate_schemas()
         result = await func(*args, **kwargs)
