@@ -1,4 +1,5 @@
 aiographfix
+aiohttp[speedups]
 aiosqlite
 asyncpg
 beautifulsoup4
