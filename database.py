@@ -76,3 +76,12 @@ class video_cache(Model):
 
     class Meta:
         table = "video"
+
+class read_cache(Model):
+    read_id = fields.IntField(pk=True, unique=True)
+    graphurl = fields.TextField()
+    created = fields.DatetimeField(auto_now=True)
+    timeout = timedelta(days=10)
+
+    class Meta:
+        table = "read"

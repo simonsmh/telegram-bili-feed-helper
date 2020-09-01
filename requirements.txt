@@ -1,6 +1,9 @@
+aiographfix
 aiosqlite
 asyncpg
+beautifulsoup4
 httpx[http2]
+lxml
 pillow
 python-telegram-bot
 tortoise-orm[accel]

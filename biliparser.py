@@ -7,18 +7,21 @@ import traceback
 from datetime import datetime, timedelta
 from functools import cached_property, lru_cache
 
+import httpx
+import uvloop
+from aiographfix import Telegraph
+from bs4 import BeautifulSoup
 from tortoise import Tortoise, fields
 from tortoise.exceptions import IntegrityError
 from tortoise.query_utils import Q
 
-import httpx
-import uvloop
 from database import (
     audio_cache,
     bangumi_cache,
     clip_cache,
     dynamic_cache,
     live_cache,
+    read_cache,
     reply_cache,
     video_cache,
 )
@@ -324,6 +327,18 @@ class video(feed):
         return f"https://www.bilibili.com/video/av{self.aid}"
 
 
+class read(feed):
+    def __init__(self, rawurl):
+        super(read, self).__init__(rawurl)
+        self.rawcontent = None
+        self.read_id = None
+        self.reply_type = 12
+
+    @cached_property
+    def url(self):
+        return f"https://www.bilibili.com/read/cv{self.read_id}"
+
+
 def safe_parser(func):
     async def inner_function(*args, **kwargs):
         try:
@@ -426,23 +441,12 @@ async def dynamic_parser(client, url):
         "NONE": [2024, *range(4300, 4400)],
     }
 
-    # cv article
-    if f.origin_type in detail_types_list.get("ARTICLE"):
-        cv_id = f.card.get("id")
-        f.user = f.card.get("author").get("name")
-        f.uid = f.card.get("author").get("mid")
-        f.content = f.card.get("dynamic") if f.card.get("dynamic") else str()
-        f.extra_markdown = f"[{escape_markdown(f.card.get('title'))}](https://www.bilibili.com/read/cv{cv_id})"
-        if f.card.get("banner_url"):
-            f.mediaurls = f.card.get("banner_url")
-        else:
-            f.mediaurls = f.card.get("image_urls")
-        f.mediatype = "image"
     # extra parsers
-    elif f.origin_type in [
+    if f.origin_type in [
         *detail_types_list.get("MUSIC"),
         *detail_types_list.get("VIDEO"),
         *detail_types_list.get("LIVE"),
+        *detail_types_list.get("ARTICLE"),
     ]:
         # au audio
         if f.origin_type in detail_types_list.get("MUSIC"):
@@ -456,6 +460,10 @@ async def dynamic_parser(client, url):
         elif f.origin_type in detail_types_list.get("VIDEO"):
             fu = await video_parser(client, f'b23.tv/av{f.card.get("aid")}')
             f.content = f.card.get("new_desc") if f.card.get("new_desc") else fu.content
+        # article
+        elif f.origin_type in detail_types_list.get("ARTICLE"):
+            fu = await live_parser(client, f'bilibili.com/read/cv{f.card.get("id")}')
+            f.content = fu.content
         else:
             fu = None
         if fu:
@@ -669,7 +677,8 @@ async def video_parser(client, url):
             f.infocontent = cache.content
         else:
             r = await client.get(
-                "https://api.bilibili.com/pgc/view/web/season", params=params,
+                "https://api.bilibili.com/pgc/view/web/season",
+                params=params,
             )
             f.infocontent = r.json()
         if not (detail := f.infocontent.get("result")):
@@ -703,7 +712,8 @@ async def video_parser(client, url):
         f.infocontent = cache.content
     else:
         r = await client.get(
-            "https://api.bilibili.com/x/web-interface/view", params=params,
+            "https://api.bilibili.com/x/web-interface/view",
+            params=params,
         )
         # Video detects non-China IP
         f.infocontent = r.json()
@@ -741,6 +751,65 @@ async def video_parser(client, url):
 
 
 @safe_parser
+async def read_parser(client, url):
+    async def relink(client, img):
+        src = img.attrs.pop("data-src")
+        logger.info(f"下载图片: {src}")
+        img.attrs["src"] = await telegraph.upload_from_url(
+            f"https:{src}" if not src.startswith(("http:", "https:")) else src
+        )
+
+    if not (match := re.search(r"bilibili\.com\/read\/cv(\d+)", url)):
+        raise ParserException("文章链接错误", url, match)
+    f = read(url)
+    f.read_id = match.group(1)
+    r = await client.get(f"https://www.bilibili.com/read/cv{f.read_id}")
+    soup = BeautifulSoup(r.text, "lxml")
+    f.uid = soup.find("a", class_="up-name").attrs.get("href").split("/")[-1]
+    f.user = soup.find("meta", itemprop="author").attrs.get("content")
+    f.content = soup.find("meta", itemprop="description").attrs.get("content")
+    title = soup.find("meta", itemprop="title").attrs.get("content")
+    logger.info(f"文章ID: {f.read_id}")
+    if cache := await read_cache.get_or_none(
+        query := Q(read_id=f.read_id),
+        Q(created__gte=datetime.utcnow() - audio_cache.timeout),
+    ).first():
+        logger.info(f"拉取文章缓存: {cache.created}")
+        graphurl = cache.graphurl
+    else:
+        article = soup.find("div", class_="article-holder")
+        hs = article.find_all("h1")  ## h1 -> h3
+        for h in hs:
+            h.name = "h3"
+        imgs = article.find_all("img")  ## data-src -> src
+        telegraph = Telegraph()
+        task = list(relink(client, img) for img in imgs)
+        await asyncio.gather(*task)
+        result = "".join(
+            [i.__str__() for i in article.contents]
+        )  ## div rip off, cannot unwrap div so use str directly
+        await telegraph.create_account("bilifeedbot")
+        page = await telegraph.create_page(
+            title=title,
+            content=result,
+            author_name=f.user,
+            author_url=f"https://space.bilibili.com/{f.uid}",
+        )
+        graphurl = page.url
+        logger.info(f"生成页面: {graphurl}")
+        await telegraph.close()
+        logger.info(f"文章缓存: {f.read_id}")
+        if cache := await read_cache.get_or_none(query).first():
+            cache.graphurl = graphurl
+            await cache.save(update_fields=["graphurl", "created"])
+        else:
+            await read_cache(read_id=f.read_id, graphurl=graphurl).save()
+    f.extra_markdown = f"[{escape_markdown(title)}]({graphurl})"
+    f.replycontent = await reply_parser(client, f.read_id, f.reply_type)
+    return f
+
+
+@safe_parser
 async def feed_parser(client, url, video=True):
     r = await client.get(url)
     url = str(r.url)
@@ -759,6 +828,9 @@ async def feed_parser(client, url, video=True):
     # au audio
     elif re.search(r"bilibili\.com/audio", url):
         return await audio_parser(client, url)
+    # au audio
+    elif re.search(r"bilibili\.com/read", url):
+        return await read_parser(client, url)
     # main video
     elif re.search(r"bilibili\.com/(?:video|bangumi/play)", url):
         if video:
@@ -812,6 +884,7 @@ async def biliparser(urls, video=True):
                 f"链接: {f.url}\n"
                 f"用户: {f.user_markdown}\n"
                 f"内容: {f.content_markdown}\n"
+                f"附加内容: {f.extra_markdown}\n"
                 f"评论: {f.comment_markdown}\n"
                 f"媒体: {f.mediaurls}\n"
                 f"媒体种类: {f.mediatype}\n"
