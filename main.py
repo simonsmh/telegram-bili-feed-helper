@@ -180,7 +180,7 @@ def parse(update, context):
             )
 
     async def parse_queue(urls):
-        fs = await biliparser(urls, video=False)
+        fs = await biliparser(urls)
         for num, f in enumerate(fs):
             if isinstance(f, Exception):
                 logger.warning(f"解析错误! {f}")

@@ -117,20 +117,26 @@ class feed:
     def comment(self):
         comment = str()
         if self.has_comment:
-            if top := self.replycontent.get("data").get("upper").get("top"):
-                comment += f'置顶> @{top.get("member").get("uname")}:\n{top.get("content").get("message")}\n'
-            if hots := self.replycontent.get("data").get("hots"):
-                comment += f'热评> @{hots[0].get("member").get("uname")}:\n{hots[0].get("content").get("message")}\n'
+            try:
+                if top := self.replycontent["data"]["upper"]["top"]:
+                    comment += f'置顶> @{top.get("member").get("uname")}:\n{top.get("content").get("message")}\n'
+                if hots := self.replycontent["data"]["hots"]:
+                    comment += f'热评> @{hots[0].get("member").get("uname")}:\n{hots[0].get("content").get("message")}\n'
+            except AttributeError:
+                pass
         return self.shrink_line(comment)
 
     @cached_property
     def comment_markdown(self):
         comment_markdown = str()
         if self.has_comment:
-            if top := self.replycontent.get("data").get("upper").get("top"):
-                comment_markdown += f'置顶\\> {self.make_user_markdown(top.get("member").get("uname"), top.get("member").get("mid"))}:\n{escape_markdown(top.get("content").get("message"))}\n'
-            if hots := self.replycontent.get("data").get("hots"):
-                comment_markdown += f'热评\\> {self.make_user_markdown(hots[0].get("member").get("uname"), hots[0].get("member").get("mid"))}:\n{escape_markdown(hots[0].get("content").get("message"))}\n'
+            try:
+                if top := self.replycontent["data"]["upper"]["top"]:
+                    comment_markdown += f'置顶\\> {self.make_user_markdown(top.get("member").get("uname"), top.get("member").get("mid"))}:\n{escape_markdown(top.get("content").get("message"))}\n'
+                if hots := self.replycontent["data"]["hots"]:
+                    comment_markdown += f'热评\\> {self.make_user_markdown(hots[0].get("member").get("uname"), hots[0].get("member").get("mid"))}:\n{escape_markdown(hots[0].get("content").get("message"))}\n'
+            except AttributeError:
+                pass
         return self.shrink_line(comment_markdown)
 
     @property
@@ -175,22 +181,22 @@ class dynamic(feed):
 
     @cached_property
     def forward_card(self):
-        return json.loads(self.detailcontent.get("data").get("card").get("card"))
+        return json.loads(self.detailcontent["data"]["card"]["card"])
 
     @cached_property
     def has_forward(self):
         return bool(
-            self.detailcontent.get("data").get("card").get("desc").get("orig_type")
+            self.detailcontent["data"]["card"]["desc"]["orig_type"]
         )
 
     @cached_property
     def forward_type(self):
-        return self.detailcontent.get("data").get("card").get("desc").get("type")
+        return self.detailcontent["data"]["card"]["desc"]["type"]
 
     @cached_property
     def origin_type(self):
         return (
-            self.detailcontent.get("data").get("card").get("desc").get("orig_type")
+            self.detailcontent["data"]["card"]["desc"]["orig_type"]
             if self.has_forward
             else self.forward_type
         )
@@ -367,7 +373,7 @@ async def reply_parser(client, oid, reply_type):
     if cache := await reply_cache.get_or_none(
         query := Q(Q(oid=oid), Q(reply_type=reply_type)),
         Q(created__gte=datetime.utcnow() - reply_cache.timeout),
-    ).first():
+    ):
         logger.info(f"拉取评论缓存: {cache.created}")
         r = cache.content
     else:
@@ -377,12 +383,12 @@ async def reply_parser(client, oid, reply_type):
                 params={"oid": oid, "type": reply_type},
             )
         ).json()
-    if not r.get("data"):
-        raise ParserException("评论解析错误", r.url, r)
+        if not r.get("data"):
+            raise ParserException("评论解析错误", r.url, r)
     logger.info(f"评论ID: {oid}, 评论类型: {reply_type}")
     if not cache:
         logger.info(f"评论缓存: {oid}")
-        if cache := await reply_cache.get_or_none(query).first():
+        if cache := await reply_cache.get_or_none(query):
             cache.content = r
             await cache.save(update_fields=["content", "created"])
         else:
@@ -395,12 +401,11 @@ async def dynamic_parser(client, url):
     if not (match := re.search(r"[th]\.bilibili\.com[\/\w]*\/(\d+)", url)):
         raise ParserException("动态链接错误", url, match)
     f = dynamic(url)
+    query = Q(rid=match.group(1)) if "type=2" in match.group(0) else Q(dynamic_id=match.group(1))
     if cache := await dynamic_cache.get_or_none(
-        query := Q(rid=match.group(1))
-        if "type=2" in match.group(0)
-        else Q(dynamic_id=match.group(1)),
+        query,
         Q(created__gte=datetime.utcnow() - dynamic_cache.timeout),
-    ).first():
+    ):
         logger.info(f"拉取动态缓存: {cache.created}")
         f.detailcontent = cache.content
     else:
@@ -411,16 +416,14 @@ async def dynamic_parser(client, url):
             else {"dynamic_id": match.group(1)},
         )
         f.detailcontent = r.json()
-    if f.detailcontent.get("data").get("card"):
-        f.type = f.detailcontent.get("data").get("card").get("desc").get("type")
-    else:
-        raise ParserException("动态解析错误", r.url, f.detailcontent)
+        if not f.detailcontent.get("data").get("card"):
+            raise ParserException("动态解析错误", r.url, f.detailcontent)
     f.dynamic_id = f.detailcontent.get("data").get("card").get("desc").get("dynamic_id")
     f.rid = f.detailcontent.get("data").get("card").get("desc").get("rid")
     logger.info(f"动态ID: {f.dynamic_id}")
     if not cache:
         logger.info(f"动态缓存: {f.dynamic_id}")
-        if cache := await dynamic_cache.get_or_none(query).first():
+        if cache := await dynamic_cache.get_or_none(query):
             cache.content = f.detailcontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -529,23 +532,24 @@ async def clip_parser(client, url):
     if cache := await clip_cache.get_or_none(
         query := Q(video_id=f.video_id),
         Q(created__gte=datetime.utcnow() - clip_cache.timeout),
-    ).first():
+    ):
         logger.info(f"拉取短视频缓存: {cache.created}")
         f.rawcontent = cache.content
+        detail = f.rawcontent.get("data")
     else:
         r = await client.get(
             "https://api.vc.bilibili.com/clip/v1/video/detail",
             params={"video_id": f.video_id},
         )
         f.rawcontent = r.json()
-    if f.rawcontent.get("data").get("user"):
-        detail = f.rawcontent.get("data")
-    else:
-        raise ParserException("短视频解析错误", r.url, f.rawcontent)
+        if f.rawcontent.get("data").get("user"):
+            detail = f.rawcontent.get("data")
+        else:
+            raise ParserException("短视频解析错误", r.url, f.rawcontent)
     logger.info(f"短视频ID: {f.video_id}")
     if not cache:
         logger.info(f"短视频缓存")
-        if cache := await clip_cache.get_or_none(query).first():
+        if cache := await clip_cache.get_or_none(query):
             cache.content = f.rawcontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -569,21 +573,22 @@ async def audio_parser(client, url):
     if cache := await audio_cache.get_or_none(
         query := Q(audio_id=f.audio_id),
         Q(created__gte=datetime.utcnow() - audio_cache.timeout),
-    ).first():
+    ):
         logger.info(f"拉取音频缓存: {cache.created}")
         f.infocontent = cache.content
+        detail = f.infocontent.get("data")
     else:
         r = await client.get(
             "https://api.bilibili.com/audio/music-service-c/songs/playing",
             params={"song_id": f.audio_id},
         )
         f.infocontent = r.json()
-    if not (detail := f.infocontent.get("data")):
-        raise ParserException("音频解析错误", r.url, f.infocontent)
+        if not (detail := f.infocontent.get("data")):
+            raise ParserException("音频解析错误", r.url, f.infocontent)
     logger.info(f"音频ID: {f.audio_id}")
     if not cache:
         logger.info(f"音频缓存: {f.audio_id}")
-        if cache := await audio_cache.get_or_none(query).first():
+        if cache := await audio_cache.get_or_none(query):
             cache.content = f.infocontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -622,21 +627,22 @@ async def live_parser(client, url):
     if cache := await live_cache.get_or_none(
         query := Q(room_id=f.room_id),
         Q(created__gte=datetime.utcnow() - live_cache.timeout),
-    ).first():
+    ):
         logger.info(f"拉取直播缓存: {cache.created}")
         f.rawcontent = cache.content
+        detail = f.rawcontent.get("data")
     else:
         r = await client.get(
             "https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom",
             params={"room_id": f.room_id},
         )
         f.rawcontent = r.json()
-    if not (detail := f.rawcontent.get("data")):
-        raise ParserException("直播解析错误", r.url, f.rawcontent)
+        if not (detail := f.rawcontent.get("data")):
+            raise ParserException("直播解析错误", r.url, f.rawcontent)
     logger.info(f"直播ID: {f.room_id}")
     if not cache:
         logger.info(f"直播缓存: {f.room_id}")
-        if cache := await live_cache.get_or_none(query).first():
+        if cache := await live_cache.get_or_none(query):
             cache.content = f.rawcontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -661,14 +667,16 @@ async def video_parser(client, url):
     ):
         raise ParserException("视频链接错误", url, match)
     f = video(url)
-    if bvid := match.group("bvid"):
+    if epid := match.group("epid"):
+        params = {"ep_id": epid}
+    elif bvid := match.group("bvid"):
         params = {"bvid": bvid}
     elif aid := match.group("aid"):
         params = {"aid": aid}
-    elif epid := match.group("epid"):
-        params = {"ep_id": epid}
     elif ssid := match.group("ssid"):
         params = {"season_id": ssid}
+    else:
+        params = {}
     if "ep_id" in params or "season_id" in params:
         if cache := await bangumi_cache.get_or_none(
             query := Q(
@@ -677,7 +685,7 @@ async def video_parser(client, url):
                 join_type="OR",
             ),
             Q(created__gte=datetime.utcnow() - video_cache.timeout),
-        ).first():
+        ):
             logger.info(f"拉取番剧缓存: {cache.created}")
             f.infocontent = cache.content
         else:
@@ -688,7 +696,7 @@ async def video_parser(client, url):
             f.infocontent = r.json()
         if not (detail := f.infocontent.get("result")):
             # Anime detects non-China IP
-            raise ParserException("番剧解析错误", r.url, f.infocontent)
+            raise ParserException("番剧解析错误", url, f.infocontent)
         f.sid = detail.get("season_id")
         if epid:
             for episode in detail.get("episodes"):
@@ -700,7 +708,7 @@ async def video_parser(client, url):
         logger.info(f"番剧ID: {epid}")
         if not cache:
             logger.info(f"番剧缓存: {epid}")
-            if cache := await bangumi_cache.get_or_none(query).first():
+            if cache := await bangumi_cache.get_or_none(query):
                 cache.content = f.infocontent
                 await cache.save(update_fields=["content", "created"])
             else:
@@ -712,9 +720,10 @@ async def video_parser(client, url):
             Q(aid=params.get("aid")), Q(bvid=params.get("bvid")), join_type="OR"
         ),
         Q(created__gte=datetime.utcnow() - video_cache.timeout),
-    ).first():
+    ):
         logger.info(f"拉取视频缓存: {cache.created}")
         f.infocontent = cache.content
+        detail = f.infocontent.get("data")
     else:
         r = await client.get(
             "https://api.bilibili.com/x/web-interface/view",
@@ -722,15 +731,15 @@ async def video_parser(client, url):
         )
         # Video detects non-China IP
         f.infocontent = r.json()
-    if not (detail := f.infocontent.get("data")):
-        raise ParserException("视频解析错误", r.url, f.infocontent)
+        if not (detail := f.infocontent.get("data")):
+            raise ParserException("视频解析错误", r.url, f.infocontent)
     bvid = detail.get("bvid")
     f.aid = detail.get("aid")
     f.cid = detail.get("cid")
     logger.info(f"视频ID: {f.aid}")
     if not cache:
         logger.info(f"视频缓存: {f.aid}")
-        if cache := await video_cache.get_or_none(query).first():
+        if cache := await video_cache.get_or_none(query):
             cache.content = f.infocontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -785,7 +794,7 @@ async def read_parser(client, url):
     if cache := await read_cache.get_or_none(
         query := Q(read_id=f.read_id),
         Q(created__gte=datetime.utcnow() - audio_cache.timeout),
-    ).first():
+    ):
         logger.info(f"拉取文章缓存: {cache.created}")
         graphurl = cache.graphurl
     else:
@@ -813,7 +822,7 @@ async def read_parser(client, url):
         ).get("url")
         logger.info(f"生成页面: {graphurl}")
         logger.info(f"文章缓存: {f.read_id}")
-        if cache := await read_cache.get_or_none(query).first():
+        if cache := await read_cache.get_or_none(query):
             cache.graphurl = graphurl
             await cache.save(update_fields=["graphurl", "created"])
         else:
@@ -826,7 +835,7 @@ async def read_parser(client, url):
 
 
 @safe_parser
-async def feed_parser(client, url, video=True):
+async def feed_parser(client, url):
     r = await client.get(url)
     url = str(r.url)
     # API link
@@ -849,10 +858,7 @@ async def feed_parser(client, url, video=True):
         return await read_parser(client, url)
     # main video
     elif re.search(r"bilibili\.com/(?:video|bangumi/play)", url):
-        if video:
-            return await video_parser(client, url)
-        else:
-            logger.info(f"暂不匹配视频内容: {url}")
+        return await video_parser(client, url)
     raise ParserException("URL错误", url)
 
 
@@ -873,7 +879,7 @@ def db_init(func):
 
 
 @db_init
-async def biliparser(urls, video=True):
+async def biliparser(urls):
     if isinstance(urls, str):
         urls = [urls]
     elif isinstance(urls, tuple):
@@ -885,7 +891,6 @@ async def biliparser(urls, video=True):
             feed_parser(
                 client,
                 f"http://{url}" if not url.startswith(("http:", "https:")) else url,
-                video,
             )
             for url in urls
         )
