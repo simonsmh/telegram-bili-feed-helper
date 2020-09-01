@@ -10,8 +10,8 @@ from functools import cached_property, lru_cache
 
 import httpx
 import uvloop
-from aiographfix import Telegraph
 from bs4 import BeautifulSoup
+from telegraph import Telegraph
 from tortoise import Tortoise, fields
 from tortoise.exceptions import IntegrityError
 from tortoise.query_utils import Q
@@ -757,12 +757,18 @@ async def video_parser(client, url):
 
 @safe_parser
 async def read_parser(client, url):
-    async def relink(client, img):
+    async def relink(img):
         src = img.attrs.pop("data-src")
+        img.attrs = {}
         logger.info(f"下载图片: {src}")
-        img.attrs["src"] = await telegraph.upload_from_url(
-            f"https:{src}" if not src.startswith(("http:", "https:")) else src
-        )
+        async with httpx.AsyncClient(
+            headers=headers, http2=True, timeout=None, verify=False
+        ) as client:
+            r = await client.get(f"https:{src}")
+            files = {"upload-file": r.content}
+            response = await client.post("https://telegra.ph/upload", files=files)
+            url = f"https://telegra.ph{response.json()[0].get('src')}"
+            img.attrs["src"] = url
 
     if not (match := re.search(r"bilibili\.com\/read\/cv(\d+)", url)):
         raise ParserException("文章链接错误", url, match)
@@ -785,25 +791,27 @@ async def read_parser(client, url):
     else:
         article = soup.find("div", class_="article-holder")
         imgs = article.find_all("img")
-        hs = article.find_all("h1")  ## h1 -> h3
-        for h in hs:
-            h.name = "h3"
+        task = list(relink(img) for img in imgs)  ## data-src -> src
+        for _ in article.find_all("h1"):  ## h1 -> h3
+            _.name = "h3"
+        for _ in article.find_all("span"):  ## remove span
+            _.unwrap()
+        for s in ["p", "figure", "figcaption"]:  ## clean tags
+            for _ in article.find_all(s):
+                _.attrs = {}
         telegraph = Telegraph()
-        task = list(relink(client, img) for img in imgs)  ## data-src -> src
         await asyncio.gather(*task)
         result = "".join(
             [i.__str__() for i in article.contents]
         )  ## div rip off, cannot unwrap div so use str directly
-        await telegraph.create_account("bilifeedbot")
-        page = await telegraph.create_page(
+        telegraph.create_account("bilifeedbot")
+        graphurl = telegraph.create_page(
             title=title,
-            content=result,
+            html_content=result,
             author_name=f.user,
             author_url=f"https://space.bilibili.com/{f.uid}",
-        )
-        graphurl = page.url
+        ).get("url")
         logger.info(f"生成页面: {graphurl}")
-        await telegraph.close()
         logger.info(f"文章缓存: {f.read_id}")
         if cache := await read_cache.get_or_none(query).first():
             cache.graphurl = graphurl

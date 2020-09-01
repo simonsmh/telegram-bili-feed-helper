@@ -1,5 +1,3 @@
-aiographfix
-aiohttp[speedups]
 aiosqlite
 asyncpg
 beautifulsoup4
@@ -7,4 +5,5 @@ httpx[http2]
 lxml
 pillow
 python-telegram-bot
+telegraph
 tortoise-orm[accel]
