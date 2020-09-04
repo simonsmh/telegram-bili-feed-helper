@@ -1,18 +1,15 @@
 import asyncio
 import html
 import json
-import logging
 import os
 import re
-import traceback
-from datetime import datetime, timedelta
+from datetime import datetime
 from functools import cached_property, lru_cache
 
 import httpx
-import uvloop
 from bs4 import BeautifulSoup
 from telegraph import Telegraph
-from tortoise import Tortoise, fields
+from tortoise import Tortoise
 from tortoise.exceptions import IntegrityError
 from tortoise.query_utils import Q
 
@@ -26,16 +23,7 @@ from database import (
     reply_cache,
     video_cache,
 )
-
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO
-)
-
-logger = logging.getLogger("Bili_Parser")
-
-headers = {
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.87 Safari/537.36"
-}
+from utils import headers, logger
 
 
 def escape_markdown(text):
@@ -185,9 +173,7 @@ class dynamic(feed):
 
     @cached_property
     def has_forward(self):
-        return bool(
-            self.detailcontent["data"]["card"]["desc"]["orig_type"]
-        )
+        return bool(self.detailcontent["data"]["card"]["desc"]["orig_type"])
 
     @cached_property
     def forward_type(self):
@@ -401,7 +387,11 @@ async def dynamic_parser(client, url):
     if not (match := re.search(r"[th]\.bilibili\.com[\/\w]*\/(\d+)", url)):
         raise ParserException("动态链接错误", url, match)
     f = dynamic(url)
-    query = Q(rid=match.group(1)) if "type=2" in match.group(0) else Q(dynamic_id=match.group(1))
+    query = (
+        Q(rid=match.group(1))
+        if "type=2" in match.group(0)
+        else Q(dynamic_id=match.group(1))
+    )
     if cache := await dynamic_cache.get_or_none(
         query,
         Q(created__gte=datetime.utcnow() - dynamic_cache.timeout),
@@ -863,8 +853,6 @@ async def feed_parser(client, url):
 
 
 def db_init(func):
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-
     async def inner_function(*args, **kwargs):
         await Tortoise.init(
             db_url=os.environ.get("DATABASE_URL", "sqlite://cache.db"),

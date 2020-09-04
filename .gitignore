@@ -9,3 +9,4 @@ Pipfile*
 *.js
 *.db
 *.yml
+*.log*

@@ -1,6 +1,4 @@
 import asyncio
-import json
-import logging
 import os
 import re
 import sys
@@ -9,7 +7,6 @@ from io import BytesIO
 from uuid import uuid4
 
 import httpx
-import uvloop
 from PIL import Image
 from telegram import (
     InlineKeyboardButton,
@@ -35,15 +32,8 @@ from telegram.ext.dispatcher import run_async
 from telegram.ext.filters import Filters
 from telegram.utils.helpers import escape_markdown
 
-from biliparser import biliparser, headers
-
-asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO
-)
-
-logger = logging.getLogger("Telegram_Bili_Feed_Helper")
+from biliparser import biliparser
+from utils import headers, logger
 
 regex = r"(?i)[\w\.]*?(?:bilibili\.com|(?:b23|acg)\.tv)\S+"
 
@@ -52,7 +42,8 @@ sourcecodemarkup = InlineKeyboardMarkup(
     [
         [
             InlineKeyboardButton(
-                text="源代码", url="https://github.com/simonsmh/telegram-bili-feed-helper",
+                text="源代码",
+                url="https://github.com/simonsmh/telegram-bili-feed-helper",
             )
         ]
     ]
@@ -280,7 +271,8 @@ def inlineparse(update, context):
                 description=f.__str__(),
                 reply_markup=origin_link(url),
                 input_message_content=InputTextMessageContent(
-                    captions(f), disable_web_page_preview=True,
+                    captions(f),
+                    disable_web_page_preview=True,
                 ),
             )
         ]
