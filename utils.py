@@ -1,5 +1,8 @@
 import logging
+from io import BytesIO
+
 import uvloop
+from PIL import Image
 
 # logging.basicConfig(
 #     format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -28,3 +31,10 @@ headers = {
 }
 
 uvloop.install()
+
+
+def compress(inpil,size=1280) -> BytesIO:
+    pil = Image.open(inpil)
+    pil.thumbnail((size, size), Image.LANCZOS)
+    pil.save(outpil := BytesIO(), "PNG", optimize=True)
+    return outpil

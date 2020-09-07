@@ -5,6 +5,7 @@ import os
 import re
 from datetime import datetime
 from functools import cached_property, lru_cache
+from io import BytesIO
 
 import httpx
 from bs4 import BeautifulSoup
@@ -23,7 +24,7 @@ from database import (
     reply_cache,
     video_cache,
 )
-from utils import headers, logger
+from utils import compress, headers, logger
 
 
 def escape_markdown(text):
@@ -460,7 +461,7 @@ async def dynamic_parser(client, url):
             f.content = f.card.get("new_desc") if f.card.get("new_desc") else fu.content
         # article
         elif f.origin_type in detail_types_list.get("ARTICLE"):
-            fu = await live_parser(client, f'bilibili.com/read/cv{f.card.get("id")}')
+            fu = await read_parser(client, f'bilibili.com/read/cv{f.card.get("id")}')
             f.content = fu.content
         else:
             fu = None
@@ -764,10 +765,19 @@ async def read_parser(client, url):
             headers=headers, http2=True, timeout=None, verify=False
         ) as client:
             r = await client.get(f"https:{src}")
-            files = {"upload-file": r.content}
-            response = await client.post("https://telegra.ph/upload", files=files)
-            url = f"https://telegra.ph{response.json()[0].get('src')}"
-            img.attrs["src"] = url
+            media = BytesIO(r.read())
+            mediatype = r.headers.get("content-type")
+            if mediatype in ["image/jpeg", "image/png"]:
+                logger.info(f"压缩: {src} {mediatype}")
+                media = compress(media)
+            r = await client.post(
+                "https://telegra.ph/upload", files={"upload-file": media.getvalue()}
+            )
+            resp = r.json()
+            if isinstance(resp, list):
+                img.attrs["src"] = f"https://telegra.ph{resp[0].get('src')}"
+            else:
+                logger.warning(f"{src} -> {resp}")
 
     if not (match := re.search(r"bilibili\.com\/read\/cv(\d+)", url)):
         raise ParserException("文章链接错误", url, match)

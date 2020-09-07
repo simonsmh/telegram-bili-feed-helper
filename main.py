@@ -7,7 +7,6 @@ from io import BytesIO
 from uuid import uuid4
 
 import httpx
-from PIL import Image
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -33,7 +32,7 @@ from telegram.ext.filters import Filters
 from telegram.utils.helpers import escape_markdown
 
 from biliparser import biliparser
-from utils import headers, logger
+from utils import compress, headers, logger
 
 regex = r"(?i)[\w\.]*?(?:bilibili\.com|(?:b23|acg)\.tv)\S+"
 
@@ -75,12 +74,7 @@ def captions(f):
     return parser_helper(captions)
 
 
-async def get_media(f, url, size=1280, compression=True):
-    def compress(inpil):
-        pil = Image.open(inpil)
-        pil.thumbnail((size, size), Image.LANCZOS)
-        pil.save(outpil := BytesIO(), "PNG", optimize=True)
-        return outpil
+async def get_media(f, url, compression=True):
 
     async with httpx.AsyncClient(
         headers=headers, http2=True, timeout=None, verify=False
