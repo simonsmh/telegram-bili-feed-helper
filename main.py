@@ -4,6 +4,7 @@ import re
 import sys
 from functools import lru_cache
 from io import BytesIO
+from typing import IO, Union
 from uuid import uuid4
 
 import httpx
@@ -27,11 +28,11 @@ from telegram.ext import (
     MessageHandler,
     Updater,
 )
-from telegram.ext.dispatcher import run_async
+from telegram.ext.callbackcontext import CallbackContext
 from telegram.ext.filters import Filters
-from telegram.utils.helpers import escape_markdown
+from telegram.update import Update
 
-from biliparser import biliparser
+from biliparser import biliparser, feed
 from utils import compress, headers, logger
 
 regex = r"(?i)[\w\.]*?(?:bilibili\.com|(?:b23|acg)\.tv)\S+"
@@ -49,13 +50,13 @@ sourcecodemarkup = InlineKeyboardMarkup(
 )
 
 
-def origin_link(content):
+def origin_link(content: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[InlineKeyboardButton(text="原链接", url=content)]])
 
 
 @lru_cache(maxsize=16)
-def captions(f):
-    def parser_helper(content):
+def captions(f: Union[feed, Exception]) -> str:
+    def parser_helper(content: str) -> str:
         charegex = r"\W"
         content = re.sub(
             r"\\#([^#]+)\\#?",
@@ -74,7 +75,7 @@ def captions(f):
     return parser_helper(captions)
 
 
-async def get_media(f, url, compression=True):
+async def get_media(f: feed, url, compression=True, size=320) -> IO[bytes]:
 
     async with httpx.AsyncClient(
         headers=headers, http2=True, timeout=None, verify=False
@@ -85,20 +86,21 @@ async def get_media(f, url, compression=True):
     if compression:
         if mediatype in ["image/jpeg", "image/png"]:
             logger.info(f"压缩: {url} {mediatype}")
-            media = compress(media)
+            media = compress(media, size)
     media.seek(0)
     return media
 
 
-def parse(update, context):
+def parse(update: Update, context: CallbackContext) -> None:
     message = update.effective_message
     data = message.text
     urls = re.findall(regex, data)
     logger.info(f"Parse: {urls}")
 
-    async def callback(f, caption):
-        if f.mediathumb:
-            mediathumb = await get_media(f, f.mediathumb, size=320)
+    async def callback(f: feed) -> None:
+        mediathumb = (
+            await get_media(f, f.mediathumb, size=320) if f.mediathumb else None
+        )
         if f.mediaraws:
             tasks = [get_media(f, img) for img in f.mediaurls]
             media = await asyncio.gather(*tasks)
@@ -163,7 +165,7 @@ def parse(update, context):
                 reply_markup=origin_link(f.url),
             )
 
-    async def parse_queue(urls):
+    async def parse_queue(urls) -> None:
         fs = await biliparser(urls)
         for num, f in enumerate(fs):
             if isinstance(f, Exception):
@@ -178,12 +180,12 @@ def parse(update, context):
                 continue
             if f.mediaurls:
                 try:
-                    await callback(f, captions(f))
+                    await callback(f)
                 except (TimedOut, BadRequest) as err:
                     logger.exception(err)
                     logger.info(f"{err} -> 下载中: {f.url}")
                     f.mediaraws = True
-                    await callback(f, captions(f))
+                    await callback(f)
             else:
                 message.reply_text(
                     captions(f),
@@ -196,13 +198,13 @@ def parse(update, context):
     asyncio.run(parse_queue(urls))
 
 
-def fetch(update, context):
+def fetch(update: Update, context: CallbackContext) -> None:
     message = update.effective_message
     data = message.text
     urls = re.findall(regex, data)
     logger.info(f"Fetch: {urls}")
 
-    async def fetch_queue(url):
+    async def fetch_queue(urls) -> None:
         fs = await biliparser(urls)
         for num, f in enumerate(fs):
             if isinstance(f, Exception):
@@ -229,7 +231,7 @@ def fetch(update, context):
     asyncio.run(fetch_queue(urls))
 
 
-def inlineparse(update, context):
+def inlineparse(update: Update, context: CallbackContext) -> None:
     inline_query = update.inline_query
     query = inline_query.query
     helpmsg = [
@@ -339,7 +341,7 @@ def inlineparse(update, context):
     inline_query.answer(results)
 
 
-def start(update, context):
+def start(update: Update, context: CallbackContext) -> None:
     update.effective_message.reply_text(
         f"欢迎使用 @{context.bot.get_me().username} 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组自动匹配消息。",
         reply_markup=sourcecodemarkup,
@@ -356,7 +358,7 @@ if __name__ == "__main__":
         sys.exit(1)
     updater = Updater(TOKEN, use_context=True)
     updater.dispatcher.add_handler(
-        CommandHandler("start", start, filters=Filters.private)
+        CommandHandler("start", start, filters=Filters.private, run_async=True)
     )
     updater.dispatcher.add_handler(CommandHandler("file", fetch, run_async=True))
     updater.dispatcher.add_handler(CommandHandler("parse", parse, run_async=True))

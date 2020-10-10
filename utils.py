@@ -2,7 +2,6 @@ import logging
 import logging.handlers
 from io import BytesIO
 
-import uvloop
 from PIL import Image
 
 logger = logging.getLogger("Telegram_Bili_Feed_Helper")
@@ -27,10 +26,8 @@ headers = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.87 Safari/537.36"
 }
 
-# uvloop.install()
 
-
-def compress(inpil,size=1280) -> BytesIO:
+def compress(inpil, size=1280) -> BytesIO:
     pil = Image.open(inpil)
     pil.thumbnail((size, size), Image.LANCZOS)
     pil.save(outpil := BytesIO(), "PNG", optimize=True)
