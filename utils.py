@@ -1,12 +1,9 @@
 import logging
+import logging.handlers
 from io import BytesIO
 
 import uvloop
 from PIL import Image
-
-# logging.basicConfig(
-#     format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO
-# )
 
 logger = logging.getLogger("Telegram_Bili_Feed_Helper")
 logger.setLevel(logging.DEBUG)
@@ -30,7 +27,7 @@ headers = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.87 Safari/537.36"
 }
 
-uvloop.install()
+# uvloop.install()
 
 
 def compress(inpil,size=1280) -> BytesIO:

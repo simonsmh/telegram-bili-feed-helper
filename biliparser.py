@@ -892,7 +892,7 @@ async def biliparser(urls):
             )
             for url in urls
         )
-    callbacks = await asyncio.gather(*tasks)
+        callbacks = await asyncio.gather(*tasks)
     for num, f in enumerate(callbacks):
         if isinstance(f, Exception):
             logger.warn(f"排序: {num}\n异常: {f}\n")

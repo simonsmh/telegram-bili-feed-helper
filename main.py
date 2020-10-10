@@ -90,7 +90,6 @@ async def get_media(f, url, compression=True):
     return media
 
 
-@run_async
 def parse(update, context):
     message = update.effective_message
     data = message.text
@@ -197,7 +196,6 @@ def parse(update, context):
     asyncio.run(parse_queue(urls))
 
 
-@run_async
 def fetch(update, context):
     message = update.effective_message
     data = message.text
@@ -231,13 +229,12 @@ def fetch(update, context):
     asyncio.run(fetch_queue(urls))
 
 
-@run_async
 def inlineparse(update, context):
     inline_query = update.inline_query
     query = inline_query.query
     helpmsg = [
         InlineQueryResultArticle(
-            id=uuid4(),
+            id=str(uuid4()),
             title="帮助",
             description="将 Bot 添加到群组可以自动匹配消息, Inline 模式只可发单张图。",
             reply_markup=sourcecodemarkup,
@@ -260,7 +257,7 @@ def inlineparse(update, context):
         logger.warning(f"解析错误! {f}")
         results = [
             InlineQueryResultArticle(
-                id=uuid4(),
+                id=str(uuid4()),
                 title="解析错误!",
                 description=f.__str__(),
                 reply_markup=origin_link(url),
@@ -274,7 +271,7 @@ def inlineparse(update, context):
         if not f.mediaurls:
             results = [
                 InlineQueryResultArticle(
-                    id=uuid4(),
+                    id=str(uuid4()),
                     title=f.user,
                     description=f.content,
                     reply_markup=origin_link(f.url),
@@ -289,7 +286,7 @@ def inlineparse(update, context):
             if f.mediatype == "video":
                 results = [
                     InlineQueryResultVideo(
-                        id=uuid4(),
+                        id=str(uuid4()),
                         caption=captions(f),
                         title=f.user,
                         description=f.content,
@@ -303,7 +300,7 @@ def inlineparse(update, context):
             if f.mediatype == "audio":
                 results = [
                     InlineQueryResultAudio(
-                        id=uuid4(),
+                        id=str(uuid4()),
                         caption=captions(f),
                         title=f.mediatitle,
                         description=f.content,
@@ -318,7 +315,7 @@ def inlineparse(update, context):
             else:
                 results = [
                     InlineQueryResultGif(
-                        id=uuid4(),
+                        id=str(uuid4()),
                         caption=captions(f),
                         title=f"{f.user}: {f.content}",
                         gif_url=img,
@@ -328,7 +325,7 @@ def inlineparse(update, context):
                     )
                     if ".gif" in img
                     else InlineQueryResultPhoto(
-                        id=uuid4(),
+                        id=str(uuid4()),
                         caption=captions(f),
                         title=f.user,
                         description=f.content,
@@ -342,12 +339,6 @@ def inlineparse(update, context):
     inline_query.answer(results)
 
 
-@run_async
-def error(update, context):
-    logger.warning(f"Update {context} caused error {error}")
-
-
-@run_async
 def start(update, context):
     update.effective_message.reply_text(
         f"欢迎使用 @{context.bot.get_me().username} 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组自动匹配消息。",
@@ -357,21 +348,22 @@ def start(update, context):
 
 if __name__ == "__main__":
     if os.environ.get("TOKEN"):
-        TOKEN = os.environ.get("TOKEN")
+        TOKEN = os.environ["TOKEN"]
     elif len(sys.argv) >= 2:
         TOKEN = sys.argv[1]
     else:
-        logger.exception(f"Need TOKEN.")
+        logger.error(f"Need TOKEN.")
         sys.exit(1)
     updater = Updater(TOKEN, use_context=True)
     updater.dispatcher.add_handler(
         CommandHandler("start", start, filters=Filters.private)
     )
-    updater.dispatcher.add_handler(CommandHandler("file", fetch))
-    updater.dispatcher.add_handler(CommandHandler("parse", parse))
-    updater.dispatcher.add_handler(MessageHandler(Filters.regex(regex), parse))
-    updater.dispatcher.add_handler(InlineQueryHandler(inlineparse))
-    updater.dispatcher.add_error_handler(error)
+    updater.dispatcher.add_handler(CommandHandler("file", fetch, run_async=True))
+    updater.dispatcher.add_handler(CommandHandler("parse", parse, run_async=True))
+    updater.dispatcher.add_handler(
+        MessageHandler(Filters.regex(regex), parse, run_async=True)
+    )
+    updater.dispatcher.add_handler(InlineQueryHandler(inlineparse, run_async=True))
     if DOMAIN := os.environ.get("DOMAIN"):
         updater.start_webhook(
             listen="0.0.0.0",
