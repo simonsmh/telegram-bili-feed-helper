@@ -16,6 +16,7 @@ from telegram import (
     InlineQueryResultGif,
     InlineQueryResultPhoto,
     InlineQueryResultVideo,
+    InputMediaDocument,
     InputMediaPhoto,
     InputTextMessageContent,
     ParseMode,
@@ -75,7 +76,9 @@ def captions(f: Union[feed, Exception]) -> str:
     return parser_helper(captions)
 
 
-async def get_media(f: feed, url, compression=True, size=320) -> IO[bytes]:
+async def get_media(
+    f: feed, url: str, compression: bool = True, size: int = 320, filename: str = None
+) -> IO[bytes]:
 
     async with httpx.AsyncClient(
         headers=headers, http2=True, timeout=None, verify=False
@@ -87,6 +90,8 @@ async def get_media(f: feed, url, compression=True, size=320) -> IO[bytes]:
         if mediatype in ["image/jpeg", "image/png"]:
             logger.info(f"压缩: {url} {mediatype}")
             media = compress(media, size)
+    if filename:
+        media.name = filename
     media.seek(0)
     return media
 
@@ -217,13 +222,29 @@ def fetch(update: Update, context: CallbackContext) -> None:
                 )
                 continue
             if f.mediaurls:
-                tasks = [get_media(f, img, compression=False) for img in f.mediaurls]
+                tasks = [
+                    get_media(f, img, filename=filename, compression=False)
+                    for img, filename in zip(f.mediaurls, f.mediafilename)
+                ]
                 medias = await asyncio.gather(*tasks)
                 logger.info(f"上传中: {f.url}")
-                for media, mediafilename in zip(medias, f.mediafilename):
+                if len(medias) > 1:
+                    medias = [InputMediaDocument(media) for media in medias]
+                    message.reply_media_group(
+                        medias,
+                        quote=False,
+                    )
+                    message.reply_text(
+                        captions(f),
+                        disable_web_page_preview=True,
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                        quote=False,
+                        reply_markup=origin_link(f.url),
+                    )
+                else:
                     message.reply_document(
-                        media,
-                        filename=mediafilename,
+                        document=medias[0],
+                        caption=captions(f),
                         quote=False,
                         reply_markup=origin_link(f.url),
                     )
@@ -358,7 +379,9 @@ if __name__ == "__main__":
         sys.exit(1)
     updater = Updater(TOKEN, use_context=True)
     updater.dispatcher.add_handler(
-        CommandHandler("start", start, filters=Filters.private, run_async=True)
+        CommandHandler(
+            "start", start, filters=Filters.chat_type.private, run_async=True
+        )
     )
     updater.dispatcher.add_handler(CommandHandler("file", fetch, run_async=True))
     updater.dispatcher.add_handler(CommandHandler("parse", parse, run_async=True))
