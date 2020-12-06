@@ -121,7 +121,7 @@ def parse(update: Update, context: CallbackContext) -> None:
                 media[0],
                 caption=captions(f),
                 parse_mode=ParseMode.MARKDOWN_V2,
-                quote=False,
+                allow_sending_without_reply=True,
                 reply_markup=origin_link(f.url),
                 supports_streaming=True,
                 thumb=mediathumb,
@@ -133,7 +133,7 @@ def parse(update: Update, context: CallbackContext) -> None:
                 duration=f.mediaduration,
                 parse_mode=ParseMode.MARKDOWN_V2,
                 performer=f.user,
-                quote=False,
+                allow_sending_without_reply=True,
                 reply_markup=origin_link(f.url),
                 thumb=mediathumb,
                 title=f.mediatitle,
@@ -144,7 +144,7 @@ def parse(update: Update, context: CallbackContext) -> None:
                     media[0],
                     caption=captions(f),
                     parse_mode=ParseMode.MARKDOWN_V2,
-                    quote=False,
+                    allow_sending_without_reply=True,
                     reply_markup=origin_link(f.url),
                 )
             else:
@@ -152,7 +152,7 @@ def parse(update: Update, context: CallbackContext) -> None:
                     media[0],
                     caption=captions(f),
                     parse_mode=ParseMode.MARKDOWN_V2,
-                    quote=False,
+                    allow_sending_without_reply=True,
                     reply_markup=origin_link(f.url),
                 )
         else:
@@ -166,12 +166,12 @@ def parse(update: Update, context: CallbackContext) -> None:
                 )
                 for img, mediaurl in zip(media, f.mediaurls)
             ]
-            message.reply_media_group(media, quote=False)
+            message.reply_media_group(media, allow_sending_without_reply=True)
             message.reply_text(
                 captions(f),
                 disable_web_page_preview=True,
                 parse_mode=ParseMode.MARKDOWN_V2,
-                quote=False,
+                allow_sending_without_reply=True,
                 reply_markup=origin_link(f.url),
             )
 
@@ -184,7 +184,7 @@ def parse(update: Update, context: CallbackContext) -> None:
                     message.reply_text(
                         captions(f),
                         disable_web_page_preview=True,
-                        quote=False,
+                        allow_sending_without_reply=True,
                         reply_markup=origin_link(urls[num]),
                     )
                 continue
@@ -201,7 +201,7 @@ def parse(update: Update, context: CallbackContext) -> None:
                     captions(f),
                     disable_web_page_preview=True,
                     parse_mode=ParseMode.MARKDOWN_V2,
-                    quote=False,
+                    allow_sending_without_reply=True,
                     reply_markup=origin_link(f.url),
                 )
 
@@ -222,7 +222,7 @@ def fetch(update: Update, context: CallbackContext) -> None:
                 message.reply_text(
                     captions(f),
                     disable_web_page_preview=True,
-                    quote=False,
+                    allow_sending_without_reply=True,
                     reply_markup=origin_link(urls[num]),
                 )
                 continue
@@ -237,20 +237,20 @@ def fetch(update: Update, context: CallbackContext) -> None:
                     medias = [InputMediaDocument(media) for media in medias]
                     message.reply_media_group(
                         medias,
-                        quote=False,
+                        allow_sending_without_reply=True,
                     )
                     message.reply_text(
                         captions(f),
                         disable_web_page_preview=True,
                         parse_mode=ParseMode.MARKDOWN_V2,
-                        quote=False,
+                        allow_sending_without_reply=True,
                         reply_markup=origin_link(f.url),
                     )
                 else:
                     message.reply_document(
                         document=medias[0],
                         caption=captions(f),
-                        quote=False,
+                        allow_sending_without_reply=True,
                         reply_markup=origin_link(f.url),
                     )
 
