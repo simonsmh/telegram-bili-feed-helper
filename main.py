@@ -18,6 +18,7 @@ from telegram import (
     InlineQueryResultVideo,
     InputMediaDocument,
     InputMediaPhoto,
+    InputMediaVideo,
     InputTextMessageContent,
     ParseMode,
 )
@@ -107,7 +108,7 @@ def parse(update: Update, context: CallbackContext) -> None:
             await get_media(f, f.mediathumb, size=320) if f.mediathumb else None
         )
         if f.mediaraws:
-            tasks = [get_media(f, img) for img in f.mediaurls]
+            tasks = [get_media(f, img, size=1280) for img in f.mediaurls]
             media = await asyncio.gather(*tasks)
             logger.info(f"上传中: {f.url}")
         else:
@@ -156,10 +157,14 @@ def parse(update: Update, context: CallbackContext) -> None:
                 )
         else:
             media = [
-                InputMediaPhoto(
+                InputMediaVideo(
                     img, caption=captions(f), parse_mode=ParseMode.MARKDOWN_V2
                 )
-                for img in media
+                if ".gif" in mediaurl
+                else InputMediaPhoto(
+                    img, caption=captions(f), parse_mode=ParseMode.MARKDOWN_V2
+                )
+                for img, mediaurl in zip(media, f.mediaurls)
             ]
             message.reply_media_group(media, quote=False)
             message.reply_text(
