@@ -10,7 +10,7 @@ from io import BytesIO
 import httpx
 from bs4 import BeautifulSoup
 from telegraph import Telegraph
-from tortoise import Tortoise
+from tortoise import Tortoise, timezone
 from tortoise.exceptions import IntegrityError
 from tortoise.query_utils import Q
 
@@ -359,7 +359,7 @@ def safe_parser(func):
 async def reply_parser(client, oid, reply_type):
     if cache := await reply_cache.get_or_none(
         query := Q(Q(oid=oid), Q(reply_type=reply_type)),
-        Q(created__gte=datetime.utcnow() - reply_cache.timeout),
+        Q(created__gte=timezone.now() - reply_cache.timeout),
     ):
         logger.info(f"拉取评论缓存: {cache.created}")
         r = cache.content
@@ -395,7 +395,7 @@ async def dynamic_parser(client, url):
     )
     if cache := await dynamic_cache.get_or_none(
         query,
-        Q(created__gte=datetime.utcnow() - dynamic_cache.timeout),
+        Q(created__gte=timezone.now() - dynamic_cache.timeout),
     ):
         logger.info(f"拉取动态缓存: {cache.created}")
         f.detailcontent = cache.content
@@ -522,7 +522,7 @@ async def clip_parser(client, url):
     f.video_id = match.group(1)
     if cache := await clip_cache.get_or_none(
         query := Q(video_id=f.video_id),
-        Q(created__gte=datetime.utcnow() - clip_cache.timeout),
+        Q(created__gte=timezone.now() - clip_cache.timeout),
     ):
         logger.info(f"拉取短视频缓存: {cache.created}")
         f.rawcontent = cache.content
@@ -563,7 +563,7 @@ async def audio_parser(client, url):
     f.audio_id = match.group(1)
     if cache := await audio_cache.get_or_none(
         query := Q(audio_id=f.audio_id),
-        Q(created__gte=datetime.utcnow() - audio_cache.timeout),
+        Q(created__gte=timezone.now() - audio_cache.timeout),
     ):
         logger.info(f"拉取音频缓存: {cache.created}")
         f.infocontent = cache.content
@@ -617,7 +617,7 @@ async def live_parser(client, url):
     f.room_id = match.group(1)
     if cache := await live_cache.get_or_none(
         query := Q(room_id=f.room_id),
-        Q(created__gte=datetime.utcnow() - live_cache.timeout),
+        Q(created__gte=timezone.now() - live_cache.timeout),
     ):
         logger.info(f"拉取直播缓存: {cache.created}")
         f.rawcontent = cache.content
@@ -675,7 +675,7 @@ async def video_parser(client, url):
                 Q(ssid=params.get("season_id")),
                 join_type="OR",
             ),
-            Q(created__gte=datetime.utcnow() - video_cache.timeout),
+            Q(created__gte=timezone.now() - video_cache.timeout),
         ):
             logger.info(f"拉取番剧缓存: {cache.created}")
             f.infocontent = cache.content
@@ -710,7 +710,7 @@ async def video_parser(client, url):
         query := Q(
             Q(aid=params.get("aid")), Q(bvid=params.get("bvid")), join_type="OR"
         ),
-        Q(created__gte=datetime.utcnow() - video_cache.timeout),
+        Q(created__gte=timezone.now() - video_cache.timeout),
     ):
         logger.info(f"拉取视频缓存: {cache.created}")
         f.infocontent = cache.content
@@ -793,7 +793,7 @@ async def read_parser(client, url):
     logger.info(f"文章ID: {f.read_id}")
     if cache := await read_cache.get_or_none(
         query := Q(read_id=f.read_id),
-        Q(created__gte=datetime.utcnow() - audio_cache.timeout),
+        Q(created__gte=timezone.now() - audio_cache.timeout),
     ):
         logger.info(f"拉取文章缓存: {cache.created}")
         graphurl = cache.graphurl
