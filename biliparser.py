@@ -867,6 +867,7 @@ def db_init(func):
         await Tortoise.init(
             db_url=os.environ.get("DATABASE_URL", "sqlite://cache.db"),
             modules={"models": ["database"]},
+            use_tz=True,
         )
         await Tortoise.generate_schemas()
         result = await func(*args, **kwargs)
