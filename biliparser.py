@@ -779,7 +779,7 @@ async def read_parser(client, url):
             else:
                 logger.warning(f"{src} -> {resp}")
 
-    if not (match := re.search(r"bilibili\.com\/read\/(cv|mobile\/)(\d+)", url)):
+    if not (match := re.search(r"bilibili\.com\/read\/(?:cv|mobile\/)(\d+)", url)):
         raise ParserException("文章链接错误", url, match)
     f = read(url)
     f.read_id = match.group(1)
