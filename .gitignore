@@ -1,6 +1,7 @@
 __pycache__
 .idea
 .vscode
+.venv
 data
 *.json
 !sample.json

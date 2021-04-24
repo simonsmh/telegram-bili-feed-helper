@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import httpx
 from telegram import (
+    ChatAction,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InlineQueryResultArticle,
@@ -99,6 +100,7 @@ async def get_media(
 
 def parse(update: Update, context: CallbackContext) -> None:
     message = update.effective_message
+    message.reply_chat_action(ChatAction.TYPING)
     data = message.text
     urls = re.findall(regex, data)
     logger.info(f"Parse: {urls}")
@@ -210,6 +212,7 @@ def parse(update: Update, context: CallbackContext) -> None:
 
 def fetch(update: Update, context: CallbackContext) -> None:
     message = update.effective_message
+    message.reply_chat_action(ChatAction.UPLOAD_DOCUMENT)
     data = message.text
     urls = re.findall(regex, data)
     logger.info(f"Fetch: {urls}")
@@ -401,6 +404,7 @@ if __name__ == "__main__":
             url_path=TOKEN,
             webhook_url=DOMAIN + TOKEN,
         )
+        updater.bot.setWebhook(DOMAIN + TOKEN)
     else:
         updater.start_polling()
     logger.info(f"Bot @{updater.bot.get_me().username} started.")
