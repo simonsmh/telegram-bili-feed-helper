@@ -54,11 +54,18 @@ sourcecodemarkup = InlineKeyboardMarkup(
 
 
 def origin_link(content: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton(text="原链接", url=content)]])
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(text="原链接", url=content),
+                InlineKeyboardButton(text="转发", switch_inline_query=content),
+            ]
+        ]
+    )
 
 
 @lru_cache(maxsize=16)
-def captions(f: Union[feed, Exception]) -> str:
+def captions(f: Union[feed, Exception], fallback: bool = False) -> str:
     def parser_helper(content: str) -> str:
         charegex = r"\W"
         content = re.sub(
@@ -70,11 +77,15 @@ def captions(f: Union[feed, Exception]) -> str:
 
     if isinstance(f, Exception):
         return parser_helper(f.__str__())
-    captions = f"{f.user_markdown}:\n"
-    if f.content_markdown:
-        captions += f.content_markdown
-    if f.comment_markdown:
-        captions += f"\n\\-\\-\\-\\-\\-\\-\n{f.comment_markdown}"
+    captions = f"{f.user if fallback else f.user_markdown}:\n"
+    if f.content:
+        captions += f.content if fallback else f.content_markdown
+    if f.comment:
+        captions += (
+            f"\n------\n{f.comment}"
+            if fallback
+            else f"\n\\-\\-\\-\\-\\-\\-\n{f.comment_markdown}"
+        )
     return parser_helper(captions)
 
 
@@ -105,7 +116,7 @@ def parse(update: Update, context: CallbackContext) -> None:
     urls = re.findall(regex, data)
     logger.info(f"Parse: {urls}")
 
-    async def callback(f: feed) -> None:
+    async def callback(f: feed, fallback: bool = False) -> None:
         mediathumb = (
             await get_media(f, f.mediathumb, size=320) if f.mediathumb else None
         )
@@ -121,8 +132,8 @@ def parse(update: Update, context: CallbackContext) -> None:
         if f.mediatype == "video":
             message.reply_video(
                 media[0],
-                caption=captions(f),
-                parse_mode=ParseMode.MARKDOWN_V2,
+                caption=captions(f, fallback),
+                parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                 allow_sending_without_reply=True,
                 reply_markup=origin_link(f.url),
                 supports_streaming=True,
@@ -131,9 +142,9 @@ def parse(update: Update, context: CallbackContext) -> None:
         elif f.mediatype == "audio":
             message.reply_audio(
                 media[0],
-                caption=captions(f),
+                caption=captions(f, fallback),
                 duration=f.mediaduration,
-                parse_mode=ParseMode.MARKDOWN_V2,
+                parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                 performer=f.user,
                 allow_sending_without_reply=True,
                 reply_markup=origin_link(f.url),
@@ -144,35 +155,39 @@ def parse(update: Update, context: CallbackContext) -> None:
             if ".gif" in f.mediaurls[0]:
                 message.reply_animation(
                     media[0],
-                    caption=captions(f),
-                    parse_mode=ParseMode.MARKDOWN_V2,
+                    caption=captions(f, fallback),
+                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                     allow_sending_without_reply=True,
                     reply_markup=origin_link(f.url),
                 )
             else:
                 message.reply_photo(
                     media[0],
-                    caption=captions(f),
-                    parse_mode=ParseMode.MARKDOWN_V2,
+                    caption=captions(f, fallback),
+                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                     allow_sending_without_reply=True,
                     reply_markup=origin_link(f.url),
                 )
         else:
             media = [
                 InputMediaVideo(
-                    img, caption=captions(f), parse_mode=ParseMode.MARKDOWN_V2
+                    img,
+                    caption=captions(f, fallback),
+                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                 )
                 if ".gif" in mediaurl
                 else InputMediaPhoto(
-                    img, caption=captions(f), parse_mode=ParseMode.MARKDOWN_V2
+                    img,
+                    caption=captions(f, fallback),
+                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                 )
                 for img, mediaurl in zip(media, f.mediaurls)
             ]
             message.reply_media_group(media, allow_sending_without_reply=True)
             message.reply_text(
-                captions(f),
+                captions(f, fallback),
                 disable_web_page_preview=True,
-                parse_mode=ParseMode.MARKDOWN_V2,
+                parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                 allow_sending_without_reply=True,
                 reply_markup=origin_link(f.url),
             )
@@ -193,19 +208,38 @@ def parse(update: Update, context: CallbackContext) -> None:
             if f.mediaurls:
                 try:
                     await callback(f)
-                except (TimedOut, BadRequest) as err:
+                except TimedOut as err:
                     logger.exception(err)
                     logger.info(f"{err} -> 下载中: {f.url}")
                     f.mediaraws = True
                     await callback(f)
+                except BadRequest as err:
+                    logger.exception(err)
+                    if "Can't parse" in err.message:
+                        logger.info(f"{err} -> 去除Markdown: {f.url}")
+                        await callback(f, True)
+                    else:
+                        logger.info(f"{err} -> 下载中: {f.url}")
+                        f.mediaraws = True
+                        await callback(f)
             else:
-                message.reply_text(
-                    captions(f),
-                    disable_web_page_preview=True,
-                    parse_mode=ParseMode.MARKDOWN_V2,
-                    allow_sending_without_reply=True,
-                    reply_markup=origin_link(f.url),
-                )
+                try:
+                    message.reply_text(
+                        captions(f),
+                        disable_web_page_preview=True,
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                        allow_sending_without_reply=True,
+                        reply_markup=origin_link(f.url),
+                    )
+                except BadRequest as err:
+                    logger.exception(err)
+                    logger.info(f"{err} -> 去除Markdown: {f.url}")
+                    message.reply_text(
+                        captions(f, True),
+                        disable_web_page_preview=True,
+                        allow_sending_without_reply=True,
+                        reply_markup=origin_link(f.url),
+                    )
 
     asyncio.run(parse_queue(urls))
 
@@ -242,20 +276,41 @@ def fetch(update: Update, context: CallbackContext) -> None:
                         medias,
                         allow_sending_without_reply=True,
                     )
-                    message.reply_text(
-                        captions(f),
-                        disable_web_page_preview=True,
-                        parse_mode=ParseMode.MARKDOWN_V2,
-                        allow_sending_without_reply=True,
-                        reply_markup=origin_link(f.url),
-                    )
+                    try:
+                        message.reply_text(
+                            captions(f),
+                            disable_web_page_preview=True,
+                            parse_mode=ParseMode.MARKDOWN_V2,
+                            allow_sending_without_reply=True,
+                            reply_markup=origin_link(f.url),
+                        )
+                    except BadRequest as err:
+                        logger.exception(err)
+                        logger.info(f"{err} -> 去除Markdown: {f.url}")
+                        message.reply_text(
+                            captions(f, True),
+                            disable_web_page_preview=True,
+                            allow_sending_without_reply=True,
+                            reply_markup=origin_link(f.url),
+                        )
                 else:
-                    message.reply_document(
-                        document=medias[0],
-                        caption=captions(f),
-                        allow_sending_without_reply=True,
-                        reply_markup=origin_link(f.url),
-                    )
+                    try:
+                        message.reply_document(
+                            document=medias[0],
+                            caption=captions(f),
+                            parse_mode=ParseMode.MARKDOWN_V2,
+                            allow_sending_without_reply=True,
+                            reply_markup=origin_link(f.url),
+                        )
+                    except BadRequest as err:
+                        logger.exception(err)
+                        logger.info(f"{err} -> 去除Markdown: {f.url}")
+                        message.reply_document(
+                            document=medias[0],
+                            caption=captions(f, True),
+                            allow_sending_without_reply=True,
+                            reply_markup=origin_link(f.url),
+                        )
 
     asyncio.run(fetch_queue(urls))
 
@@ -298,76 +353,87 @@ def inlineparse(update: Update, context: CallbackContext) -> None:
                 ),
             )
         ]
+        inline_query.answer(results)
     else:
-        if not f.mediaurls:
-            results = [
-                InlineQueryResultArticle(
-                    id=str(uuid4()),
-                    title=f.user,
-                    description=f.content,
-                    reply_markup=origin_link(f.url),
-                    input_message_content=InputTextMessageContent(
-                        captions(f),
-                        parse_mode=ParseMode.MARKDOWN_V2,
-                        disable_web_page_preview=True,
-                    ),
-                )
-            ]
-        else:
-            if f.mediatype == "video":
+
+        def answer_results(f: feed, fallback: bool = False):
+            if not f.mediaurls:
                 results = [
-                    InlineQueryResultVideo(
+                    InlineQueryResultArticle(
                         id=str(uuid4()),
-                        caption=captions(f),
                         title=f.user,
                         description=f.content,
-                        mime_type="video/mp4",
-                        parse_mode=ParseMode.MARKDOWN_V2,
                         reply_markup=origin_link(f.url),
-                        thumb_url=f.mediathumb,
-                        video_url=f.mediaurls[0],
-                    )
-                ]
-            if f.mediatype == "audio":
-                results = [
-                    InlineQueryResultAudio(
-                        id=str(uuid4()),
-                        caption=captions(f),
-                        title=f.mediatitle,
-                        description=f.content,
-                        audio_duration=f.mediaduration,
-                        audio_url=f.mediaurls[0],
-                        parse_mode=ParseMode.MARKDOWN_V2,
-                        performer=f.user,
-                        reply_markup=origin_link(f.url),
-                        thumb_url=f.mediathumb,
+                        input_message_content=InputTextMessageContent(
+                            captions(f, fallback),
+                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                            disable_web_page_preview=True,
+                        ),
                     )
                 ]
             else:
-                results = [
-                    InlineQueryResultGif(
-                        id=str(uuid4()),
-                        caption=captions(f),
-                        title=f"{f.user}: {f.content}",
-                        gif_url=img,
-                        parse_mode=ParseMode.MARKDOWN_V2,
-                        reply_markup=origin_link(f.url),
-                        thumb_url=img,
-                    )
-                    if ".gif" in img
-                    else InlineQueryResultPhoto(
-                        id=str(uuid4()),
-                        caption=captions(f),
-                        title=f.user,
-                        description=f.content,
-                        parse_mode=ParseMode.MARKDOWN_V2,
-                        photo_url=img + "@1280w.jpg",
-                        reply_markup=origin_link(f.url),
-                        thumb_url=img + "@512w_512h.jpg",
-                    )
-                    for img in f.mediaurls
-                ]
-    inline_query.answer(results)
+                if f.mediatype == "video":
+                    results = [
+                        InlineQueryResultVideo(
+                            id=str(uuid4()),
+                            caption=captions(f, fallback),
+                            title=f.user,
+                            description=f.content,
+                            mime_type="video/mp4",
+                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                            reply_markup=origin_link(f.url),
+                            thumb_url=f.mediathumb,
+                            video_url=f.mediaurls[0],
+                        )
+                    ]
+                if f.mediatype == "audio":
+                    results = [
+                        InlineQueryResultAudio(
+                            id=str(uuid4()),
+                            caption=captions(f, fallback),
+                            title=f.mediatitle,
+                            description=f.content,
+                            audio_duration=f.mediaduration,
+                            audio_url=f.mediaurls[0],
+                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                            performer=f.user,
+                            reply_markup=origin_link(f.url),
+                            thumb_url=f.mediathumb,
+                        )
+                    ]
+                else:
+                    results = [
+                        InlineQueryResultGif(
+                            id=str(uuid4()),
+                            caption=captions(f, fallback),
+                            title=f"{f.user}: {f.content}",
+                            gif_url=img,
+                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                            reply_markup=origin_link(f.url),
+                            thumb_url=img,
+                        )
+                        if ".gif" in img
+                        else InlineQueryResultPhoto(
+                            id=str(uuid4()),
+                            caption=captions(f, fallback),
+                            title=f.user,
+                            description=f.content,
+                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                            photo_url=img + "@1280w.jpg",
+                            reply_markup=origin_link(f.url),
+                            thumb_url=img + "@512w_512h.jpg",
+                        )
+                        for img in f.mediaurls
+                    ]
+                    results.extend(helpmsg)
+            inline_query.answer(results)
+
+        try:
+            answer_results(f)
+        except BadRequest as err:
+            logger.exception(err)
+            logger.info(f"{err} -> 去除Markdown: {f.url}")
+            answer_results(f, True)
 
 
 def start(update: Update, context: CallbackContext) -> None:
