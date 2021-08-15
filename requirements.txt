@@ -1,9 +1,7 @@
-aiosqlite
-asyncpg
 beautifulsoup4
 httpx[http2]
 lxml
 pillow
-python-telegram-bot==13.4.1
+python-telegram-bot==13.7
 telegraph
 tortoise-orm[accel]
