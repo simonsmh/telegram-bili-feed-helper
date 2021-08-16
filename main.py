@@ -473,7 +473,6 @@ if __name__ == "__main__":
             url_path=TOKEN,
             webhook_url=DOMAIN + TOKEN,
         )
-        updater.bot.setWebhook(DOMAIN + TOKEN)
     else:
         updater.start_polling()
     logger.info(f"Bot @{updater.bot.get_me().username} started.")
