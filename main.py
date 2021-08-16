@@ -66,27 +66,32 @@ def origin_link(content: str) -> InlineKeyboardMarkup:
 
 @lru_cache(maxsize=16)
 def captions(f: Union[feed, Exception], fallback: bool = False) -> str:
-    def parser_helper(content: str) -> str:
-        charegex = r"\W"
-        content = re.sub(
-            r"\\#([^#]+)\\#?",
-            lambda x: f"\\#{re.sub(charegex, '', x.group(1))} ",
-            content,
-        )
-        return content
+    # def parser_helper(content: str) -> str:
+    #     charegex = r"\W"
+    #     content = re.sub(
+    #         r"\\#([^#]+)\\#?",
+    #         lambda x: f"\\#{re.sub(charegex, '', x.group(1))} ",
+    #         content,
+    #     )
+    #     print(content)
+    #     return content
 
     if isinstance(f, Exception):
-        return parser_helper(f.__str__())
-    captions = f"{f.user if fallback else f.user_markdown}:\n"
+        return f.__str__()
+    captions = str()
+    if f.extra_markdown:
+        captions += (f.url if fallback else f"`{f.url}`\n{f.extra_markdown}") + "\n"
+    if f.user:
+        captions += (f.user if fallback else f.user_markdown) + ":\n"
     if f.content:
-        captions += f.content if fallback else f.content_markdown
-    if f.comment:
+        captions += (f.content if fallback else f.content_markdown) + "\n"
+    if f.has_comment:
         captions += (
-            f"\n------\n{f.comment}"
+            f"------\n{f.comment}"
             if fallback
-            else f"\n\\-\\-\\-\\-\\-\\-\n{f.comment_markdown}"
+            else f"\\-\\-\\-\\-\\-\\-\n{f.comment_markdown}"
         )
-    return parser_helper(captions)
+    return captions
 
 
 async def get_media(
@@ -120,7 +125,6 @@ def parse(update: Update, context: CallbackContext) -> None:
         if not f.mediaurls:
             message.reply_text(
                 captions(f, fallback),
-                disable_web_page_preview=True,
                 parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                 allow_sending_without_reply=True,
                 reply_markup=origin_link(f.url),
@@ -197,7 +201,6 @@ def parse(update: Update, context: CallbackContext) -> None:
                 message.reply_media_group(media, allow_sending_without_reply=True)
                 message.reply_text(
                     captions(f, fallback),
-                    disable_web_page_preview=True,
                     parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                     allow_sending_without_reply=True,
                     reply_markup=origin_link(f.url),
@@ -211,7 +214,6 @@ def parse(update: Update, context: CallbackContext) -> None:
                 if data.startswith("/parse"):
                     message.reply_text(
                         captions(f),
-                        disable_web_page_preview=True,
                         allow_sending_without_reply=True,
                         reply_markup=origin_link(urls[num]),
                     )
@@ -261,7 +263,6 @@ def fetch(update: Update, context: CallbackContext) -> None:
                 logger.warning(f"解析错误! {f}")
                 message.reply_text(
                     captions(f),
-                    disable_web_page_preview=True,
                     allow_sending_without_reply=True,
                     reply_markup=origin_link(urls[num]),
                 )
@@ -282,7 +283,6 @@ def fetch(update: Update, context: CallbackContext) -> None:
                     try:
                         message.reply_text(
                             captions(f),
-                            disable_web_page_preview=True,
                             parse_mode=ParseMode.MARKDOWN_V2,
                             allow_sending_without_reply=True,
                             reply_markup=origin_link(f.url),
@@ -292,7 +292,6 @@ def fetch(update: Update, context: CallbackContext) -> None:
                         logger.info(f"{err} -> 去除Markdown: {f.url}")
                         message.reply_text(
                             captions(f, True),
-                            disable_web_page_preview=True,
                             allow_sending_without_reply=True,
                             reply_markup=origin_link(f.url),
                         )
@@ -352,7 +351,6 @@ def inlineparse(update: Update, context: CallbackContext) -> None:
                 reply_markup=origin_link(url),
                 input_message_content=InputTextMessageContent(
                     captions(f),
-                    disable_web_page_preview=True,
                 ),
             )
         ]
@@ -370,7 +368,6 @@ def inlineparse(update: Update, context: CallbackContext) -> None:
                         input_message_content=InputTextMessageContent(
                             captions(f, fallback),
                             parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                            disable_web_page_preview=True,
                         ),
                     )
                 ]

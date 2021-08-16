@@ -94,8 +94,8 @@ class feed:
         content_markdown = escape_markdown(self.content)
         if not content_markdown.endswith("\n"):
             content_markdown += "\n"
-        if self.extra_markdown:
-            content_markdown += self.extra_markdown
+        # if self.extra_markdown:
+        #     content_markdown += self.extra_markdown
         return self.shrink_line(content_markdown)
 
     @cached_property
