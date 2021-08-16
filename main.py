@@ -23,7 +23,7 @@ from telegram import (
     InputTextMessageContent,
     ParseMode,
 )
-from telegram.error import BadRequest, TimedOut
+from telegram.error import BadRequest, RetryAfter, TimedOut
 from telegram.ext import (
     CommandHandler,
     Filters,
@@ -217,7 +217,7 @@ def parse(update: Update, context: CallbackContext) -> None:
                     )
                 continue
             markdown_fallback = False
-            for i in range(1, 4):
+            for i in range(1, 5):
                 try:
                     await parse_send(f, markdown_fallback)
                 except TimedOut as err:
@@ -232,6 +232,8 @@ def parse(update: Update, context: CallbackContext) -> None:
                     else:
                         logger.info(f"{err} 第{i}次异常->下载后上传: {f.url}")
                         f.mediaraws = True
+                except RetryAfter as err:
+                    await asyncio.sleep(1)
                 except httpx.RequestError as err:
                     logger.exception(err)
                     logger.info(f"{err} 第{i}次异常->重试: {f.url}")
