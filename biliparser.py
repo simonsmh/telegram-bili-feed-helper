@@ -214,7 +214,7 @@ class dynamic(feed):
     def card(self):
         return (
             json.loads(self.forward_card.get("origin"))
-            if self.has_forward
+            if self.has_forward and self.forward_card.get("origin") #forwared deleted content (workaround, not implemented yet)
             else self.forward_card
         )
 
