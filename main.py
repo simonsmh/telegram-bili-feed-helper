@@ -116,74 +116,8 @@ def parse(update: Update, context: CallbackContext) -> None:
     urls = re.findall(regex, data)
     logger.info(f"Parse: {urls}")
 
-    async def callback(f: feed, fallback: bool = False) -> None:
-        mediathumb = (
-            await get_media(f, f.mediathumb, size=320) if f.mediathumb else None
-        )
-        if f.mediaraws:
-            tasks = [get_media(f, img, size=1280) for img in f.mediaurls]
-            media = await asyncio.gather(*tasks)
-            logger.info(f"上传中: {f.url}")
-        else:
-            if f.mediatype == "image":
-                media = [i if ".gif" in i else i + "@1280w.jpg" for i in f.mediaurls]
-            else:
-                media = f.mediaurls
-        if f.mediatype == "video":
-            message.reply_video(
-                media[0],
-                caption=captions(f, fallback),
-                parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                allow_sending_without_reply=True,
-                reply_markup=origin_link(f.url),
-                supports_streaming=True,
-                thumb=mediathumb,
-            )
-        elif f.mediatype == "audio":
-            message.reply_audio(
-                media[0],
-                caption=captions(f, fallback),
-                duration=f.mediaduration,
-                parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                performer=f.user,
-                allow_sending_without_reply=True,
-                reply_markup=origin_link(f.url),
-                thumb=mediathumb,
-                title=f.mediatitle,
-            )
-        elif len(f.mediaurls) == 1:
-            if ".gif" in f.mediaurls[0]:
-                message.reply_animation(
-                    media[0],
-                    caption=captions(f, fallback),
-                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                    allow_sending_without_reply=True,
-                    reply_markup=origin_link(f.url),
-                )
-            else:
-                message.reply_photo(
-                    media[0],
-                    caption=captions(f, fallback),
-                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                    allow_sending_without_reply=True,
-                    reply_markup=origin_link(f.url),
-                )
-        else:
-            media = [
-                InputMediaVideo(
-                    img,
-                    caption=captions(f, fallback),
-                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                )
-                if ".gif" in mediaurl
-                else InputMediaPhoto(
-                    img,
-                    caption=captions(f, fallback),
-                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                )
-                for img, mediaurl in zip(media, f.mediaurls)
-            ]
-            message.reply_media_group(media, allow_sending_without_reply=True)
+    async def parse_send(f: feed, fallback: bool = False) -> None:
+        if not f.mediaurls:
             message.reply_text(
                 captions(f, fallback),
                 disable_web_page_preview=True,
@@ -191,6 +125,83 @@ def parse(update: Update, context: CallbackContext) -> None:
                 allow_sending_without_reply=True,
                 reply_markup=origin_link(f.url),
             )
+        else:
+            mediathumb = (
+                await get_media(f, f.mediathumb, size=320) if f.mediathumb else None
+            )
+            if f.mediaraws:
+                tasks = [get_media(f, img, size=1280) for img in f.mediaurls]
+                media = await asyncio.gather(*tasks)
+                logger.info(f"上传中: {f.url}")
+            else:
+                if f.mediatype == "image":
+                    media = [
+                        i if ".gif" in i else i + "@1280w.jpg" for i in f.mediaurls
+                    ]
+                else:
+                    media = f.mediaurls
+            if f.mediatype == "video":
+                message.reply_video(
+                    media[0],
+                    caption=captions(f, fallback),
+                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                    allow_sending_without_reply=True,
+                    reply_markup=origin_link(f.url),
+                    supports_streaming=True,
+                    thumb=mediathumb,
+                )
+            elif f.mediatype == "audio":
+                message.reply_audio(
+                    media[0],
+                    caption=captions(f, fallback),
+                    duration=f.mediaduration,
+                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                    performer=f.user,
+                    allow_sending_without_reply=True,
+                    reply_markup=origin_link(f.url),
+                    thumb=mediathumb,
+                    title=f.mediatitle,
+                )
+            elif len(f.mediaurls) == 1:
+                if ".gif" in f.mediaurls[0]:
+                    message.reply_animation(
+                        media[0],
+                        caption=captions(f, fallback),
+                        parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                        allow_sending_without_reply=True,
+                        reply_markup=origin_link(f.url),
+                    )
+                else:
+                    message.reply_photo(
+                        media[0],
+                        caption=captions(f, fallback),
+                        parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                        allow_sending_without_reply=True,
+                        reply_markup=origin_link(f.url),
+                    )
+            else:
+                media = [
+                    InputMediaVideo(
+                        img,
+                        caption=captions(f, fallback),
+                        parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                    )
+                    if ".gif" in mediaurl
+                    else InputMediaPhoto(
+                        img,
+                        caption=captions(f, fallback),
+                        parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                    )
+                    for img, mediaurl in zip(media, f.mediaurls)
+                ]
+                message.reply_media_group(media, allow_sending_without_reply=True)
+                message.reply_text(
+                    captions(f, fallback),
+                    disable_web_page_preview=True,
+                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                    allow_sending_without_reply=True,
+                    reply_markup=origin_link(f.url),
+                )
 
     async def parse_queue(urls) -> None:
         fs = await biliparser(urls)
@@ -205,41 +216,31 @@ def parse(update: Update, context: CallbackContext) -> None:
                         reply_markup=origin_link(urls[num]),
                     )
                 continue
-            if f.mediaurls:
+            markdown_fallback = False
+            for i in range(1, 4):
                 try:
-                    await callback(f)
+                    await parse_send(f, markdown_fallback)
                 except TimedOut as err:
                     logger.exception(err)
-                    logger.info(f"{err} -> 下载中: {f.url}")
+                    logger.info(f"{err} 第{i}次异常->下载后上传: {f.url}")
                     f.mediaraws = True
-                    await callback(f)
                 except BadRequest as err:
                     logger.exception(err)
                     if "Can't parse" in err.message:
-                        logger.info(f"{err} -> 去除Markdown: {f.url}")
-                        await callback(f, True)
+                        logger.info(f"{err} 第{i}次异常->去除Markdown: {f.url}")
+                        markdown_fallback = True
                     else:
-                        logger.info(f"{err} -> 下载中: {f.url}")
+                        logger.info(f"{err} 第{i}次异常->下载后上传: {f.url}")
                         f.mediaraws = True
-                        await callback(f)
-            else:
-                try:
-                    message.reply_text(
-                        captions(f),
-                        disable_web_page_preview=True,
-                        parse_mode=ParseMode.MARKDOWN_V2,
-                        allow_sending_without_reply=True,
-                        reply_markup=origin_link(f.url),
-                    )
-                except BadRequest as err:
+                except httpx.RequestError as err:
                     logger.exception(err)
-                    logger.info(f"{err} -> 去除Markdown: {f.url}")
-                    message.reply_text(
-                        captions(f, True),
-                        disable_web_page_preview=True,
-                        allow_sending_without_reply=True,
-                        reply_markup=origin_link(f.url),
-                    )
+                    logger.info(f"{err} 第{i}次异常->重试: {f.url}")
+                except httpx.HTTPStatusError as err:
+                    logger.exception(err)
+                    logger.info(f"{err} 第{i}次异常->跳过： {f.url}")
+                    break
+                else:
+                    break
 
     asyncio.run(parse_queue(urls))
 
