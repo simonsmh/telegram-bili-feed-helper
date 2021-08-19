@@ -35,7 +35,7 @@ from telegram.ext.callbackcontext import CallbackContext
 from telegram.ext.filters import Filters
 from telegram.update import Update
 
-from biliparser import biliparser, feed
+from biliparser import biliparser, escape_markdown, feed
 from utils import compress, headers, logger
 
 regex = r"(?i)[\w\.]*?(?:bilibili\.com|(?:b23|acg)\.tv)\S+"
@@ -78,9 +78,11 @@ def captions(f: Union[feed, Exception], fallback: bool = False) -> str:
 
     if isinstance(f, Exception):
         return f.__str__()
-    captions = str()
-    if f.extra_markdown:
-        captions += (f.url if fallback else f"`{f.url}`\n{f.extra_markdown}") + "\n"
+    captions = (
+        f.url
+        if fallback
+        else (escape_markdown(f.url) if not f.extra_markdown else f.extra_markdown)
+    ) + "\n"  # I don't need url twice with extra_markdown
     if f.user:
         captions += (f.user if fallback else f.user_markdown) + ":\n"
     if f.content:
