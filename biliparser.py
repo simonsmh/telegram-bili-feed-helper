@@ -785,11 +785,12 @@ async def read_parser(client, url):
     f.read_id = match.group(1)
     r = await client.get(f"https://www.bilibili.com/read/cv{f.read_id}")
     soup = BeautifulSoup(r.text, "lxml")
+    logger.info(soup.find("meta", attrs={"name": "author"}))
     f.uid = soup.find("a", class_="up-name").attrs.get("href").split("/")[-1]
-    f.user = soup.find("meta", itemprop="author").attrs.get("content")
-    infocontent = json.loads(soup.find("script", type="application/ld+json").string)
-    f.content = soup.find("meta", itemprop="description").attrs.get("content")
-    title = soup.find("meta", itemprop="title").attrs.get("content")
+    f.user = soup.find("meta", attrs={"name": "author"}).attrs.get("content")
+    f.mediaurls = soup.find("meta", property="og:image").attrs.get("content")
+    f.content = soup.find("meta", attrs={"name": "description"}).attrs.get("content")
+    title = soup.find("meta", property="og:title").attrs.get("content")
     logger.info(f"文章ID: {f.read_id}")
     if cache := await read_cache.get_or_none(
         query := Q(read_id=f.read_id),
@@ -798,7 +799,7 @@ async def read_parser(client, url):
         logger.info(f"拉取文章缓存: {cache.created}")
         graphurl = cache.graphurl
     else:
-        article = soup.find("div", class_="article-holder")
+        article = soup.find("div", class_="read-article-holder")
         imgs = article.find_all("img")
         task = list(relink(img) for img in imgs)  ## data-src -> src
         for _ in article.find_all("h1"):  ## h1 -> h3
@@ -828,7 +829,6 @@ async def read_parser(client, url):
         else:
             await read_cache(read_id=f.read_id, graphurl=graphurl).save()
     f.extra_markdown = f"[{escape_markdown(title)}]({graphurl})"
-    f.mediaurls = infocontent.get("images")
     f.mediatype = "image"
     f.replycontent = await reply_parser(client, f.read_id, f.reply_type)
     return f
