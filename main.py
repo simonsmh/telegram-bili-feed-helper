@@ -88,11 +88,7 @@ def captions(f: Union[feed, Exception], fallback: bool = False) -> str:
     if f.content:
         captions += (f.content if fallback else f.content_markdown) + "\n"
     if f.has_comment:
-        captions += (
-            f"------\n{f.comment}"
-            if fallback
-            else f"\\-\\-\\-\\-\\-\\-\n{f.comment_markdown}"
-        )
+        captions += f"〰〰〰〰〰〰〰〰〰〰\n{f.comment if fallback else f.comment_markdown}"
     return captions
 
 
