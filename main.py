@@ -66,15 +66,16 @@ def origin_link(content: str) -> InlineKeyboardMarkup:
 
 @lru_cache(maxsize=16)
 def captions(f: Union[feed, Exception], fallback: bool = False) -> str:
-    # def parser_helper(content: str) -> str:
-    #     charegex = r"\W"
-    #     content = re.sub(
-    #         r"\\#([^#]+)\\#?",
-    #         lambda x: f"\\#{re.sub(charegex, '', x.group(1))} ",
-    #         content,
-    #     )
-    #     print(content)
-    #     return content
+    def parser_helper(content: str, md_flag: bool = True) -> str:
+        if not content:
+            return str()
+        if md_flag:
+            content = re.sub(r"\\# ", " ", content)
+            content = re.sub(r"\\#$", "", content)
+        else:
+            content = re.sub(r"# ", " ", content)
+            content = re.sub(r"#$", "", content)
+        return content
 
     if isinstance(f, Exception):
         return f.__str__()
@@ -86,9 +87,17 @@ def captions(f: Union[feed, Exception], fallback: bool = False) -> str:
     if f.user:
         captions += (f.user if fallback else f.user_markdown) + ":\n"
     if f.content:
-        captions += (f.content if fallback else f.content_markdown) + "\n"
+        captions += (
+            parser_helper(f.content, False)
+            if fallback
+            else parser_helper(f.content_markdown)
+        ) + "\n"
     if f.has_comment:
-        captions += f"〰〰〰〰〰〰〰〰〰〰\n{f.comment if fallback else f.comment_markdown}"
+        captions += "〰〰〰〰〰〰〰〰〰〰\n" + (
+            parser_helper(f.comment, False)
+            if fallback
+            else parser_helper(f.comment_markdown)
+        )
     return captions
 
 
