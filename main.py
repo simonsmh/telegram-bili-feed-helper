@@ -70,9 +70,11 @@ def captions(f: Union[feed, Exception], fallback: bool = False) -> str:
         if not content:
             return str()
         if md_flag:
+            content = re.sub(r"\\#\\#", "\\# ", content)
             content = re.sub(r"\\# ", " ", content)
             content = re.sub(r"\\#$", "", content)
         else:
+            content = re.sub(r"##", "# ", content)
             content = re.sub(r"# ", " ", content)
             content = re.sub(r"#$", "", content)
         return content
