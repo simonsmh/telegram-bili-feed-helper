@@ -26,6 +26,7 @@ from database import (
 )
 from utils import compress, headers, logger
 
+BILI_API = "https://service-p1mivuyp-1251934890.sh.apigw.tencentcs.com/release/helloworld-1645530186"
 
 def escape_markdown(text):
     return (
@@ -366,7 +367,7 @@ async def reply_parser(client, oid, reply_type):
     else:
         r = (
             await client.get(
-                "https://api.bilibili.com/x/v2/reply",
+                BILI_API+"/x/v2/reply",
                 params={"oid": oid, "type": reply_type},
             )
         ).json()
@@ -570,7 +571,7 @@ async def audio_parser(client, url):
         detail = f.infocontent.get("data")
     else:
         r = await client.get(
-            "https://api.bilibili.com/audio/music-service-c/songs/playing",
+            BILI_API+"/audio/music-service-c/songs/playing",
             params={"song_id": f.audio_id},
         )
         f.infocontent = r.json()
@@ -586,7 +587,7 @@ async def audio_parser(client, url):
             await audio_cache(audio_id=f.audio_id, content=f.infocontent).save()
     f.uid = detail.get("mid")
     r = await client.get(
-        "https://api.bilibili.com/audio/music-service-c/url",
+        BILI_API+"/audio/music-service-c/url",
         params={
             "songid": f.audio_id,
             "mid": f.uid,
@@ -681,7 +682,7 @@ async def video_parser(client, url):
             f.infocontent = cache.content
         else:
             r = await client.get(
-                "https://api.bilibili.com/pgc/view/web/season",
+                BILI_API+"/pgc/view/web/season",
                 params=params,
             )
             f.infocontent = r.json()
@@ -717,7 +718,7 @@ async def video_parser(client, url):
         detail = f.infocontent.get("data")
     else:
         r = await client.get(
-            "https://api.bilibili.com/x/web-interface/view",
+            BILI_API+"/x/web-interface/view",
             params=params,
         )
         # Video detects non-China IP
@@ -744,7 +745,7 @@ async def video_parser(client, url):
     f.mediatype = "image"
     f.replycontent = await reply_parser(client, f.aid, f.reply_type)
     # r = await client.get(
-    #     "https://api.bilibili.com/x/player/playurl",
+    #     BILI_API+"/x/player/playurl",
     #     params={"avid": f.aid, "cid": f.cid, "fnval": 16},
     # )
     # f.mediacontent = r.json()
