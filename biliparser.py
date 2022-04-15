@@ -768,10 +768,12 @@ async def read_parser(client, url):
         ) as client:
             r = await client.get(f"https:{src}")
             media = BytesIO(r.read())
-            mediatype = r.headers.get("content-type")
-            if mediatype in ["image/jpeg", "image/png"]:
-                logger.info(f"压缩: {src} {mediatype}")
-                media = compress(media)
+            content_length = int(r.headers.get("content-length"))
+            if content_length > 1024 * 1024 * 5:
+                mediatype = r.headers.get("content-type")
+                if mediatype in ["image/jpeg", "image/png"]:
+                    logger.info(f"图片大小: {content_length} 压缩: {src} {mediatype}")
+                    media = compress(media)
             r = await client.post(
                 "https://telegra.ph/upload", files={"upload-file": media.getvalue()}
             )
