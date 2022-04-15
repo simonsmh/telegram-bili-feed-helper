@@ -3,7 +3,6 @@ import html
 import json
 import os
 import re
-from datetime import datetime
 from functools import cached_property, lru_cache
 from io import BytesIO
 
@@ -12,7 +11,7 @@ from bs4 import BeautifulSoup
 from telegraph import Telegraph
 from tortoise import Tortoise, timezone
 from tortoise.exceptions import IntegrityError
-from tortoise.query_utils import Q
+from tortoise.expressions import Q
 
 from database import (
     audio_cache,
@@ -24,9 +23,8 @@ from database import (
     reply_cache,
     video_cache,
 )
-from utils import compress, headers, logger
+from utils import compress, headers, logger, BILI_API
 
-BILI_API = "https://service-p1mivuyp-1251934890.sh.apigw.tencentcs.com/release/helloworld-1645530186"
 
 def escape_markdown(text):
     return (
@@ -215,7 +213,10 @@ class dynamic(feed):
     def card(self):
         return (
             json.loads(self.forward_card.get("origin"))
-            if self.has_forward and self.forward_card.get("origin") #forwared deleted content (workaround, not implemented yet)
+            if self.has_forward
+            and self.forward_card.get(
+                "origin"
+            )  # forwared deleted content (workaround, not implemented yet)
             else self.forward_card
         )
 
@@ -367,7 +368,7 @@ async def reply_parser(client, oid, reply_type):
     else:
         r = (
             await client.get(
-                BILI_API+"/x/v2/reply",
+                BILI_API + "/x/v2/reply",
                 params={"oid": oid, "type": reply_type},
             )
         ).json()
@@ -571,7 +572,7 @@ async def audio_parser(client, url):
         detail = f.infocontent.get("data")
     else:
         r = await client.get(
-            BILI_API+"/audio/music-service-c/songs/playing",
+            BILI_API + "/audio/music-service-c/songs/playing",
             params={"song_id": f.audio_id},
         )
         f.infocontent = r.json()
@@ -587,7 +588,7 @@ async def audio_parser(client, url):
             await audio_cache(audio_id=f.audio_id, content=f.infocontent).save()
     f.uid = detail.get("mid")
     r = await client.get(
-        BILI_API+"/audio/music-service-c/url",
+        BILI_API + "/audio/music-service-c/url",
         params={
             "songid": f.audio_id,
             "mid": f.uid,
@@ -682,7 +683,7 @@ async def video_parser(client, url):
             f.infocontent = cache.content
         else:
             r = await client.get(
-                BILI_API+"/pgc/view/web/season",
+                BILI_API + "/pgc/view/web/season",
                 params=params,
             )
             f.infocontent = r.json()
@@ -718,7 +719,7 @@ async def video_parser(client, url):
         detail = f.infocontent.get("data")
     else:
         r = await client.get(
-            BILI_API+"/x/web-interface/view",
+            BILI_API + "/x/web-interface/view",
             params=params,
         )
         # Video detects non-China IP
@@ -789,8 +790,10 @@ async def read_parser(client, url):
     logger.info(soup.find("meta", attrs={"name": "author"}))
     f.uid = soup.find("a", class_="up-name").attrs.get("href").split("/")[-1]
     f.user = soup.find("meta", attrs={"name": "author"}).attrs.get("content")
-    f.mediaurls = soup.find("meta", property="og:image").attrs.get("content")
     f.content = soup.find("meta", attrs={"name": "description"}).attrs.get("content")
+    if mediaurls := soup.find("meta", property="og:image").attrs.get("content"):
+        f.mediaurls = mediaurls
+        f.mediatype = "image"
     title = soup.find("meta", property="og:title").attrs.get("content")
     logger.info(f"文章ID: {f.read_id}")
     if cache := await read_cache.get_or_none(
@@ -830,7 +833,6 @@ async def read_parser(client, url):
         else:
             await read_cache(read_id=f.read_id, graphurl=graphurl).save()
     f.extra_markdown = f"[{escape_markdown(title)}]({graphurl})"
-    f.mediatype = "image"
     f.replycontent = await reply_parser(client, f.read_id, f.reply_type)
     return f
 
@@ -880,6 +882,7 @@ def db_init(func):
 
 @db_init
 async def biliparser(urls):
+    logger.debug(BILI_API)
     if isinstance(urls, str):
         urls = [urls]
     elif isinstance(urls, tuple):
@@ -897,7 +900,7 @@ async def biliparser(urls):
         callbacks = await asyncio.gather(*tasks)
     for num, f in enumerate(callbacks):
         if isinstance(f, Exception):
-            logger.warn(f"排序: {num}\n异常: {f}\n")
+            logger.warning(f"排序: {num}\n异常: {f}\n")
         else:
             logger.debug(
                 f"排序: {num}\n"
