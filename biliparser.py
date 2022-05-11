@@ -842,7 +842,16 @@ async def read_parser(client, url):
 @safe_parser
 async def feed_parser(client, url):
     r = await client.get(url)
-    url = str(r.url)
+    if r.status_code == 302:
+        url = str(r.headers.get('location'))
+    else:
+        url = str(r.url)
+        print(url)
+    if 'm.bilibili.com/dynamic/' in url:
+        url = url.replace('m.bilibili.com/dynamic/', 't.bilibili.com/')
+    # API link
+    if re.search(r"api\..*\.bilibili", url):
+        pass
     # API link
     if re.search(r"api\..*\.bilibili", url):
         pass
