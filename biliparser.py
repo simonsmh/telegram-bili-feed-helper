@@ -852,9 +852,6 @@ async def feed_parser(client, url):
     # API link
     if re.search(r"api\..*\.bilibili", url):
         pass
-    # API link
-    if re.search(r"api\..*\.bilibili", url):
-        pass
     # dynamic
     elif re.search(r"[th]\.bilibili\.com", url):
         return await dynamic_parser(client, url)
