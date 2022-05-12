@@ -846,7 +846,7 @@ async def feed_parser(client, url):
         url = str(r.headers.get('location'))
     else:
         url = str(r.url)
-        print(url)
+    logger.debug(f"URL: {url}")
     if 'm.bilibili.com/dynamic/' in url:
         url = url.replace('m.bilibili.com/dynamic/', 't.bilibili.com/')
     # API link
