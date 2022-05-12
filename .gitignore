@@ -10,4 +10,5 @@ Pipfile*
 *.js
 *.db
 *.yml
+!.github/*/*
 *.log*
