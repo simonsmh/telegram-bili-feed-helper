@@ -11,7 +11,7 @@ logger.add("bili_feed.log", backtrace=True, diagnose=True, rotation="1 MB")
 
 
 headers = {
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.87 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.54 Safari/537.36"
 }
 
 BILI_API = os.environ.get("BILI_API", "https://api.bilibili.com")
