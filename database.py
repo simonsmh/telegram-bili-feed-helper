@@ -7,7 +7,7 @@ from tortoise.models import Model
 class reply_cache(Model):
     oid = fields.BigIntField(pk=True, unique=True)
     reply_type = fields.IntField()
-    content = fields.JSONField()
+    content: dict = fields.JSONField()
     created = fields.DatetimeField(auto_now=True)
     timeout = timedelta(minutes=20)
 
@@ -18,7 +18,7 @@ class reply_cache(Model):
 class dynamic_cache(Model):
     dynamic_id = fields.BigIntField(pk=True, unique=True)
     rid = fields.BigIntField(unique=True)
-    content = fields.JSONField()
+    content: dict = fields.JSONField()
     created = fields.DatetimeField(auto_now=True)
     timeout = timedelta(days=10)
 
@@ -26,19 +26,9 @@ class dynamic_cache(Model):
         table = "dynamic"
 
 
-class clip_cache(Model):
-    video_id = fields.BigIntField(pk=True, unique=True)
-    content = fields.JSONField()
-    created = fields.DatetimeField(auto_now=True)
-    timeout = timedelta(days=10)
-
-    class Meta:
-        table = "clip"
-
-
 class audio_cache(Model):
     audio_id = fields.IntField(pk=True, unique=True)
-    content = fields.JSONField()
+    content: dict = fields.JSONField()
     created = fields.DatetimeField(auto_now=True)
     timeout = timedelta(days=10)
 
@@ -48,7 +38,7 @@ class audio_cache(Model):
 
 class live_cache(Model):
     room_id = fields.IntField(pk=True, unique=True)
-    content = fields.JSONField()
+    content: dict = fields.JSONField()
     created = fields.DatetimeField(auto_now=True)
     timeout = timedelta(minutes=5)
 
@@ -59,7 +49,7 @@ class live_cache(Model):
 class bangumi_cache(Model):
     epid = fields.IntField(pk=True, unique=True)
     ssid = fields.IntField()
-    content = fields.JSONField()
+    content: dict = fields.JSONField()
     created = fields.DatetimeField(auto_now=True)
     timeout = timedelta(days=10)
 
@@ -70,7 +60,7 @@ class bangumi_cache(Model):
 class video_cache(Model):
     aid = fields.BigIntField(pk=True, unique=True)
     bvid = fields.CharField(max_length=12, unique=True)
-    content = fields.JSONField()
+    content: dict = fields.JSONField()
     created = fields.DatetimeField(auto_now=True)
     timeout = timedelta(days=10)
 

@@ -8,6 +8,7 @@ from io import BytesIO
 
 import httpx
 from bs4 import BeautifulSoup
+from bs4.element import Tag
 from telegraph import Telegraph
 from tortoise import Tortoise, timezone
 from tortoise.exceptions import IntegrityError
@@ -16,14 +17,13 @@ from tortoise.expressions import Q
 from database import (
     audio_cache,
     bangumi_cache,
-    clip_cache,
     dynamic_cache,
     live_cache,
     read_cache,
     reply_cache,
     video_cache,
 )
-from utils import compress, headers, logger, BILI_API
+from utils import BILI_API, compress, headers, logger
 
 
 def escape_markdown(text):
@@ -45,19 +45,20 @@ class ParserException(Exception):
 
 
 class feed:
+    user: str = ""
+    uid: str = ""
+    __content: str = ""
+    __mediaurls: list = []
+    mediaraws: bool = False
+    mediatype: str = ""
+    mediathumb: str = ""
+    mediaduration: int = 0
+    mediatitle: str = ""
+    extra_markdown: str = ""
+    replycontent: dict
+
     def __init__(self, rawurl):
         self.rawurl = rawurl
-        self.user = None
-        self.uid = None
-        self.__content = None
-        self.__mediaurls = None
-        self.mediaraws = False
-        self.mediatype = None
-        self.mediathumb = None
-        self.mediaduration = None
-        self.mediatitle = None
-        self.extra_markdown = str()
-        self.replycontent = None
 
     @staticmethod
     def make_user_markdown(user, uid):
@@ -141,13 +142,14 @@ class feed:
 
     @cached_property
     def mediafilename(self):
+        def get_filename(url) -> str:
+            target = re.search(r"\/([^\/]*\.\w{3,4})(?:$|\?)", url)
+            if target:
+                return target.group(1)
+            return str()
+
         return (
-            [
-                re.search(r"\/([^\/]*\.\w{3,4})(?:$|\?)", i).group(1)
-                for i in self.__mediaurls
-            ]
-            if self.__mediaurls
-            else list()
+            [get_filename(i) for i in self.__mediaurls] if self.__mediaurls else list()
         )
 
     @cached_property
@@ -156,16 +158,14 @@ class feed:
 
 
 class dynamic(feed):
-    def __init__(self, rawurl):
-        super(dynamic, self).__init__(rawurl)
-        self.detailcontent = None
-        self.dynamic_id = None
-        self.rid = None
-        self.__user = None
-        self.__content = str()
-        self.forward_user = None
-        self.forward_uid = None
-        self.forward_content = str()
+    detailcontent: dict = {}
+    dynamic_id: int = 0
+    rid: int = 0
+    __user: str = ""
+    __content: str = ""
+    forward_user: str = ""
+    forward_uid: int = 0
+    forward_content: str = ""
 
     @cached_property
     def forward_card(self):
@@ -191,15 +191,15 @@ class dynamic(feed):
     def reply_type(self):
         if self.forward_type == 2:
             return 11
-        elif self.forward_type == 16:
+        if self.forward_type == 16:
             return 5
-        elif self.forward_type == 64:
+        if self.forward_type == 64:
             return 12
-        elif self.forward_type == 256:
+        if self.forward_type == 256:
             return 14
-        elif self.forward_type in [8, 512, *range(4000, 4200)]:
+        if self.forward_type in [8, 512, *range(4000, 4200)]:
             return 1
-        elif self.forward_type in [1, 4, *range(4200, 4300), *range(2048, 2100)]:
+        if self.forward_type in [1, 4, *range(4200, 4300), *range(2048, 2100)]:
             return 17
 
     @cached_property
@@ -275,25 +275,11 @@ class dynamic(feed):
         return f"https://t.bilibili.com/{self.dynamic_id}"
 
 
-class clip(feed):
-    def __init__(self, rawurl):
-        super(clip, self).__init__(rawurl)
-        self.rawcontent = None
-        self.video_id = None
-        self.reply_type = 5
-
-    @cached_property
-    def url(self):
-        return f"https://vc.bilibili.com/video/{self.video_id}"
-
-
 class audio(feed):
-    def __init__(self, rawurl):
-        super(audio, self).__init__(rawurl)
-        self.infocontent = None
-        self.mediacontent = None
-        self.audio_id = None
-        self.reply_type = 14
+    infocontent: dict = {}
+    mediacontent: str = ""
+    audio_id: int = 0
+    reply_type: int = 14
 
     @cached_property
     def url(self):
@@ -301,10 +287,8 @@ class audio(feed):
 
 
 class live(feed):
-    def __init__(self, rawurl):
-        super(live, self).__init__(rawurl)
-        self.rawcontent = None
-        self.room_id = None
+    rawcontent: dict = {}
+    room_id: int = 0
 
     @cached_property
     def url(self):
@@ -312,15 +296,13 @@ class live(feed):
 
 
 class video(feed):
-    def __init__(self, rawurl):
-        super(video, self).__init__(rawurl)
-        self.aid = None
-        self.cid = None
-        self.sid = None
-        self.cidcontent = None
-        self.infocontent = None
-        self.mediacontent = None
-        self.reply_type = 1
+    aid: int = 0
+    cid: int = 0
+    sid: int = 0
+    cidcontent: dict = {}
+    infocontent: dict = {}
+    mediacontent: dict = {}
+    reply_type: int = 1
 
     @cached_property
     def url(self):
@@ -328,11 +310,9 @@ class video(feed):
 
 
 class read(feed):
-    def __init__(self, rawurl):
-        super(read, self).__init__(rawurl)
-        self.rawcontent = None
-        self.read_id = None
-        self.reply_type = 12
+    rawcontent: str = ""
+    read_id: int = 0
+    reply_type: int = 12
 
     @cached_property
     def url(self):
@@ -387,7 +367,7 @@ async def reply_parser(client, oid, reply_type):
 
 
 @safe_parser
-async def dynamic_parser(client, url):
+async def dynamic_parser(client: httpx.AsyncClient, url: str):
     if not (match := re.search(r"[th]\.bilibili\.com[\/\w]*\/(\d+)", url)):
         raise ParserException("动态链接错误", url, match)
     f = dynamic(url)
@@ -413,8 +393,8 @@ async def dynamic_parser(client, url):
         f.detailcontent = r.json()
         if not f.detailcontent.get("data").get("card"):
             raise ParserException("动态解析错误", r.url, f.detailcontent)
-    f.dynamic_id = f.detailcontent.get("data").get("card").get("desc").get("dynamic_id")
-    f.rid = f.detailcontent.get("data").get("card").get("desc").get("rid")
+    f.dynamic_id = f.detailcontent["data"]["card"]["desc"]["dynamic_id"]
+    f.rid = f.detailcontent["data"]["card"]["desc"]["rid"]
     logger.info(f"动态ID: {f.dynamic_id}")
     if not cache:
         logger.info(f"动态缓存: {f.dynamic_id}")
@@ -446,10 +426,10 @@ async def dynamic_parser(client, url):
 
     # extra parsers
     if f.origin_type in [
-        *detail_types_list.get("MUSIC"),
-        *detail_types_list.get("VIDEO"),
-        *detail_types_list.get("LIVE"),
-        *detail_types_list.get("ARTICLE"),
+        *detail_types_list.get("MUSIC", []),
+        *detail_types_list.get("VIDEO", []),
+        *detail_types_list.get("LIVE", []),
+        *detail_types_list.get("ARTICLE", []),
     ]:
         # au audio
         if f.origin_type in detail_types_list.get("MUSIC"):
@@ -481,8 +461,8 @@ async def dynamic_parser(client, url):
             f.mediaraws = fu.mediaraws
     # dynamic images/videos
     elif f.origin_type in [
-        *detail_types_list.get("PIC"),
-        *detail_types_list.get("CLIP"),
+        *detail_types_list.get("PIC", []),
+        *detail_types_list.get("CLIP", []),
     ]:
         f.user = f.card.get("user").get("name")
         f.uid = f.card.get("user").get("uid")
@@ -519,53 +499,11 @@ async def dynamic_parser(client, url):
 
 
 @safe_parser
-async def clip_parser(client, url):
-    if not (match := re.search(r"vc\.bilibili\.com[\D]*(\d+)", url)):
-        raise ParserException("短视频链接错误", url, match)
-    f = clip(url)
-    f.video_id = match.group(1)
-    if cache := await clip_cache.get_or_none(
-        None,
-        query := Q(video_id=f.video_id),
-        Q(created__gte=timezone.now() - clip_cache.timeout),
-    ):
-        logger.info(f"拉取短视频缓存: {cache.created}")
-        f.rawcontent = cache.content
-        detail = f.rawcontent.get("data")
-    else:
-        r = await client.get(
-            "https://api.vc.bilibili.com/clip/v1/video/detail",
-            params={"video_id": f.video_id},
-        )
-        f.rawcontent = r.json()
-        if f.rawcontent.get("data").get("user"):
-            detail = f.rawcontent.get("data")
-        else:
-            raise ParserException("短视频解析错误", r.url, f.rawcontent)
-    logger.info(f"短视频ID: {f.video_id}")
-    if not cache:
-        logger.info(f"短视频缓存")
-        if cache := await clip_cache.get_or_none(None, query):
-            cache.content = f.rawcontent
-            await cache.save(update_fields=["content", "created"])
-        else:
-            await clip_cache(video_id=f.video_id, content=f.rawcontent).save()
-    f.user = detail.get("user").get("name")
-    f.uid = detail.get("user").get("uid")
-    f.content = detail.get("item").get("description")
-    f.mediaurls = detail.get("item").get("video_playurl")
-    f.mediathumb = detail.get("item").get("first_pic")
-    f.mediatype = "video"
-    f.replycontent = await reply_parser(client, f.video_id, f.reply_type)
-    return f
-
-
-@safe_parser
-async def audio_parser(client, url):
+async def audio_parser(client: httpx.AsyncClient, url: str):
     if not (match := re.search(r"bilibili\.com\/audio\/au(\d+)", url)):
         raise ParserException("音频链接错误", url, match)
     f = audio(url)
-    f.audio_id = match.group(1)
+    f.audio_id = int(match.group(1))
     if cache := await audio_cache.get_or_none(
         None,
         query := Q(audio_id=f.audio_id),
@@ -573,7 +511,7 @@ async def audio_parser(client, url):
     ):
         logger.info(f"拉取音频缓存: {cache.created}")
         f.infocontent = cache.content
-        detail = f.infocontent.get("data")
+        detail = f.infocontent["data"]
     else:
         r = await client.get(
             BILI_API + "/audio/music-service-c/songs/playing",
@@ -616,11 +554,11 @@ async def audio_parser(client, url):
 
 
 @safe_parser
-async def live_parser(client, url):
+async def live_parser(client: httpx.AsyncClient, url: str):
     if not (match := re.search(r"live\.bilibili\.com[\/\w]*\/(\d+)", url)):
         raise ParserException("直播链接错误", url, match)
     f = live(url)
-    f.room_id = match.group(1)
+    f.room_id = int(match.group(1))
     if cache := await live_cache.get_or_none(
         None,
         query := Q(room_id=f.room_id),
@@ -645,7 +583,9 @@ async def live_parser(client, url):
             await cache.save(update_fields=["content", "created"])
         else:
             await live_cache(room_id=f.room_id, content=f.rawcontent).save()
-    f.user = detail.get("anchor_info").get("base_info").get("uname")
+    if not detail:
+        raise ParserException("直播内容获取错误", f.url)
+    f.user = detail["anchor_info"]["base_info"]["uname"]
     roominfo = detail.get("room_info")
     f.uid = roominfo.get("uid")
     f.content = f"{roominfo.get('title')} - {roominfo.get('area_name')} - {roominfo.get('parent_area_name')}"
@@ -656,7 +596,7 @@ async def live_parser(client, url):
 
 
 @safe_parser
-async def video_parser(client, url):
+async def video_parser(client: httpx.AsyncClient, url: str):
     if not (
         match := re.search(
             r"(?i)(?:bilibili\.com/(?:video|bangumi/play)|b23\.tv|acg\.tv)/(?:(?P<bvid>bv\w+)|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+))",
@@ -733,6 +673,8 @@ async def video_parser(client, url):
         f.infocontent = r.json()
         if not (detail := f.infocontent.get("data")):
             raise ParserException("视频解析错误", r.url, f.infocontent)
+    if not detail:
+        raise ParserException("视频内容获取错误", f.url)
     bvid = detail.get("bvid")
     f.aid = detail.get("aid")
     f.cid = detail.get("cid")
@@ -765,7 +707,7 @@ async def video_parser(client, url):
 
 
 @safe_parser
-async def read_parser(client, url):
+async def read_parser(client: httpx.AsyncClient, url: str):
     async def relink(img):
         src = img.attrs.pop("data-src")
         img.attrs = {}
@@ -793,17 +735,33 @@ async def read_parser(client, url):
     if not (match := re.search(r"bilibili\.com\/read\/(?:cv|mobile\/)(\d+)", url)):
         raise ParserException("文章链接错误", url, match)
     f = read(url)
-    f.read_id = match.group(1)
+    f.read_id = int(match.group(1))
     r = await client.get(f"https://www.bilibili.com/read/cv{f.read_id}")
     soup = BeautifulSoup(r.text, "lxml")
-    logger.info(soup.find("meta", attrs={"name": "author"}))
-    f.uid = soup.find("a", class_="up-name").attrs.get("href").split("/")[-1]
-    f.user = soup.find("meta", attrs={"name": "author"}).attrs.get("content")
-    f.content = soup.find("meta", attrs={"name": "description"}).attrs.get("content")
-    if mediaurls := soup.find("meta", property="og:image").attrs.get("content"):
+    uid_content = soup.find("a", class_="up-name")
+    if not isinstance(uid_content, Tag) or not uid_content.attrs.get("href"):
+        raise ParserException("文章uid解析错误", url, uid_content)
+    f.uid = uid_content.attrs["href"].split("/")[-1]
+    user_content = soup.find("meta", attrs={"name": "author"})
+    if not isinstance(user_content, Tag) or not user_content.attrs.get("content"):
+        raise ParserException("文章user解析错误", url, user_content)
+    f.user = user_content.attrs["content"]
+    content_content = soup.find("meta", attrs={"name": "description"})
+    if not isinstance(content_content, Tag) or not content_content.attrs.get("content"):
+        raise ParserException("文章content解析错误", url, content_content)
+    f.content = content_content.attrs.get("content")
+    mediaurls_content = soup.find("meta", property="og:image")
+    if not isinstance(mediaurls_content, Tag):
+        raise ParserException("文章mediaurls解析错误", url, mediaurls_content)
+    mediaurls = mediaurls_content.attrs.get("content")
+    if mediaurls:
+        logger.info(f"文章mediaurls: {mediaurls}")
         f.mediaurls = mediaurls
         f.mediatype = "image"
-    title = soup.find("meta", property="og:title").attrs.get("content")
+    title_content = soup.find("meta", property="og:title")
+    if not isinstance(title_content, Tag) or not title_content.attrs.get("content"):
+        raise ParserException("文章title解析错误", url, title_content)
+    title = title_content.attrs.get("content")
     logger.info(f"文章ID: {f.read_id}")
     if cache := await read_cache.get_or_none(
         None,
@@ -814,6 +772,8 @@ async def read_parser(client, url):
         graphurl = cache.graphurl
     else:
         article = soup.find("div", class_="read-article-holder")
+        if not isinstance(article, Tag):
+            raise ParserException("文章article解析错误", url)
         imgs = article.find_all("img")
         task = list(relink(img) for img in imgs)  ## data-src -> src
         for _ in article.find_all("h1"):  ## h1 -> h3
@@ -848,12 +808,10 @@ async def read_parser(client, url):
 
 
 @safe_parser
-async def feed_parser(client, url):
+async def feed_parser(client: httpx.AsyncClient, url: str):
     r = await client.get(url)
     url = str(r.url)
     logger.debug(f"URL: {url}")
-    if "m.bilibili.com/dynamic/" in url:
-        url = url.replace("m.bilibili.com/dynamic/", "t.bilibili.com/")
     # API link
     if re.search(r"api\..*\.bilibili", url):
         pass
@@ -863,9 +821,6 @@ async def feed_parser(client, url):
     # live image
     elif re.search(r"live\.bilibili\.com", url):
         return await live_parser(client, url)
-    # vc video
-    elif re.search(r"vc\.bilibili\.com", url):
-        return await clip_parser(client, url)
     # au audio
     elif re.search(r"bilibili\.com/audio", url):
         return await audio_parser(client, url)
