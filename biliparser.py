@@ -360,6 +360,7 @@ def safe_parser(func):
 @safe_parser
 async def reply_parser(client, oid, reply_type):
     if cache := await reply_cache.get_or_none(
+        None,
         query := Q(Q(oid=oid), Q(reply_type=reply_type)),
         Q(created__gte=timezone.now() - reply_cache.timeout),
     ):
@@ -377,7 +378,7 @@ async def reply_parser(client, oid, reply_type):
     logger.info(f"评论ID: {oid}, 评论类型: {reply_type}")
     if not cache:
         logger.info(f"评论缓存: {oid}")
-        if cache := await reply_cache.get_or_none(query):
+        if cache := await reply_cache.get_or_none(None, query):
             cache.content = r
             await cache.save(update_fields=["content", "created"])
         else:
@@ -396,6 +397,7 @@ async def dynamic_parser(client, url):
         else Q(dynamic_id=match.group(1))
     )
     if cache := await dynamic_cache.get_or_none(
+        None,
         query,
         Q(created__gte=timezone.now() - dynamic_cache.timeout),
     ):
@@ -416,7 +418,7 @@ async def dynamic_parser(client, url):
     logger.info(f"动态ID: {f.dynamic_id}")
     if not cache:
         logger.info(f"动态缓存: {f.dynamic_id}")
-        if cache := await dynamic_cache.get_or_none(query):
+        if cache := await dynamic_cache.get_or_none(None, query):
             cache.content = f.detailcontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -523,6 +525,7 @@ async def clip_parser(client, url):
     f = clip(url)
     f.video_id = match.group(1)
     if cache := await clip_cache.get_or_none(
+        None,
         query := Q(video_id=f.video_id),
         Q(created__gte=timezone.now() - clip_cache.timeout),
     ):
@@ -542,7 +545,7 @@ async def clip_parser(client, url):
     logger.info(f"短视频ID: {f.video_id}")
     if not cache:
         logger.info(f"短视频缓存")
-        if cache := await clip_cache.get_or_none(query):
+        if cache := await clip_cache.get_or_none(None, query):
             cache.content = f.rawcontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -564,6 +567,7 @@ async def audio_parser(client, url):
     f = audio(url)
     f.audio_id = match.group(1)
     if cache := await audio_cache.get_or_none(
+        None,
         query := Q(audio_id=f.audio_id),
         Q(created__gte=timezone.now() - audio_cache.timeout),
     ):
@@ -581,7 +585,7 @@ async def audio_parser(client, url):
     logger.info(f"音频ID: {f.audio_id}")
     if not cache:
         logger.info(f"音频缓存: {f.audio_id}")
-        if cache := await audio_cache.get_or_none(query):
+        if cache := await audio_cache.get_or_none(None, query):
             cache.content = f.infocontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -618,6 +622,7 @@ async def live_parser(client, url):
     f = live(url)
     f.room_id = match.group(1)
     if cache := await live_cache.get_or_none(
+        None,
         query := Q(room_id=f.room_id),
         Q(created__gte=timezone.now() - live_cache.timeout),
     ):
@@ -635,7 +640,7 @@ async def live_parser(client, url):
     logger.info(f"直播ID: {f.room_id}")
     if not cache:
         logger.info(f"直播缓存: {f.room_id}")
-        if cache := await live_cache.get_or_none(query):
+        if cache := await live_cache.get_or_none(None, query):
             cache.content = f.rawcontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -672,6 +677,7 @@ async def video_parser(client, url):
         params = {}
     if "ep_id" in params or "season_id" in params:
         if cache := await bangumi_cache.get_or_none(
+            None,
             query := Q(
                 Q(epid=params.get("ep_id")),
                 Q(ssid=params.get("season_id")),
@@ -701,7 +707,7 @@ async def video_parser(client, url):
         logger.info(f"番剧ID: {epid}")
         if not cache:
             logger.info(f"番剧缓存: {epid}")
-            if cache := await bangumi_cache.get_or_none(query):
+            if cache := await bangumi_cache.get_or_none(None, query):
                 cache.content = f.infocontent
                 await cache.save(update_fields=["content", "created"])
             else:
@@ -709,6 +715,7 @@ async def video_parser(client, url):
         params = {"aid": f.aid}
     # elif "aid" in params or "bvid" in params:
     if cache := await video_cache.get_or_none(
+        None,
         query := Q(
             Q(aid=params.get("aid")), Q(bvid=params.get("bvid")), join_type="OR"
         ),
@@ -732,7 +739,7 @@ async def video_parser(client, url):
     logger.info(f"视频ID: {f.aid}")
     if not cache:
         logger.info(f"视频缓存: {f.aid}")
-        if cache := await video_cache.get_or_none(query):
+        if cache := await video_cache.get_or_none(None, query):
             cache.content = f.infocontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -799,6 +806,7 @@ async def read_parser(client, url):
     title = soup.find("meta", property="og:title").attrs.get("content")
     logger.info(f"文章ID: {f.read_id}")
     if cache := await read_cache.get_or_none(
+        None,
         query := Q(read_id=f.read_id),
         Q(created__gte=timezone.now() - audio_cache.timeout),
     ):
@@ -829,7 +837,7 @@ async def read_parser(client, url):
         ).get("url")
         logger.info(f"生成页面: {graphurl}")
         logger.info(f"文章缓存: {f.read_id}")
-        if cache := await read_cache.get_or_none(query):
+        if cache := await read_cache.get_or_none(None, query):
             cache.graphurl = graphurl
             await cache.save(update_fields=["graphurl", "created"])
         else:
@@ -842,13 +850,10 @@ async def read_parser(client, url):
 @safe_parser
 async def feed_parser(client, url):
     r = await client.get(url)
-    if r.status_code == 302:
-        url = str(r.headers.get('location'))
-    else:
-        url = str(r.url)
+    url = str(r.url)
     logger.debug(f"URL: {url}")
-    if 'm.bilibili.com/dynamic/' in url:
-        url = url.replace('m.bilibili.com/dynamic/', 't.bilibili.com/')
+    if "m.bilibili.com/dynamic/" in url:
+        url = url.replace("m.bilibili.com/dynamic/", "t.bilibili.com/")
     # API link
     if re.search(r"api\..*\.bilibili", url):
         pass
@@ -896,7 +901,7 @@ async def biliparser(urls):
     elif isinstance(urls, tuple):
         urls = list(urls)
     async with httpx.AsyncClient(
-        headers=headers, http2=True, timeout=None, verify=False
+        headers=headers, http2=True, timeout=None, verify=False, follow_redirects=True
     ) as client:
         tasks = list(
             feed_parser(

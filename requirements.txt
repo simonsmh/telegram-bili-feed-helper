@@ -7,4 +7,4 @@ lxml
 pillow
 python-telegram-bot==13.11
 telegraph
-tortoise-orm[accel]
+tortoise-orm[accel]>=0.19.1
