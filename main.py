@@ -94,7 +94,7 @@ def captions(f: Union[feed, Exception], fallback: bool = False) -> str:
             if fallback
             else parser_helper(f.content_markdown)
         ) + "\n"
-    if f.has_comment:
+    if f.has_comment and f.comment:
         captions += "〰〰〰〰〰〰〰〰〰〰\n" + (
             parser_helper(f.comment, False)
             if fallback
