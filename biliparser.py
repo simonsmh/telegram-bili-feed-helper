@@ -107,9 +107,9 @@ class feed:
         comment = str()
         if self.has_comment:
             try:
-                if top := self.replycontent["data"]["upper"]["top"]:
+                if top := self.replycontent["data"]["upper"].get("top"):
                     comment += f'🔝> @{top.get("member").get("uname")}:\n{top.get("content").get("message")}\n'
-                if hots := self.replycontent["data"]["hots"]:
+                if hots := self.replycontent["data"].get("hots"):
                     comment += f'🔥> @{hots[0].get("member").get("uname")}:\n{hots[0].get("content").get("message")}\n'
             except AttributeError:
                 pass
@@ -120,9 +120,9 @@ class feed:
         comment_markdown = str()
         if self.has_comment:
             try:
-                if top := self.replycontent["data"]["upper"]["top"]:
+                if top := self.replycontent["data"]["upper"].get("top"):
                     comment_markdown += f'🔝\\> {self.make_user_markdown(top.get("member").get("uname"), top.get("member").get("mid"))}:\n{escape_markdown(top.get("content").get("message"))}\n'
-                if hots := self.replycontent["data"]["hots"]:
+                if hots := self.replycontent["data"].get("hots"):
                     comment_markdown += f'🔥\\> {self.make_user_markdown(hots[0].get("member").get("uname"), hots[0].get("member").get("mid"))}:\n{escape_markdown(hots[0].get("content").get("message"))}\n'
             except AttributeError:
                 pass
