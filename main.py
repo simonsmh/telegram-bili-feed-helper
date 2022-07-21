@@ -35,7 +35,7 @@ from telegram.ext.callbackcontext import CallbackContext
 from telegram.ext.filters import Filters
 from telegram.update import Update
 
-from biliparser import biliparser, escape_markdown, feed
+from biliparser import biliparser, db_clear, db_status, escape_markdown, feed
 from utils import compress, headers, logger
 
 regex = r"(?i)[\w\.]*?(?:bilibili\.com|(?:b23|acg)\.tv)\S+"
@@ -451,6 +451,20 @@ def start(update: Update, context: CallbackContext) -> None:
         reply_markup=sourcecodemarkup,
     )
 
+def status(update: Update, context: CallbackContext) -> None:
+    message = update.effective_message
+    message.reply_chat_action(ChatAction.TYPING)
+    result = asyncio.run(db_status())
+    message.reply_text(result)
+
+
+def delete_cache(update: Update, context: CallbackContext) -> None:
+    message = update.effective_message
+    message.reply_chat_action(ChatAction.TYPING)
+    data = message.text
+    result = asyncio.run(db_clear(data.strip()))
+    message.reply_text(result)
+
 
 if __name__ == "__main__":
     if os.environ.get("TOKEN"):
@@ -464,6 +478,11 @@ if __name__ == "__main__":
     updater.dispatcher.add_handler(
         CommandHandler(
             "start", start, filters=Filters.chat_type.private, run_async=True
+        )
+    )
+    updater.dispatcher.add_handler(
+        CommandHandler(
+            "delete_cache", delete_cache, filters=Filters.chat_type.private, run_async=True
         )
     )
     updater.dispatcher.add_handler(CommandHandler("file", fetch, run_async=True))

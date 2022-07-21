@@ -100,32 +100,28 @@ class feed:
 
     @cached_property
     def has_comment(self):
-        return bool(self.replycontent)
+        return bool(self.replycontent.get("data"))
 
     @cached_property
     def comment(self):
         comment = str()
         if self.has_comment:
-            try:
-                if top := self.replycontent["data"]["upper"].get("top"):
-                    comment += f'🔝> @{top.get("member").get("uname")}:\n{top.get("content").get("message")}\n'
-                if hots := self.replycontent["data"].get("hots"):
-                    comment += f'🔥> @{hots[0].get("member").get("uname")}:\n{hots[0].get("content").get("message")}\n'
-            except AttributeError:
-                pass
+            if top := self.replycontent["data"].get("top"):
+                for lists in top.values():
+                    if lists:
+                        for item in lists:
+                            comment += f'🔝> @{item["member"]["uname"]}:\n{item["content"]["message"]}\n'
         return self.shrink_line(comment)
 
     @cached_property
     def comment_markdown(self):
         comment_markdown = str()
         if self.has_comment:
-            try:
-                if top := self.replycontent["data"]["upper"].get("top"):
-                    comment_markdown += f'🔝\\> {self.make_user_markdown(top.get("member").get("uname"), top.get("member").get("mid"))}:\n{escape_markdown(top.get("content").get("message"))}\n'
-                if hots := self.replycontent["data"].get("hots"):
-                    comment_markdown += f'🔥\\> {self.make_user_markdown(hots[0].get("member").get("uname"), hots[0].get("member").get("mid"))}:\n{escape_markdown(hots[0].get("content").get("message"))}\n'
-            except AttributeError:
-                pass
+            if top := self.replycontent["data"].get("top"):
+                for lists in top.values():
+                    if lists:
+                        for item in lists:
+                            comment_markdown += f'🔝\\> {self.make_user_markdown(item["member"]["uname"], item["member"]["mid"])}:\n{escape_markdown(item["content"]["message"])}\n'
         return self.shrink_line(comment_markdown)
 
     @property
@@ -349,7 +345,7 @@ async def reply_parser(client, oid, reply_type):
     else:
         r = (
             await client.get(
-                BILI_API + "/x/v2/reply",
+                BILI_API + "/x/v2/reply/main",
                 params={"oid": oid, "type": reply_type},
             )
         ).json()
@@ -885,3 +881,42 @@ async def biliparser(urls):
                 f"媒体文件名: {f.mediafilename}"
             )
     return callbacks
+
+
+async def __db_status():
+    caches = {
+        "audio": audio_cache,
+        "bangumi": bangumi_cache,
+        "dynamic": dynamic_cache,
+        "live": live_cache,
+        "read": read_cache,
+        "reply": reply_cache,
+        "video": video_cache,
+    }
+
+    tasks = [item.all().count() for item in caches.values()]
+    result = await asyncio.gather(*tasks)
+    ans = ""
+    for key, item in zip(caches.keys(), await asyncio.gather(*tasks)):
+        ans += f"{key}: {item}\n"
+    ans += f"总计: {sum(result)}"
+    return ans
+
+@db_init
+async def db_status():
+    return await __db_status()
+
+@db_init
+async def db_clear(target):
+    caches = {
+        "audio": audio_cache,
+        "bangumi": bangumi_cache,
+        "dynamic": dynamic_cache,
+        "live": live_cache,
+        "read": read_cache,
+        "reply": reply_cache,
+        "video": video_cache,
+    }
+    if caches.get(target):
+        await caches[target].all().delete()
+    return await __db_status()
