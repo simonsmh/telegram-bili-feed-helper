@@ -118,10 +118,9 @@ class feed:
         comment = str()
         if self.has_comment:
             if top := self.replycontent["data"].get("top"):
-                for lists in top.values():
-                    if lists:
-                        for item in lists:
-                            comment += f'🔝> @{item["member"]["uname"]}:\n{item["content"]["message"]}\n'
+                for item in top.values():
+                    if item:
+                        comment += f'🔝> @{item["member"]["uname"]}:\n{item["content"]["message"]}\n'
         return self.shrink_line(comment)
 
     @cached_property
@@ -129,10 +128,9 @@ class feed:
         comment_markdown = str()
         if self.has_comment:
             if top := self.replycontent["data"].get("top"):
-                for lists in top.values():
-                    if lists:
-                        for item in lists:
-                            comment_markdown += f'🔝\\> {self.make_user_markdown(item["member"]["uname"], item["member"]["mid"])}:\n{escape_markdown(item["content"]["message"])}\n'
+                for item in top.values():
+                    if item:
+                        comment_markdown += f'🔝\\> {self.make_user_markdown(item["member"]["uname"], item["member"]["mid"])}:\n{escape_markdown(item["content"]["message"])}\n'
         return self.shrink_line(comment_markdown)
 
     @property
@@ -347,7 +345,6 @@ def safe_parser(func):
 @safe_parser
 async def reply_parser(client, oid, reply_type):
     if cache := await reply_cache.get_or_none(
-        None,
         query := Q(Q(oid=oid), Q(reply_type=reply_type)),
         Q(created__gte=timezone.now() - reply_cache.timeout),
     ):
@@ -365,7 +362,7 @@ async def reply_parser(client, oid, reply_type):
     logger.info(f"评论ID: {oid}, 评论类型: {reply_type}")
     if not cache:
         logger.info(f"评论缓存: {oid}")
-        if cache := await reply_cache.get_or_none(None, query):
+        if cache := await reply_cache.get_or_none(query):
             cache.content = r
             await cache.save(update_fields=["content", "created"])
         else:
@@ -384,7 +381,6 @@ async def dynamic_parser(client: httpx.AsyncClient, url: str):
         else Q(dynamic_id=match.group(1))
     )
     if cache := await dynamic_cache.get_or_none(
-        None,
         query,
         Q(created__gte=timezone.now() - dynamic_cache.timeout),
     ):
@@ -405,7 +401,7 @@ async def dynamic_parser(client: httpx.AsyncClient, url: str):
     logger.info(f"动态ID: {f.dynamic_id}")
     if not cache:
         logger.info(f"动态缓存: {f.dynamic_id}")
-        if cache := await dynamic_cache.get_or_none(None, query):
+        if cache := await dynamic_cache.get_or_none(query):
             cache.content = f.detailcontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -512,7 +508,6 @@ async def audio_parser(client: httpx.AsyncClient, url: str):
     f = audio(url)
     f.audio_id = int(match.group(1))
     if cache := await audio_cache.get_or_none(
-        None,
         query := Q(audio_id=f.audio_id),
         Q(created__gte=timezone.now() - audio_cache.timeout),
     ):
@@ -530,7 +525,7 @@ async def audio_parser(client: httpx.AsyncClient, url: str):
     logger.info(f"音频ID: {f.audio_id}")
     if not cache:
         logger.info(f"音频缓存: {f.audio_id}")
-        if cache := await audio_cache.get_or_none(None, query):
+        if cache := await audio_cache.get_or_none(query):
             cache.content = f.infocontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -567,7 +562,6 @@ async def live_parser(client: httpx.AsyncClient, url: str):
     f = live(url)
     f.room_id = int(match.group(1))
     if cache := await live_cache.get_or_none(
-        None,
         query := Q(room_id=f.room_id),
         Q(created__gte=timezone.now() - live_cache.timeout),
     ):
@@ -585,7 +579,7 @@ async def live_parser(client: httpx.AsyncClient, url: str):
     logger.info(f"直播ID: {f.room_id}")
     if not cache:
         logger.info(f"直播缓存: {f.room_id}")
-        if cache := await live_cache.get_or_none(None, query):
+        if cache := await live_cache.get_or_none(query):
             cache.content = f.rawcontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -624,7 +618,6 @@ async def video_parser(client: httpx.AsyncClient, url: str):
         params = {}
     if "ep_id" in params or "season_id" in params:
         if cache := await bangumi_cache.get_or_none(
-            None,
             query := Q(
                 Q(epid=params.get("ep_id")),
                 Q(ssid=params.get("season_id")),
@@ -654,7 +647,7 @@ async def video_parser(client: httpx.AsyncClient, url: str):
         logger.info(f"番剧ID: {epid}")
         if not cache:
             logger.info(f"番剧缓存: {epid}")
-            if cache := await bangumi_cache.get_or_none(None, query):
+            if cache := await bangumi_cache.get_or_none(query):
                 cache.content = f.infocontent
                 await cache.save(update_fields=["content", "created"])
             else:
@@ -662,7 +655,6 @@ async def video_parser(client: httpx.AsyncClient, url: str):
         params = {"aid": f.aid}
     # elif "aid" in params or "bvid" in params:
     if cache := await video_cache.get_or_none(
-        None,
         query := Q(
             Q(aid=params.get("aid")), Q(bvid=params.get("bvid")), join_type="OR"
         ),
@@ -688,7 +680,7 @@ async def video_parser(client: httpx.AsyncClient, url: str):
     logger.info(f"视频ID: {f.aid}")
     if not cache:
         logger.info(f"视频缓存: {f.aid}")
-        if cache := await video_cache.get_or_none(None, query):
+        if cache := await video_cache.get_or_none(query):
             cache.content = f.infocontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -771,7 +763,6 @@ async def read_parser(client: httpx.AsyncClient, url: str):
     title = title_content.attrs.get("content")
     logger.info(f"文章ID: {f.read_id}")
     if cache := await read_cache.get_or_none(
-        None,
         query := Q(read_id=f.read_id),
         Q(created__gte=timezone.now() - audio_cache.timeout),
     ):
@@ -804,7 +795,7 @@ async def read_parser(client: httpx.AsyncClient, url: str):
         ).get("url")
         logger.info(f"生成页面: {graphurl}")
         logger.info(f"文章缓存: {f.read_id}")
-        if cache := await read_cache.get_or_none(None, query):
+        if cache := await read_cache.get_or_none(query):
             cache.graphurl = graphurl
             await cache.save(update_fields=["graphurl", "created"])
         else:
