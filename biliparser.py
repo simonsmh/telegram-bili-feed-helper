@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 import html
 import json
 import os
@@ -24,6 +25,16 @@ from database import (
     video_cache,
 )
 from utils import BILI_API, compress, headers, logger
+
+CACHES = {
+    "audio": audio_cache,
+    "bangumi": bangumi_cache,
+    "dynamic": dynamic_cache,
+    "live": live_cache,
+    "read": read_cache,
+    "reply": reply_cache,
+    "video": video_cache,
+}
 
 
 def escape_markdown(text):
@@ -884,39 +895,22 @@ async def biliparser(urls):
 
 
 async def __db_status():
-    caches = {
-        "audio": audio_cache,
-        "bangumi": bangumi_cache,
-        "dynamic": dynamic_cache,
-        "live": live_cache,
-        "read": read_cache,
-        "reply": reply_cache,
-        "video": video_cache,
-    }
-
-    tasks = [item.all().count() for item in caches.values()]
+    tasks = [item.all().count() for item in CACHES.values()]
     result = await asyncio.gather(*tasks)
     ans = ""
-    for key, item in zip(caches.keys(), await asyncio.gather(*tasks)):
+    for key, item in zip(CACHES.keys(), await asyncio.gather(*tasks)):
         ans += f"{key}: {item}\n"
     ans += f"总计: {sum(result)}"
     return ans
+
 
 @db_init
 async def db_status():
     return await __db_status()
 
+
 @db_init
 async def db_clear(target):
-    caches = {
-        "audio": audio_cache,
-        "bangumi": bangumi_cache,
-        "dynamic": dynamic_cache,
-        "live": live_cache,
-        "read": read_cache,
-        "reply": reply_cache,
-        "video": video_cache,
-    }
-    if caches.get(target):
-        await caches[target].all().delete()
+    if CACHES.get(target):
+        await CACHES[target].filter(created__lt=datetime.today()).delete()
     return await __db_status()
