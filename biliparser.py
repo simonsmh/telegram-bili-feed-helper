@@ -111,6 +111,8 @@ class feed:
 
     @cached_property
     def has_comment(self):
+        if not hasattr(self, "replycontent"):
+            return False
         return bool(self.replycontent.get("data"))
 
     @cached_property
