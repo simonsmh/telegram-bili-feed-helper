@@ -221,11 +221,18 @@ class dynamic(feed):
         return (
             json.loads(self.forward_card.get("origin"))
             if self.has_forward
-            and self.forward_card.get(
+               and self.forward_card.get(
                 "origin"
             )  # forwared deleted content (workaround, not implemented yet)
             else self.forward_card
         )
+
+    @cached_property
+    def add_on_card(self):
+        display = self.detailcontent["data"]["card"]["display"]
+        if "add_on_card_info" in display:
+            return display["add_on_card_info"]
+        return []
 
     @property
     @lru_cache(maxsize=1)
@@ -472,6 +479,9 @@ async def dynamic_parser(client: httpx.AsyncClient, url: str):
         f.user = f.card.get("user").get("name")
         f.uid = f.card.get("user").get("uid")
         f.content = f'{f.card.get("item").get("title", str())}\n{f.card.get("item").get("description", str())}'
+        add_on_card = f.add_on_card
+        if len(add_on_card) != 0:
+            f.extra_markdown = add_on_card[0].get("reserve_attach_card").get("title")
         if f.origin_type in detail_types_list.get("PIC"):
             f.mediaurls = [t.get("img_src") for t in f.card.get("item").get("pictures")]
             f.mediatype = "image"
