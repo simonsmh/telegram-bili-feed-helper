@@ -221,7 +221,7 @@ class dynamic(feed):
         return (
             json.loads(self.forward_card.get("origin"))
             if self.has_forward
-               and self.forward_card.get(
+            and self.forward_card.get(
                 "origin"
             )  # forwared deleted content (workaround, not implemented yet)
             else self.forward_card
@@ -280,8 +280,6 @@ class dynamic(feed):
         content_markdown += escape_markdown(self.__content)
         if not content_markdown.endswith("\n"):
             content_markdown += "\n"
-        if self.extra_markdown:
-            content_markdown += self.extra_markdown
         return self.shrink_line(content_markdown)
 
     @cached_property
@@ -479,10 +477,38 @@ async def dynamic_parser(client: httpx.AsyncClient, url: str):
         f.user = f.card.get("user").get("name")
         f.uid = f.card.get("user").get("uid")
         f.content = f'{f.card.get("item").get("title", str())}\n{f.card.get("item").get("description", str())}'
-        add_on_card = f.add_on_card
-        if len(add_on_card) != 0:
-            if add_on_card[0].get("reserve_attach_card"):
-                f.content += "\n" + add_on_card[0].get("reserve_attach_card").get("title")
+        # addon card
+        if len(f.add_on_card) != 0:
+            if f.add_on_card[0].get("goods_card"):
+                f.content += "\n" + f.add_on_card[0]["goods_card"][0].get("name")
+            if f.add_on_card[0].get("attach_card"):
+                logger.info(f.add_on_card[0].get("attach_card"))
+                f.content += (
+                    "\n"
+                    + f.add_on_card[0]["attach_card"]["title"]
+                    + "\n"
+                    + f.add_on_card[0]["attach_card"]["desc_first"]
+                    + "\n"
+                    + f.add_on_card[0]["attach_card"]["desc_second"]
+                )
+            if f.add_on_card[0].get("reserve_attach_card"):
+                f.content += (
+                    "\n"
+                    + f.add_on_card[0]["reserve_attach_card"]["title"]
+                    + "\n"
+                    + f.add_on_card[0]["reserve_attach_card"]["desc_first"]["text"]
+                    + " "
+                    + f.add_on_card[0]["reserve_attach_card"]["desc_second"]
+                )
+            # if f.add_on_card[0].get("vote_card"):
+            if f.add_on_card[0].get("ugc_attach_card"):
+                f.content += (
+                    "\n"
+                    + f.add_on_card[0]["ugc_attach_card"].get("title")
+                    + "\n"
+                    + f.add_on_card[0]["ugc_attach_card"].get("desc_second")
+                )
+                f.extra_markdown = f'[{escape_markdown(f.add_on_card[0]["ugc_attach_card"].get("title"))}]({f.add_on_card[0]["ugc_attach_card"].get("play_url")})'
         if f.origin_type in detail_types_list.get("PIC"):
             f.mediaurls = [t.get("img_src") for t in f.card.get("item").get("pictures")]
             f.mediatype = "image"
@@ -700,7 +726,7 @@ async def video_parser(client: httpx.AsyncClient, url: str):
             await video_cache(aid=f.aid, bvid=bvid, content=f.infocontent).save()
     f.user = detail.get("owner").get("name")
     f.uid = detail.get("owner").get("mid")
-    f.content = detail.get("dynamic")
+    f.content = detail.get("dynamic", detail.get("desc"))
     f.extra_markdown = f"[{escape_markdown(detail.get('title'))}]({f.url})"
     f.mediatitle = detail.get("title")
     f.mediaurls = detail.get("pic")
