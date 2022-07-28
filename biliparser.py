@@ -482,7 +482,7 @@ async def dynamic_parser(client: httpx.AsyncClient, url: str):
         add_on_card = f.add_on_card
         if len(add_on_card) != 0:
             if add_on_card[0].get("reserve_attach_card"):
-                f.content += add_on_card[0].get("reserve_attach_card").get("title")
+                f.content += "\n" + add_on_card[0].get("reserve_attach_card").get("title")
         if f.origin_type in detail_types_list.get("PIC"):
             f.mediaurls = [t.get("img_src") for t in f.card.get("item").get("pictures")]
             f.mediatype = "image"
