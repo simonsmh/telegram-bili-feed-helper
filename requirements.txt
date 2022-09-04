@@ -1,3 +1,4 @@
+aiomysql
 aiosqlite
 asyncpg
 beautifulsoup4
