@@ -5,10 +5,7 @@ __pycache__
 data
 *.json
 !sample.json
-Pipfile*
 .stignore
 *.js
 *.db
-*.yml
-!.github/*/*
 *.log*

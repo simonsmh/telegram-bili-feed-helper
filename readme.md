@@ -1,7 +1,7 @@
 # Telegram-Bili-Feed-Helper
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/ee65189aead04bfda4aa6ac79f798628)](https://www.codacy.com/manual/simonsmh/telegram-bili-feed-helper?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=simonsmh/telegram-bili-feed-helper&amp;utm_campaign=Badge_Grade)
-[![Require: Python 3.8](https://img.shields.io/badge/Python-3.8-blue)](https://www.python.org/)
-[![Require: python-telegram-bot >= 13.4.1](https://img.shields.io/badge/python--telegram--bot-%3E%3D%2013.4.1-blue)](https://github.com/python-telegram-bot/python-telegram-bot)
+[![Require: Python 3.7](https://img.shields.io/badge/Python-3.7-blue)](https://www.python.org/)
+[![Require: python-telegram-bot >= 20](https://img.shields.io/badge/python--telegram--bot-%3E%3D%2020-blue)](https://github.com/python-telegram-bot/python-telegram-bot)
 
 Telegram bot for Bili Feed Helper.
 

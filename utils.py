@@ -3,7 +3,27 @@ import os
 from io import BytesIO
 
 from loguru import logger
-from PIL import Image
+
+try:
+    from PIL import Image
+
+    def compress(inpil, size=1280) -> BytesIO:
+        pil = Image.open(inpil)
+        pil.thumbnail((size, size), Image.LANCZOS)
+        outpil = BytesIO()
+        pil.save(outpil, "PNG", optimize=True)
+        return outpil
+
+except ImportError:
+    from wand.image import Image
+
+    def compress(inpil, size=1280) -> BytesIO:
+        pil = Image(blob=inpil)
+        pil.thumbnail(size, size)
+        outpil = BytesIO()
+        pil.save(outpil)
+        return outpil
+
 
 logger.remove()
 logger.add(sys.stderr, backtrace=True, diagnose=True)
@@ -15,10 +35,3 @@ headers = {
 }
 
 BILI_API = os.environ.get("BILI_API", "https://api.bilibili.com")
-
-
-def compress(inpil, size=1280) -> BytesIO:
-    pil = Image.open(inpil)
-    pil.thumbnail((size, size), Image.LANCZOS)
-    pil.save(outpil := BytesIO(), "PNG", optimize=True)
-    return outpil

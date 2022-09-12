@@ -1,11 +1,12 @@
 import asyncio
-from datetime import datetime
 import html
 import json
 import os
 import re
-from functools import cached_property, lru_cache
+from datetime import datetime
+from functools import lru_cache
 from io import BytesIO
+from typing import Optional
 
 import httpx
 from bs4 import BeautifulSoup
@@ -25,6 +26,11 @@ from database import (
     video_cache,
 )
 from utils import BILI_API, compress, headers, logger
+
+try:
+    from functools import cached_property
+except ImportError:
+    cached_property = property
 
 CACHES = {
     "audio": audio_cache,
@@ -46,10 +52,10 @@ def escape_markdown(text):
 
 
 class ParserException(Exception):
-    def __init__(self, msg, url, res=str()):
+    def __init__(self, msg, url, res=None):
         self.msg = msg
         self.url = url
-        self.res = res
+        self.res = str(res) if res else None
 
     def __str__(self):
         return f"{self.msg}: {self.url} ->\n{self.res}"
@@ -66,7 +72,7 @@ class feed:
     mediaduration: int = 0
     mediatitle: str = ""
     extra_markdown: str = ""
-    replycontent: dict
+    replycontent: Optional[dict]
 
     def __init__(self, rawurl):
         self.rawurl = rawurl
@@ -110,16 +116,11 @@ class feed:
         return self.shrink_line(content_markdown)
 
     @cached_property
-    def has_comment(self):
-        if not hasattr(self, "replycontent"):
-            return False
-        return bool(self.replycontent.get("data"))
-
-    @cached_property
     def comment(self):
         comment = str()
-        if self.has_comment:
-            if top := self.replycontent["data"].get("top"):
+        if self.replycontent and self.replycontent.get("data"):
+            top = self.replycontent["data"].get("top")
+            if top:
                 for item in top.values():
                     if item:
                         comment += f'🔝> @{item["member"]["uname"]}:\n{item["content"]["message"]}\n'
@@ -128,8 +129,9 @@ class feed:
     @cached_property
     def comment_markdown(self):
         comment_markdown = str()
-        if self.has_comment:
-            if top := self.replycontent["data"].get("top"):
+        if self.replycontent and self.replycontent.get("data"):
+            top = self.replycontent["data"].get("top")
+            if top:
                 for item in top.values():
                     if item:
                         comment_markdown += f'🔝\\> {self.make_user_markdown(item["member"]["uname"], item["member"]["mid"])}:\n{escape_markdown(item["content"]["message"])}\n'
@@ -336,7 +338,8 @@ def safe_parser(func):
         try:
             try:
                 return await func(*args, **kwargs)
-            except IntegrityError:
+            except IntegrityError as err:
+                logger.error(err)
                 ## try again with SQL race condition
                 return await func(*args, **kwargs)
         except Exception as err:
@@ -350,47 +353,51 @@ def safe_parser(func):
 
 
 @safe_parser
-async def reply_parser(client, oid, reply_type):
-    if cache := await reply_cache.get_or_none(
-        query := Q(Q(oid=oid), Q(reply_type=reply_type)),
+async def reply_parser(client: httpx.AsyncClient, oid, reply_type):
+    query = Q(Q(oid=oid), Q(reply_type=reply_type))
+    cache = await reply_cache.get_or_none(
+        query,
         Q(created__gte=timezone.now() - reply_cache.timeout),
-    ):
+    )
+    if cache:
         logger.info(f"拉取评论缓存: {cache.created}")
-        r = cache.content
+        reply = cache.content
     else:
-        r = (
-            await client.get(
-                BILI_API + "/x/v2/reply/main",
-                params={"oid": oid, "type": reply_type},
-            )
-        ).json()
-        if not r.get("data"):
-            raise ParserException("评论解析错误", r.url, r)
+        r = await client.get(
+            BILI_API + "/x/v2/reply/main",
+            params={"oid": oid, "type": reply_type},
+        )
+        reply = r.json()
+        if not reply.get("data"):
+            raise ParserException("评论解析错误", reply, r)
     logger.info(f"评论ID: {oid}, 评论类型: {reply_type}")
     if not cache:
         logger.info(f"评论缓存: {oid}")
-        if cache := await reply_cache.get_or_none(query):
-            cache.content = r
+        cache = await reply_cache.get_or_none(query)
+        if cache:
+            cache.content = reply
             await cache.save(update_fields=["content", "created"])
         else:
-            await reply_cache(oid=oid, reply_type=reply_type, content=r).save()
-    return r
+            await reply_cache(oid=oid, reply_type=reply_type, content=reply).save()
+    return reply
 
 
 @safe_parser
 async def dynamic_parser(client: httpx.AsyncClient, url: str):
-    if not (match := re.search(r"[th]\.bilibili\.com[\/\w]*\/(\d+)", url)):
-        raise ParserException("动态链接错误", url, match)
+    match = re.search(r"[th]\.bilibili\.com[\/\w]*\/(\d+)", url)
+    if not match:
+        raise ParserException("动态链接错误", url)
     f = dynamic(url)
     query = (
         Q(rid=match.group(1))
         if "type=2" in match.group(0)
         else Q(dynamic_id=match.group(1))
     )
-    if cache := await dynamic_cache.get_or_none(
+    cache = await dynamic_cache.get_or_none(
         query,
         Q(created__gte=timezone.now() - dynamic_cache.timeout),
-    ):
+    )
+    if cache:
         logger.info(f"拉取动态缓存: {cache.created}")
         f.detailcontent = cache.content
     else:
@@ -408,7 +415,8 @@ async def dynamic_parser(client: httpx.AsyncClient, url: str):
     logger.info(f"动态ID: {f.dynamic_id}")
     if not cache:
         logger.info(f"动态缓存: {f.dynamic_id}")
-        if cache := await dynamic_cache.get_or_none(query):
+        cache = await dynamic_cache.get_or_none(query)
+        if cache:
             cache.content = f.detailcontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -542,14 +550,17 @@ async def dynamic_parser(client: httpx.AsyncClient, url: str):
 
 @safe_parser
 async def audio_parser(client: httpx.AsyncClient, url: str):
-    if not (match := re.search(r"bilibili\.com\/audio\/au(\d+)", url)):
-        raise ParserException("音频链接错误", url, match)
+    match = re.search(r"bilibili\.com\/audio\/au(\d+)", url)
+    if not match:
+        raise ParserException("音频链接错误", url)
     f = audio(url)
     f.audio_id = int(match.group(1))
-    if cache := await audio_cache.get_or_none(
-        query := Q(audio_id=f.audio_id),
+    query = Q(audio_id=f.audio_id)
+    cache = await audio_cache.get_or_none(
+        query,
         Q(created__gte=timezone.now() - audio_cache.timeout),
-    ):
+    )
+    if cache:
         logger.info(f"拉取音频缓存: {cache.created}")
         f.infocontent = cache.content
         detail = f.infocontent["data"]
@@ -559,12 +570,14 @@ async def audio_parser(client: httpx.AsyncClient, url: str):
             params={"song_id": f.audio_id},
         )
         f.infocontent = r.json()
-        if not (detail := f.infocontent.get("data")):
+        detail = f.infocontent.get("data")
+        if not detail:
             raise ParserException("音频解析错误", r.url, f.infocontent)
     logger.info(f"音频ID: {f.audio_id}")
     if not cache:
         logger.info(f"音频缓存: {f.audio_id}")
-        if cache := await audio_cache.get_or_none(query):
+        cache = await audio_cache.get_or_none(query)
+        if cache:
             cache.content = f.infocontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -596,14 +609,17 @@ async def audio_parser(client: httpx.AsyncClient, url: str):
 
 @safe_parser
 async def live_parser(client: httpx.AsyncClient, url: str):
-    if not (match := re.search(r"live\.bilibili\.com[\/\w]*\/(\d+)", url)):
-        raise ParserException("直播链接错误", url, match)
+    match = re.search(r"live\.bilibili\.com[\/\w]*\/(\d+)", url)
+    if not match:
+        raise ParserException("直播链接错误", url)
     f = live(url)
     f.room_id = int(match.group(1))
-    if cache := await live_cache.get_or_none(
-        query := Q(room_id=f.room_id),
+    query = Q(room_id=f.room_id)
+    cache = await live_cache.get_or_none(
+        query,
         Q(created__gte=timezone.now() - live_cache.timeout),
-    ):
+    )
+    if cache:
         logger.info(f"拉取直播缓存: {cache.created}")
         f.rawcontent = cache.content
         detail = f.rawcontent.get("data")
@@ -613,12 +629,14 @@ async def live_parser(client: httpx.AsyncClient, url: str):
             params={"room_id": f.room_id},
         )
         f.rawcontent = r.json()
-        if not (detail := f.rawcontent.get("data")):
+        detail = f.rawcontent.get("data")
+        if not detail:
             raise ParserException("直播解析错误", r.url, f.rawcontent)
     logger.info(f"直播ID: {f.room_id}")
     if not cache:
         logger.info(f"直播缓存: {f.room_id}")
-        if cache := await live_cache.get_or_none(query):
+        cache = await live_cache.get_or_none(query)
+        if cache:
             cache.content = f.rawcontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -637,33 +655,38 @@ async def live_parser(client: httpx.AsyncClient, url: str):
 
 @safe_parser
 async def video_parser(client: httpx.AsyncClient, url: str):
-    if not (
-        match := re.search(
-            r"(?i)(?:bilibili\.com/(?:video|bangumi/play)|b23\.tv|acg\.tv)/(?:(?P<bvid>bv\w+)|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+))",
-            url,
-        )
-    ):
-        raise ParserException("视频链接错误", url, match)
+    match = re.search(
+        r"(?i)(?:bilibili\.com/(?:video|bangumi/play)|b23\.tv|acg\.tv)/(?:(?P<bvid>bv\w+)|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+))",
+        url,
+    )
+    if not match:
+        raise ParserException("视频链接错误", url)
     f = video(url)
-    if epid := match.group("epid"):
+    epid = match.group("epid")
+    bvid = match.group("bvid")
+    aid = match.group("aid")
+    ssid = match.group("ssid")
+    if epid:
         params = {"ep_id": epid}
-    elif bvid := match.group("bvid"):
+    elif bvid:
         params = {"bvid": bvid}
-    elif aid := match.group("aid"):
+    elif aid:
         params = {"aid": aid}
-    elif ssid := match.group("ssid"):
+    elif ssid:
         params = {"season_id": ssid}
     else:
         params = {}
     if "ep_id" in params or "season_id" in params:
-        if cache := await bangumi_cache.get_or_none(
-            query := Q(
-                Q(epid=params.get("ep_id")),
-                Q(ssid=params.get("season_id")),
-                join_type="OR",
-            ),
+        query = Q(
+            Q(epid=params.get("ep_id")),
+            Q(ssid=params.get("season_id")),
+            join_type="OR",
+        )
+        cache = await bangumi_cache.get_or_none(
+            query,
             Q(created__gte=timezone.now() - video_cache.timeout),
-        ):
+        )
+        if cache:
             logger.info(f"拉取番剧缓存: {cache.created}")
             f.infocontent = cache.content
         else:
@@ -672,7 +695,8 @@ async def video_parser(client: httpx.AsyncClient, url: str):
                 params=params,
             )
             f.infocontent = r.json()
-        if not (detail := f.infocontent.get("result")):
+        detail = f.infocontent.get("result")
+        if not detail:
             # Anime detects non-China IP
             raise ParserException("番剧解析错误", url, f.infocontent)
         f.sid = detail.get("season_id")
@@ -686,19 +710,20 @@ async def video_parser(client: httpx.AsyncClient, url: str):
         logger.info(f"番剧ID: {epid}")
         if not cache:
             logger.info(f"番剧缓存: {epid}")
-            if cache := await bangumi_cache.get_or_none(query):
+            cache = await bangumi_cache.get_or_none(query)
+            if cache:
                 cache.content = f.infocontent
                 await cache.save(update_fields=["content", "created"])
             else:
                 await bangumi_cache(epid=epid, ssid=f.sid, content=f.infocontent).save()
         params = {"aid": f.aid}
     # elif "aid" in params or "bvid" in params:
-    if cache := await video_cache.get_or_none(
-        query := Q(
-            Q(aid=params.get("aid")), Q(bvid=params.get("bvid")), join_type="OR"
-        ),
+    query = Q(Q(aid=params.get("aid")), Q(bvid=params.get("bvid")), join_type="OR")
+    cache = await video_cache.get_or_none(
+        query,
         Q(created__gte=timezone.now() - video_cache.timeout),
-    ):
+    )
+    if cache:
         logger.info(f"拉取视频缓存: {cache.created}")
         f.infocontent = cache.content
         detail = f.infocontent.get("data")
@@ -709,7 +734,8 @@ async def video_parser(client: httpx.AsyncClient, url: str):
         )
         # Video detects non-China IP
         f.infocontent = r.json()
-        if not (detail := f.infocontent.get("data")):
+        detail = f.infocontent.get("data")
+        if not detail:
             raise ParserException("视频解析错误", r.url, f.infocontent)
     if not detail:
         raise ParserException("视频内容获取错误", f.url)
@@ -719,7 +745,8 @@ async def video_parser(client: httpx.AsyncClient, url: str):
     logger.info(f"视频ID: {f.aid}")
     if not cache:
         logger.info(f"视频缓存: {f.aid}")
-        if cache := await video_cache.get_or_none(query):
+        cache = await video_cache.get_or_none(query)
+        if cache:
             cache.content = f.infocontent
             await cache.save(update_fields=["content", "created"])
         else:
@@ -770,8 +797,9 @@ async def read_parser(client: httpx.AsyncClient, url: str):
             else:
                 logger.warning(f"{src} -> {resp}")
 
-    if not (match := re.search(r"bilibili\.com\/read\/(?:cv|mobile\/)(\d+)", url)):
-        raise ParserException("文章链接错误", url, match)
+    match = re.search(r"bilibili\.com\/read\/(?:cv|mobile\/)(\d+)", url)
+    if not match:
+        raise ParserException("文章链接错误", url)
     f = read(url)
     f.read_id = int(match.group(1))
     r = await client.get(f"https://www.bilibili.com/read/cv{f.read_id}")
@@ -801,10 +829,12 @@ async def read_parser(client: httpx.AsyncClient, url: str):
         raise ParserException("文章title解析错误", url, title_content)
     title = title_content.attrs.get("content")
     logger.info(f"文章ID: {f.read_id}")
-    if cache := await read_cache.get_or_none(
-        query := Q(read_id=f.read_id),
+    query = Q(read_id=f.read_id)
+    cache = await read_cache.get_or_none(
+        query,
         Q(created__gte=timezone.now() - audio_cache.timeout),
-    ):
+    )
+    if cache:
         logger.info(f"拉取文章缓存: {cache.created}")
         graphurl = cache.graphurl
     else:
@@ -834,7 +864,8 @@ async def read_parser(client: httpx.AsyncClient, url: str):
         ).get("url")
         logger.info(f"生成页面: {graphurl}")
         logger.info(f"文章缓存: {f.read_id}")
-        if cache := await read_cache.get_or_none(query):
+        cache = await read_cache.get_or_none(query)
+        if cache:
             cache.graphurl = graphurl
             await cache.save(update_fields=["graphurl", "created"])
         else:
@@ -870,22 +901,6 @@ async def feed_parser(client: httpx.AsyncClient, url: str):
     raise ParserException("URL错误", url)
 
 
-def db_init(func):
-    async def inner_function(*args, **kwargs):
-        await Tortoise.init(
-            db_url=os.environ.get("DATABASE_URL", "sqlite://cache.db"),
-            modules={"models": ["database"]},
-            use_tz=True,
-        )
-        await Tortoise.generate_schemas()
-        result = await func(*args, **kwargs)
-        await Tortoise.close_connections()
-        return result
-
-    return inner_function
-
-
-@db_init
 async def biliparser(urls):
     logger.debug(BILI_API)
     if isinstance(urls, str):
@@ -924,6 +939,21 @@ async def biliparser(urls):
     return callbacks
 
 
+async def db_init() -> None:
+    try:
+        Tortoise.get_connection("default")
+    except:
+        await Tortoise.init(
+            db_url=os.environ.get("DATABASE_URL", "sqlite://cache.db"),
+            modules={"models": ["database"]},
+            use_tz=True,
+        )
+        await Tortoise.generate_schemas()
+
+
+async def db_close() -> None:
+    await Tortoise.close_connections()
+
 async def __db_status():
     tasks = [item.all().count() for item in CACHES.values()]
     result = await asyncio.gather(*tasks)
@@ -934,12 +964,10 @@ async def __db_status():
     return ans
 
 
-@db_init
 async def db_status():
     return await __db_status()
 
 
-@db_init
 async def db_clear(target):
     if CACHES.get(target):
         await CACHES[target].filter(created__lt=datetime.today()).delete()

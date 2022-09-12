@@ -1,11 +1,13 @@
 aiomysql
 aiosqlite
 asyncpg
+backports.zoneinfo
 beautifulsoup4
 httpx[http2]
 loguru
 lxml
 pillow
-python-telegram-bot==13.13
+python-telegram-bot==20.0a4
 telegraph
-tortoise-orm[accel]>=0.19.2
+tortoise-orm[accel]
+wand

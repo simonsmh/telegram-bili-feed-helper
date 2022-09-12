@@ -9,7 +9,6 @@ from uuid import uuid4
 
 import httpx
 from telegram import (
-    ChatAction,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InlineQueryResultArticle,
@@ -21,21 +20,29 @@ from telegram import (
     InputMediaPhoto,
     InputMediaVideo,
     InputTextMessageContent,
-    ParseMode,
+    Update,
 )
+from telegram.constants import ChatAction, ParseMode
 from telegram.error import BadRequest, RetryAfter, TimedOut
 from telegram.ext import (
+    Application,
     CommandHandler,
-    Filters,
+    ContextTypes,
     InlineQueryHandler,
     MessageHandler,
     Updater,
+    filters,
 )
-from telegram.ext.callbackcontext import CallbackContext
-from telegram.ext.filters import Filters
-from telegram.update import Update
 
-from biliparser import biliparser, db_clear, db_status, escape_markdown, feed
+from biliparser import (
+    biliparser,
+    db_clear,
+    db_close,
+    db_init,
+    db_status,
+    escape_markdown,
+    feed,
+)
 from utils import compress, headers, logger
 
 regex = r"(?i)[\w\.]*?(?:bilibili\.com|(?:b23|acg)\.tv)\S+"
@@ -94,7 +101,7 @@ def captions(f: Union[feed, Exception], fallback: bool = False) -> str:
             if fallback
             else parser_helper(f.content_markdown)
         ) + "\n"
-    if f.has_comment and f.comment:
+    if f.replycontent and f.replycontent.get("data") and f.comment:
         captions += "〰〰〰〰〰〰〰〰〰〰\n" + (
             parser_helper(f.comment, False)
             if fallback
@@ -123,16 +130,16 @@ async def get_media(
     return media
 
 
-def parse(update: Update, context: CallbackContext) -> None:
+async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
-    message.reply_chat_action(ChatAction.TYPING)
+    await message.reply_chat_action(ChatAction.TYPING)
     data = message.text
     urls = re.findall(regex, data)
     logger.info(f"Parse: {urls}")
 
     async def parse_send(f: feed, fallback: bool = False) -> None:
         if not f.mediaurls:
-            message.reply_text(
+            await message.reply_text(
                 captions(f, fallback),
                 parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                 allow_sending_without_reply=True,
@@ -154,7 +161,7 @@ def parse(update: Update, context: CallbackContext) -> None:
                 else:
                     media = f.mediaurls
             if f.mediatype == "video":
-                message.reply_video(
+                await message.reply_video(
                     media[0],
                     caption=captions(f, fallback),
                     parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
@@ -164,7 +171,7 @@ def parse(update: Update, context: CallbackContext) -> None:
                     thumb=mediathumb,
                 )
             elif f.mediatype == "audio":
-                message.reply_audio(
+                await message.reply_audio(
                     media[0],
                     caption=captions(f, fallback),
                     duration=f.mediaduration,
@@ -177,7 +184,7 @@ def parse(update: Update, context: CallbackContext) -> None:
                 )
             elif len(f.mediaurls) == 1:
                 if ".gif" in f.mediaurls[0]:
-                    message.reply_animation(
+                    await message.reply_animation(
                         media[0],
                         caption=captions(f, fallback),
                         parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
@@ -185,7 +192,7 @@ def parse(update: Update, context: CallbackContext) -> None:
                         reply_markup=origin_link(f.url),
                     )
                 else:
-                    message.reply_photo(
+                    await message.reply_photo(
                         media[0],
                         caption=captions(f, fallback),
                         parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
@@ -207,126 +214,119 @@ def parse(update: Update, context: CallbackContext) -> None:
                     )
                     for img, mediaurl in zip(media, f.mediaurls)
                 ]
-                message.reply_media_group(media, allow_sending_without_reply=True)
-                message.reply_text(
+                await message.reply_media_group(media, allow_sending_without_reply=True)
+                await message.reply_text(
                     captions(f, fallback),
                     parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                     allow_sending_without_reply=True,
                     reply_markup=origin_link(f.url),
                 )
 
-    async def parse_queue(urls) -> None:
-        fs = await biliparser(urls)
-        for num, f in enumerate(fs):
-            if isinstance(f, Exception):
-                logger.warning(f"解析错误! {f}")
-                if data.startswith("/parse"):
-                    message.reply_text(
-                        captions(f),
-                        allow_sending_without_reply=True,
-                        reply_markup=origin_link(urls[num]),
-                    )
-                continue
-            markdown_fallback = False
-            for i in range(1, 5):
-                try:
-                    await parse_send(f, markdown_fallback)
-                except TimedOut as err:
-                    logger.exception(err)
-                    logger.info(f"{err} 第{i}次异常->下载后上传: {f.url}")
-                    f.mediaraws = True
-                except BadRequest as err:
-                    logger.exception(err)
-                    if "Can't parse" in err.message:
-                        logger.info(f"{err} 第{i}次异常->去除Markdown: {f.url}")
-                        markdown_fallback = True
-                    else:
-                        logger.info(f"{err} 第{i}次异常->下载后上传: {f.url}")
-                        f.mediaraws = True
-                except RetryAfter as err:
-                    await asyncio.sleep(1)
-                except httpx.RequestError as err:
-                    logger.exception(err)
-                    logger.info(f"{err} 第{i}次异常->重试: {f.url}")
-                except httpx.HTTPStatusError as err:
-                    logger.exception(err)
-                    logger.info(f"{err} 第{i}次异常->跳过： {f.url}")
-                    break
-                else:
-                    break
-
-    asyncio.run(parse_queue(urls))
-
-
-def fetch(update: Update, context: CallbackContext) -> None:
-    message = update.effective_message
-    message.reply_chat_action(ChatAction.UPLOAD_DOCUMENT)
-    data = message.text
-    urls = re.findall(regex, data)
-    logger.info(f"Fetch: {urls}")
-
-    async def fetch_queue(urls) -> None:
-        fs = await biliparser(urls)
-        for num, f in enumerate(fs):
-            if isinstance(f, Exception):
-                logger.warning(f"解析错误! {f}")
-                message.reply_text(
+    fs = await biliparser(urls)
+    for num, f in enumerate(fs):
+        if isinstance(f, Exception):
+            logger.warning(f"解析错误! {f}")
+            if data.startswith("/parse"):
+                await message.reply_text(
                     captions(f),
                     allow_sending_without_reply=True,
                     reply_markup=origin_link(urls[num]),
                 )
-                continue
-            if f.mediaurls:
-                tasks = [
-                    get_media(f, img, filename=filename, compression=False)
-                    for img, filename in zip(f.mediaurls, f.mediafilename)
-                ]
-                medias = await asyncio.gather(*tasks)
-                logger.info(f"上传中: {f.url}")
-                if len(medias) > 1:
-                    medias = [InputMediaDocument(media) for media in medias]
-                    message.reply_media_group(
-                        medias,
-                        allow_sending_without_reply=True,
-                    )
-                    try:
-                        message.reply_text(
-                            captions(f),
-                            parse_mode=ParseMode.MARKDOWN_V2,
-                            allow_sending_without_reply=True,
-                            reply_markup=origin_link(f.url),
-                        )
-                    except BadRequest as err:
-                        logger.exception(err)
-                        logger.info(f"{err} -> 去除Markdown: {f.url}")
-                        message.reply_text(
-                            captions(f, True),
-                            allow_sending_without_reply=True,
-                            reply_markup=origin_link(f.url),
-                        )
+            continue
+        markdown_fallback = False
+        for i in range(1, 5):
+            try:
+                await parse_send(f, markdown_fallback)
+            except TimedOut as err:
+                logger.exception(err)
+                logger.info(f"{err} 第{i}次异常->下载后上传: {f.url}")
+                f.mediaraws = True
+            except BadRequest as err:
+                logger.exception(err)
+                if "Can't parse" in err.message:
+                    logger.info(f"{err} 第{i}次异常->去除Markdown: {f.url}")
+                    markdown_fallback = True
                 else:
-                    try:
-                        message.reply_document(
-                            document=medias[0],
-                            caption=captions(f),
-                            parse_mode=ParseMode.MARKDOWN_V2,
-                            allow_sending_without_reply=True,
-                            reply_markup=origin_link(f.url),
-                        )
-                    except BadRequest as err:
-                        logger.exception(err)
-                        logger.info(f"{err} -> 去除Markdown: {f.url}")
-                        message.reply_document(
-                            document=medias[0],
-                            caption=captions(f, True),
-                            allow_sending_without_reply=True,
-                            reply_markup=origin_link(f.url),
-                        )
-
-    asyncio.run(fetch_queue(urls))
+                    logger.info(f"{err} 第{i}次异常->下载后上传: {f.url}")
+                    f.mediaraws = True
+            except RetryAfter as err:
+                await asyncio.sleep(1)
+            except httpx.RequestError as err:
+                logger.exception(err)
+                logger.info(f"{err} 第{i}次异常->重试: {f.url}")
+            except httpx.HTTPStatusError as err:
+                logger.exception(err)
+                logger.info(f"{err} 第{i}次异常->跳过： {f.url}")
+                break
+            else:
+                break
 
 
-def inlineparse(update: Update, context: CallbackContext) -> None:
+async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    await message.reply_chat_action(ChatAction.UPLOAD_DOCUMENT)
+    data = message.text
+    urls = re.findall(regex, data)
+    logger.info(f"Fetch: {urls}")
+    fs = await biliparser(urls)
+    for num, f in enumerate(fs):
+        if isinstance(f, Exception):
+            logger.warning(f"解析错误! {f}")
+            await message.reply_text(
+                captions(f),
+                allow_sending_without_reply=True,
+                reply_markup=origin_link(urls[num]),
+            )
+            continue
+        if f.mediaurls:
+            tasks = [
+                get_media(f, img, filename=filename, compression=False)
+                for img, filename in zip(f.mediaurls, f.mediafilename)
+            ]
+            medias = await asyncio.gather(*tasks)
+            logger.info(f"上传中: {f.url}")
+            if len(medias) > 1:
+                medias = [InputMediaDocument(media) for media in medias]
+                await message.reply_media_group(
+                    medias,
+                    allow_sending_without_reply=True,
+                )
+                try:
+                    await message.reply_text(
+                        captions(f),
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                        allow_sending_without_reply=True,
+                        reply_markup=origin_link(f.url),
+                    )
+                except BadRequest as err:
+                    logger.exception(err)
+                    logger.info(f"{err} -> 去除Markdown: {f.url}")
+                    await message.reply_text(
+                        captions(f, True),
+                        allow_sending_without_reply=True,
+                        reply_markup=origin_link(f.url),
+                    )
+            else:
+                try:
+                    await message.reply_document(
+                        document=medias[0],
+                        caption=captions(f),
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                        allow_sending_without_reply=True,
+                        reply_markup=origin_link(f.url),
+                    )
+                except BadRequest as err:
+                    logger.exception(err)
+                    logger.info(f"{err} -> 去除Markdown: {f.url}")
+                    await message.reply_document(
+                        document=medias[0],
+                        caption=captions(f, True),
+                        allow_sending_without_reply=True,
+                        reply_markup=origin_link(f.url),
+                    )
+
+
+async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     inline_query = update.inline_query
     query = inline_query.query
     helpmsg = [
@@ -341,15 +341,15 @@ def inlineparse(update: Update, context: CallbackContext) -> None:
         )
     ]
     if not query:
-        inline_query.answer(helpmsg)
+        await inline_query.answer(helpmsg)
         return
     try:
         url = re.search(regex, query).group(0)
     except AttributeError:
-        inline_query.answer(helpmsg)
+        await inline_query.answer(helpmsg)
         return
     logger.info(f"Inline: {url}")
-    [f] = asyncio.run(biliparser(url))
+    [f] = await biliparser(url)
     if isinstance(f, Exception):
         logger.warning(f"解析错误! {f}")
         results = [
@@ -363,10 +363,10 @@ def inlineparse(update: Update, context: CallbackContext) -> None:
                 ),
             )
         ]
-        inline_query.answer(results)
+        await inline_query.answer(results)
     else:
 
-        def answer_results(f: feed, fallback: bool = False):
+        async def answer_results(f: feed, fallback: bool = False):
             if not f.mediaurls:
                 results = [
                     InlineQueryResultArticle(
@@ -435,38 +435,52 @@ def inlineparse(update: Update, context: CallbackContext) -> None:
                         for img in f.mediaurls
                     ]
                     results.extend(helpmsg)
-            inline_query.answer(results)
+            await inline_query.answer(results)
 
         try:
-            answer_results(f)
+            await answer_results(f)
         except BadRequest as err:
             logger.exception(err)
             logger.info(f"{err} -> 去除Markdown: {f.url}")
-            answer_results(f, True)
+            await answer_results(f, True)
 
 
-def start(update: Update, context: CallbackContext) -> None:
-    update.effective_message.reply_text(
-        f"欢迎使用 @{context.bot.get_me().username} 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组自动匹配消息。",
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    bot_me = await context.bot.get_me()
+    await update.effective_message.reply_text(
+        f"欢迎使用 @{bot_me.username} 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组自动匹配消息。",
         reply_markup=sourcecodemarkup,
     )
 
 
-def status(update: Update, context: CallbackContext) -> None:
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
-    message.reply_chat_action(ChatAction.TYPING)
-    result = asyncio.run(db_status())
-    message.reply_text(result)
+    await message.reply_chat_action(ChatAction.TYPING)
+    result = await db_status()
+    await message.reply_text(result)
 
 
-def delete_cache(update: Update, context: CallbackContext) -> None:
+async def delete_cache(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
-    message.reply_chat_action(ChatAction.TYPING)
+    await message.reply_chat_action(ChatAction.TYPING)
     data = message.text
     data_list = data.split(" ")
     if len(data_list) > 1:
-        result = asyncio.run(db_clear(data_list[1]), debug=True)
-        message.reply_text(result)
+        result = await db_clear(data_list[1])
+        await message.reply_text(result)
+
+
+async def post_init(application: Application):
+    await db_init()
+    await application.updater.bot.set_my_commands(
+        [["start", "关于本 Bot"], ["file", "获取匹配内容原始文件"], ["parse", "获取匹配内容"]]
+    )
+    bot_me = await application.updater.bot.get_me()
+    logger.info(f"Bot @{bot_me.username} started.")
+
+
+async def post_shutdown(application: Application):
+    await db_close()
 
 
 if __name__ == "__main__":
@@ -477,42 +491,36 @@ if __name__ == "__main__":
     else:
         logger.error(f"Need TOKEN.")
         sys.exit(1)
-    updater = Updater(TOKEN, use_context=True)
-    updater.dispatcher.add_handler(
-        CommandHandler(
-            "start", start, filters=Filters.chat_type.private, run_async=True
-        )
+    application = (
+        Application.builder()
+        .token(TOKEN)
+        .post_init(post_init)
+        .post_shutdown(post_shutdown)
+        .build()
     )
-    updater.dispatcher.add_handler(
+    application.add_handler(
+        CommandHandler("start", start, filters=filters.ChatType.PRIVATE)
+    )
+    application.add_handler(
         CommandHandler(
             "delete_cache",
             delete_cache,
-            filters=Filters.chat_type.private,
-            run_async=True,
+            filters=filters.ChatType.PRIVATE,
         )
     )
-    updater.dispatcher.add_handler(
-        CommandHandler(
-            "status", status, filters=Filters.chat_type.private, run_async=True
-        )
+    application.add_handler(
+        CommandHandler("status", status, filters=filters.ChatType.PRIVATE)
     )
-    updater.dispatcher.add_handler(CommandHandler("file", fetch, run_async=True))
-    updater.dispatcher.add_handler(CommandHandler("parse", parse, run_async=True))
-    updater.dispatcher.add_handler(
-        MessageHandler(Filters.regex(regex), parse, run_async=True)
-    )
-    updater.dispatcher.add_handler(InlineQueryHandler(inlineparse, run_async=True))
-    if DOMAIN := os.environ.get("DOMAIN"):
-        updater.start_webhook(
+    application.add_handler(CommandHandler("file", fetch))
+    application.add_handler(CommandHandler("parse", parse))
+    application.add_handler(MessageHandler(filters.Regex(regex), parse))
+    application.add_handler(InlineQueryHandler(inlineparse))
+    if os.environ.get("DOMAIN"):
+        application.run_webhook(
             listen="0.0.0.0",
-            port=int(os.environ.get("PORT", 8443)),
+            port=int(os.environ.get("PORT", 9000)),
             url_path=TOKEN,
-            webhook_url=DOMAIN + TOKEN,
+            webhook_url=f'{os.environ.get("DOMAIN")}{TOKEN}',
         )
     else:
-        updater.start_polling()
-    logger.info(f"Bot @{updater.bot.get_me().username} started.")
-    updater.bot.set_my_commands(
-        [["start", "关于本 Bot"], ["file", "获取匹配内容原始文件"], ["parse", "获取匹配内容"]]
-    )
-    updater.idle()
+        application.run_polling()
