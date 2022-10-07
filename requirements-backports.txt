@@ -1,6 +1,7 @@
 aiomysql
 aiosqlite
 asyncpg
+backports.zoneinfo
 beautifulsoup4
 httpx[http2]
 loguru
