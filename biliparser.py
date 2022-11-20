@@ -72,7 +72,7 @@ class feed:
     mediaduration: int = 0
     mediatitle: str = ""
     extra_markdown: str = ""
-    replycontent: Optional[dict]
+    replycontent: dict = {}
 
     def __init__(self, rawurl):
         self.rawurl = rawurl
@@ -368,6 +368,9 @@ async def reply_parser(client: httpx.AsyncClient, oid, reply_type):
             params={"oid": oid, "type": reply_type},
         )
         reply = r.json()
+        if reply.get("code") == 12002:
+            logger.warning(reply.get("message"))
+            return {}
         if not reply.get("data"):
             raise ParserException("评论解析错误", reply, r)
     logger.info(f"评论ID: {oid}, 评论类型: {reply_type}")
@@ -797,7 +800,7 @@ async def read_parser(client: httpx.AsyncClient, url: str):
             else:
                 logger.warning(f"{src} -> {resp}")
 
-    match = re.search(r"bilibili\.com\/read\/(?:cv|mobile\/)(\d+)", url)
+    match = re.search(r"bilibili\.com\/read\/(?:cv|mobile\/|mobile\?id=)(\d+)", url)
     if not match:
         raise ParserException("文章链接错误", url)
     f = read(url)
