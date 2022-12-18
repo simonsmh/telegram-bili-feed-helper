@@ -377,11 +377,14 @@ async def reply_parser(client: httpx.AsyncClient, oid, reply_type):
     if not cache:
         logger.info(f"评论缓存: {oid}")
         cache = await reply_cache.get_or_none(query)
-        if cache:
-            cache.content = reply
-            await cache.save(update_fields=["content", "created"])
-        else:
-            await reply_cache(oid=oid, reply_type=reply_type, content=reply).save()
+        try:
+            if cache:
+                cache.content = reply
+                await cache.save(update_fields=["content", "created"])
+            else:
+                await reply_cache(oid=oid, reply_type=reply_type, content=reply).save()
+        except Exception as e:
+            logger.exception(f"评论缓存错误: {e}")
     return reply
 
 
@@ -419,13 +422,16 @@ async def dynamic_parser(client: httpx.AsyncClient, url: str):
     if not cache:
         logger.info(f"动态缓存: {f.dynamic_id}")
         cache = await dynamic_cache.get_or_none(query)
-        if cache:
-            cache.content = f.detailcontent
-            await cache.save(update_fields=["content", "created"])
-        else:
-            await dynamic_cache(
-                dynamic_id=f.dynamic_id, rid=f.rid, content=f.detailcontent
-            ).save()
+        try:
+            if cache:
+                cache.content = f.detailcontent
+                await cache.save(update_fields=["content", "created"])
+            else:
+                await dynamic_cache(
+                    dynamic_id=f.dynamic_id, rid=f.rid, content=f.detailcontent
+                ).save()
+        except Exception as e:
+            logger.exception(f"动态缓存错误: {e}")
     # extract from detail.js
     detail_types_list = {
         # REPOST WORD
@@ -580,11 +586,14 @@ async def audio_parser(client: httpx.AsyncClient, url: str):
     if not cache:
         logger.info(f"音频缓存: {f.audio_id}")
         cache = await audio_cache.get_or_none(query)
-        if cache:
-            cache.content = f.infocontent
-            await cache.save(update_fields=["content", "created"])
-        else:
-            await audio_cache(audio_id=f.audio_id, content=f.infocontent).save()
+        try:
+            if cache:
+                cache.content = f.infocontent
+                await cache.save(update_fields=["content", "created"])
+            else:
+                await audio_cache(audio_id=f.audio_id, content=f.infocontent).save()
+        except Exception as e:
+            logger.exception(f"音频缓存错误: {e}")
     f.uid = detail.get("mid")
     r = await client.get(
         BILI_API + "/audio/music-service-c/url",
@@ -639,11 +648,14 @@ async def live_parser(client: httpx.AsyncClient, url: str):
     if not cache:
         logger.info(f"直播缓存: {f.room_id}")
         cache = await live_cache.get_or_none(query)
-        if cache:
-            cache.content = f.rawcontent
-            await cache.save(update_fields=["content", "created"])
-        else:
-            await live_cache(room_id=f.room_id, content=f.rawcontent).save()
+        try:
+            if cache:
+                cache.content = f.rawcontent
+                await cache.save(update_fields=["content", "created"])
+            else:
+                await live_cache(room_id=f.room_id, content=f.rawcontent).save()
+        except Exception as e:
+            logger.exception(f"直播缓存错误: {e}")
     if not detail:
         raise ParserException("直播内容获取错误", f.url)
     f.user = detail["anchor_info"]["base_info"]["uname"]
@@ -714,11 +726,16 @@ async def video_parser(client: httpx.AsyncClient, url: str):
         if not cache:
             logger.info(f"番剧缓存: {epid}")
             cache = await bangumi_cache.get_or_none(query)
-            if cache:
-                cache.content = f.infocontent
-                await cache.save(update_fields=["content", "created"])
-            else:
-                await bangumi_cache(epid=epid, ssid=f.sid, content=f.infocontent).save()
+            try:
+                if cache:
+                    cache.content = f.infocontent
+                    await cache.save(update_fields=["content", "created"])
+                else:
+                    await bangumi_cache(
+                        epid=epid, ssid=f.sid, content=f.infocontent
+                    ).save()
+            except Exception as e:
+                logger.exception(f"番剧缓存错误: {e}")
         params = {"aid": f.aid}
     # elif "aid" in params or "bvid" in params:
     query = Q(Q(aid=params.get("aid")), Q(bvid=params.get("bvid")), join_type="OR")
@@ -749,11 +766,14 @@ async def video_parser(client: httpx.AsyncClient, url: str):
     if not cache:
         logger.info(f"视频缓存: {f.aid}")
         cache = await video_cache.get_or_none(query)
-        if cache:
-            cache.content = f.infocontent
-            await cache.save(update_fields=["content", "created"])
-        else:
-            await video_cache(aid=f.aid, bvid=bvid, content=f.infocontent).save()
+        try:
+            if cache:
+                cache.content = f.infocontent
+                await cache.save(update_fields=["content", "created"])
+            else:
+                await video_cache(aid=f.aid, bvid=bvid, content=f.infocontent).save()
+        except Exception as e:
+            logger.exception(f"视频缓存错误: {e}")
     f.user = detail.get("owner").get("name")
     f.uid = detail.get("owner").get("mid")
     f.content = detail.get("dynamic", detail.get("desc"))
@@ -868,11 +888,14 @@ async def read_parser(client: httpx.AsyncClient, url: str):
         logger.info(f"生成页面: {graphurl}")
         logger.info(f"文章缓存: {f.read_id}")
         cache = await read_cache.get_or_none(query)
-        if cache:
-            cache.graphurl = graphurl
-            await cache.save(update_fields=["graphurl", "created"])
-        else:
-            await read_cache(read_id=f.read_id, graphurl=graphurl).save()
+        try:
+            if cache:
+                cache.graphurl = graphurl
+                await cache.save(update_fields=["graphurl", "created"])
+            else:
+                await read_cache(read_id=f.read_id, graphurl=graphurl).save()
+        except Exception as e:
+            logger.exception(f"文章缓存失败: {e}")
     f.extra_markdown = f"[{escape_markdown(title)}]({graphurl})"
     f.replycontent = await reply_parser(client, f.read_id, f.reply_type)
     return f
@@ -956,6 +979,7 @@ async def db_init() -> None:
 
 async def db_close() -> None:
     await Tortoise.close_connections()
+
 
 async def __db_status():
     tasks = [item.all().count() for item in CACHES.values()]
