@@ -65,7 +65,6 @@ def origin_link(content: str) -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton(text="原链接", url=content),
-                InlineKeyboardButton(text="转发", switch_inline_query=content),
             ]
         ]
     )
