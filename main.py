@@ -71,7 +71,7 @@ def origin_link(content: str) -> InlineKeyboardMarkup:
 
 
 @lru_cache(maxsize=16)
-def captions(f: Union[feed, Exception], fallback: bool = False) -> str:
+def captions(f: Union[feed, Exception], fallback: bool = False, is_caption: bool = False) -> str:
     def parser_helper(content: str, md_flag: bool = True) -> str:
         if not content:
             return str()
@@ -87,26 +87,32 @@ def captions(f: Union[feed, Exception], fallback: bool = False) -> str:
 
     if isinstance(f, Exception):
         return f.__str__()
-    captions = (
+    caption = (
         f.url
         if fallback
         else (escape_markdown(f.url) if not f.extra_markdown else f.extra_markdown)
     ) + "\n"  # I don't need url twice with extra_markdown
     if f.user:
-        captions += (f.user if fallback else f.user_markdown) + ":\n"
+        caption += (f.user if fallback else f.user_markdown) + ":\n"
+    prev_caption = caption
     if f.content:
-        captions += (
+        caption += (
             parser_helper(f.content, False)
             if fallback
             else parser_helper(f.content_markdown)
         ) + "\n"
+    if is_caption and len(caption) > 1024:
+        return prev_caption
+    prev_caption = caption
     if f.replycontent and f.replycontent.get("data") and f.comment:
-        captions += "〰〰〰〰〰〰〰〰〰〰\n" + (
+        caption += "〰〰〰〰〰〰〰〰〰〰\n" + (
             parser_helper(f.comment, False)
             if fallback
             else parser_helper(f.comment_markdown)
         )
-    return captions
+    if is_caption and len(caption) > 1024:
+        return prev_caption
+    return caption
 
 
 async def get_media(
@@ -162,7 +168,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             if f.mediatype == "video":
                 await message.reply_video(
                     media[0],
-                    caption=captions(f, fallback),
+                    caption=captions(f, fallback, True),
                     parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                     allow_sending_without_reply=True,
                     reply_markup=origin_link(f.url),
@@ -172,7 +178,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             elif f.mediatype == "audio":
                 await message.reply_audio(
                     media[0],
-                    caption=captions(f, fallback),
+                    caption=captions(f, fallback, True),
                     duration=f.mediaduration,
                     parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                     performer=f.user,
@@ -185,7 +191,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 if ".gif" in f.mediaurls[0]:
                     await message.reply_animation(
                         media[0],
-                        caption=captions(f, fallback),
+                        caption=captions(f, fallback, True),
                         parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                         allow_sending_without_reply=True,
                         reply_markup=origin_link(f.url),
@@ -193,7 +199,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 else:
                     await message.reply_photo(
                         media[0],
-                        caption=captions(f, fallback),
+                        caption=captions(f, fallback, True),
                         parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                         allow_sending_without_reply=True,
                         reply_markup=origin_link(f.url),
@@ -202,13 +208,13 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 media = [
                     InputMediaVideo(
                         img,
-                        caption=captions(f, fallback),
+                        caption=captions(f, fallback, True),
                         parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                     )
                     if ".gif" in mediaurl
                     else InputMediaPhoto(
                         img,
-                        caption=captions(f, fallback),
+                        caption=captions(f, fallback, True),
                         parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                     )
                     for img, mediaurl in zip(media, f.mediaurls)
@@ -309,7 +315,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 try:
                     await message.reply_document(
                         document=medias[0],
-                        caption=captions(f),
+                        caption=captions(f, False, True),
                         parse_mode=ParseMode.MARKDOWN_V2,
                         allow_sending_without_reply=True,
                         reply_markup=origin_link(f.url),
@@ -319,7 +325,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     logger.info(f"{err} -> 去除Markdown: {f.url}")
                     await message.reply_document(
                         document=medias[0],
-                        caption=captions(f, True),
+                        caption=captions(f, True, True),
                         allow_sending_without_reply=True,
                         reply_markup=origin_link(f.url),
                     )
@@ -384,7 +390,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     results = [
                         InlineQueryResultVideo(
                             id=str(uuid4()),
-                            caption=captions(f, fallback),
+                            caption=captions(f, fallback, True),
                             title=f.user,
                             description=f.content,
                             mime_type="video/mp4",
@@ -398,7 +404,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     results = [
                         InlineQueryResultAudio(
                             id=str(uuid4()),
-                            caption=captions(f, fallback),
+                            caption=captions(f, fallback, True),
                             title=f.mediatitle,
                             description=f.content,
                             audio_duration=f.mediaduration,
@@ -413,7 +419,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     results = [
                         InlineQueryResultGif(
                             id=str(uuid4()),
-                            caption=captions(f, fallback),
+                            caption=captions(f, fallback, True),
                             title=f"{f.user}: {f.content}",
                             gif_url=img,
                             parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
@@ -423,7 +429,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                         if ".gif" in img
                         else InlineQueryResultPhoto(
                             id=str(uuid4()),
-                            caption=captions(f, fallback),
+                            caption=captions(f, fallback, True),
                             title=f.user,
                             description=f.content,
                             parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
