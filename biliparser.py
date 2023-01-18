@@ -671,7 +671,7 @@ async def live_parser(client: httpx.AsyncClient, url: str):
 @safe_parser
 async def video_parser(client: httpx.AsyncClient, url: str):
     match = re.search(
-        r"(?i)(?:bilibili\.com/(?:video|bangumi/play)|b23\.tv|acg\.tv)/(?:(?P<bvid>bv\w+)|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+))",
+        r"(?i)(?:bilibili\.com/(?:video|bangumi/play|festival)|b23\.tv|acg\.tv)/(?:(?P<bvid>bv\w+)|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+)|(?P<festivalid>\w+))",
         url,
     )
     if not match:
@@ -681,6 +681,7 @@ async def video_parser(client: httpx.AsyncClient, url: str):
     bvid = match.group("bvid")
     aid = match.group("aid")
     ssid = match.group("ssid")
+    festivalid = match.group("festivalid")
     if epid:
         params = {"ep_id": epid}
     elif bvid:
@@ -909,6 +910,9 @@ async def feed_parser(client: httpx.AsyncClient, url: str):
     # API link
     if re.search(r"api\..*\.bilibili", url):
         pass
+    # blackboard link
+    elif re.search(r"bilibili\.com/blackboard", url):
+        pass
     # dynamic
     elif re.search(r"[th]\.bilibili\.com", url):
         return await dynamic_parser(client, url)
@@ -922,7 +926,7 @@ async def feed_parser(client: httpx.AsyncClient, url: str):
     elif re.search(r"bilibili\.com/read", url):
         return await read_parser(client, url)
     # main video
-    elif re.search(r"bilibili\.com/(?:video|bangumi/play)", url):
+    elif re.search(r"bilibili\.com/(?:video|bangumi/play|festival)", url):
         return await video_parser(client, url)
     raise ParserException("URL错误", url)
 
