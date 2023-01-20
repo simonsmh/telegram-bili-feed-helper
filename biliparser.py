@@ -390,7 +390,7 @@ async def reply_parser(client: httpx.AsyncClient, oid, reply_type):
 
 @safe_parser
 async def dynamic_parser(client: httpx.AsyncClient, url: str):
-    match = re.search(r"[th]\.bilibili\.com[\/\w]*\/(\d+)", url)
+    match = re.search(r"bilibili\.com[\/\w]*\/(\d+)", url)
     if not match:
         raise ParserException("动态链接错误", url)
     f = dynamic(url)
@@ -911,23 +911,23 @@ async def feed_parser(client: httpx.AsyncClient, url: str):
     if re.search(r"api\..*\.bilibili", url):
         pass
     # blackboard link
-    elif re.search(r"bilibili\.com/blackboard", url):
+    elif "bilibili.com/blackboard" in url:
         pass
-    # dynamic
-    elif re.search(r"[th]\.bilibili\.com", url):
-        return await dynamic_parser(client, url)
     # live image
-    elif re.search(r"live\.bilibili\.com", url):
+    elif "live.bilibili.com" in url:
         return await live_parser(client, url)
     # au audio
-    elif re.search(r"bilibili\.com/audio", url):
+    elif "bilibili.com/audio" in url:
         return await audio_parser(client, url)
     # au audio
-    elif re.search(r"bilibili\.com/read", url):
+    elif "bilibili.com/read" in url:
         return await read_parser(client, url)
     # main video
     elif re.search(r"bilibili\.com/(?:video|bangumi/play|festival)", url):
         return await video_parser(client, url)
+    # dynamic
+    elif re.search(r"[thm]\.bilibili\.com", url):
+        return await dynamic_parser(client, url)
     raise ParserException("URL错误", url)
 
 
