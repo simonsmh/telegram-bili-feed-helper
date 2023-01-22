@@ -827,31 +827,23 @@ async def read_parser(client: httpx.AsyncClient, url: str):
     f = read(url)
     f.read_id = int(match.group(1))
     r = await client.get(f"https://www.bilibili.com/read/cv{f.read_id}")
-    soup = BeautifulSoup(r.text, "lxml")
-    uid_content = soup.find("a", class_="up-name")
-    if not isinstance(uid_content, Tag) or not uid_content.attrs.get("href"):
-        raise ParserException("文章uid解析错误", url, uid_content)
-    f.uid = uid_content.attrs["href"].split("/")[-1]
-    user_content = soup.find("meta", attrs={"name": "author"})
-    if not isinstance(user_content, Tag) or not user_content.attrs.get("content"):
-        raise ParserException("文章user解析错误", url, user_content)
-    f.user = user_content.attrs["content"]
-    content_content = soup.find("meta", attrs={"name": "description"})
-    if not isinstance(content_content, Tag) or not content_content.attrs.get("content"):
-        raise ParserException("文章content解析错误", url, content_content)
-    f.content = content_content.attrs.get("content")
-    mediaurls_content = soup.find("meta", property="og:image")
-    if not isinstance(mediaurls_content, Tag):
-        raise ParserException("文章mediaurls解析错误", url, mediaurls_content)
-    mediaurls = mediaurls_content.attrs.get("content")
+    cv_init = re.search(r"window\.__INITIAL_STATE__=(.*?);\(function\(\)", r.text)
+    if not cv_init:
+        raise ParserException("文章内容获取错误", url, cv_init)
+    cv_content = json.loads(cv_init.group(1))
+    f.uid = cv_content.get("readInfo").get("author").get("mid")
+    f.user = cv_content.get("readInfo").get("author").get("name")
+    f.content = cv_content.get("readInfo").get("summary")
+    mediaurls = (
+        cv_content.get("readInfo").get("banner_url")
+        if cv_content.get("readInfo").get("banner_url")
+        else cv_content.get("readInfo").get("image_urls")
+    )
     if mediaurls:
         logger.info(f"文章mediaurls: {mediaurls}")
         f.mediaurls = mediaurls
         f.mediatype = "image"
-    title_content = soup.find("meta", property="og:title")
-    if not isinstance(title_content, Tag) or not title_content.attrs.get("content"):
-        raise ParserException("文章title解析错误", url, title_content)
-    title = title_content.attrs.get("content")
+    title = cv_content.get("readInfo").get("title")
     logger.info(f"文章ID: {f.read_id}")
     query = Q(read_id=f.read_id)
     cache = await read_cache.get_or_none(
@@ -862,30 +854,45 @@ async def read_parser(client: httpx.AsyncClient, url: str):
         logger.info(f"拉取文章缓存: {cache.created}")
         graphurl = cache.graphurl
     else:
-        article = soup.find("div", class_="read-article-holder")
-        if not isinstance(article, Tag):
-            raise ParserException("文章article解析错误", url)
-        imgs = article.find_all("img")
-        task = list(relink(img) for img in imgs)  ## data-src -> src
-        for _ in article.find_all("h1"):  ## h1 -> h3
-            _.name = "h3"
-        for _ in article.find_all("span"):  ## remove span
-            _.unwrap()
-        for s in ["p", "figure", "figcaption"]:  ## clean tags
-            for _ in article.find_all(s):
-                _.attrs = {}
+        article_content = cv_content.get("readInfo").get("content")
         telegraph = Telegraph()
-        await asyncio.gather(*task)
-        result = "".join(
-            [i.__str__() for i in article.contents]
-        )  ## div rip off, cannot unwrap div so use str directly
-        telegraph.create_account("bilifeedbot")
-        graphurl = telegraph.create_page(
-            title=title,
-            html_content=result,
-            author_name=f.user,
-            author_url=f"https://space.bilibili.com/{f.uid}",
-        ).get("url")
+        telegraph.create_account(
+            "bilifeedbot", "bilifeedbot", "https://t.me/bilifeedbot"
+        )
+        try:
+            article = json.loads(article_content)
+            result = article.get("ops")[0].get("insert").split("\n")
+            logger.info(result)
+            graphurl = telegraph.create_page(
+                title=title,
+                content=result,
+                author_name=f.user,
+                author_url=f"https://space.bilibili.com/{f.uid}",
+            ).get("url")
+        except json.decoder.JSONDecodeError:
+            article = BeautifulSoup(article_content, "lxml")
+            if not isinstance(article, Tag):
+                ParserException("文章内容解析错误", url, cv_init)
+            imgs = article.find_all("img")
+            task = list(relink(img) for img in imgs)  ## data-src -> src
+            for _ in article.find_all("h1"):  ## h1 -> h3
+                _.name = "h3"
+            for item in ["span", "div"]:  ## remove tags
+                for _ in article.find_all(item):
+                    _.unwrap()
+            for item in ["p", "figure", "figcaption"]:  ## clean tags
+                for _ in article.find_all(item):
+                    _.attrs = {}
+            await asyncio.gather(*task)
+            result = "".join(
+                [str(i) for i in article.body.contents]
+            )  ## convert tags to string
+            graphurl = telegraph.create_page(
+                title=title,
+                html_content=result,
+                author_name=f.user,
+                author_url=f"https://space.bilibili.com/{f.uid}",
+            ).get("url")
         logger.info(f"生成页面: {graphurl}")
         logger.info(f"文章缓存: {f.read_id}")
         cache = await read_cache.get_or_none(query)
