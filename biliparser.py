@@ -918,22 +918,25 @@ async def feed_parser(client: httpx.AsyncClient, url: str):
     if re.search(r"api\..*\.bilibili", url):
         pass
     # blackboard link
-    elif "bilibili.com/blackboard" in url:
+    elif "blackboard" in url:
+        pass
+    # user space link
+    elif "space" in url:
         pass
     # live image
-    elif "live.bilibili.com" in url:
+    elif "live" in url:
         return await live_parser(client, url)
     # au audio
-    elif "bilibili.com/audio" in url:
+    elif "audio" in url:
         return await audio_parser(client, url)
     # au audio
-    elif "bilibili.com/read" in url:
+    elif "read" in url:
         return await read_parser(client, url)
     # main video
-    elif re.search(r"bilibili\.com/(?:video|bangumi/play|festival)", url):
+    elif re.search(r"video|bangumi/play|festival", url):
         return await video_parser(client, url)
     # dynamic
-    elif re.search(r"[thm]\.bilibili\.com", url):
+    elif re.search(r"[th]\.|dynamic", url):
         return await dynamic_parser(client, url)
     raise ParserException("URL错误", url)
 
