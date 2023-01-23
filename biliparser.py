@@ -118,7 +118,7 @@ class feed:
     @cached_property
     def comment(self):
         comment = str()
-        if self.replycontent and self.replycontent.get("data"):
+        if isinstance(self.replycontent, dict) and self.replycontent.get("data"):
             top = self.replycontent["data"].get("top")
             if top:
                 for item in top.values():
@@ -129,7 +129,7 @@ class feed:
     @cached_property
     def comment_markdown(self):
         comment_markdown = str()
-        if self.replycontent and self.replycontent.get("data"):
+        if isinstance(self.replycontent, dict) and self.replycontent.get("data"):
             top = self.replycontent["data"].get("top")
             if top:
                 for item in top.values():
