@@ -6,7 +6,7 @@ httpx[http2]
 loguru
 lxml
 pillow
-python-telegram-bot==20.0a4
+python-telegram-bot>=20
 telegraph
 tortoise-orm[accel]
 wand

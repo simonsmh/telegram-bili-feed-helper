@@ -9,7 +9,7 @@ asyncpg = "*"
 beautifulsoup4 = "*"
 httpx = {extras = ["http2"], version = "*"}
 lxml = "*"
-python-telegram-bot = "==20.0a4"
+python-telegram-bot = ">=20"
 telegraph = "*"
 tortoise-orm = {extras = ["accel"], version = "*"}
 Pillow = "*"
