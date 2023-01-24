@@ -478,7 +478,7 @@ async def delete_cache(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await message.reply_text(result)
 
 async def callback_clear_cache(context: ContextTypes.DEFAULT_TYPE):
-    await clear_cache()
+    await cache_clear()
 
 async def post_init(application: Application):
     await db_init()
