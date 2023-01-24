@@ -477,6 +477,8 @@ async def delete_cache(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         result = await cache_clear()
     await message.reply_text(result)
 
+async def callback_clear_cache(context: ContextTypes.DEFAULT_TYPE):
+    await clear_cache()
 
 async def post_init(application: Application):
     await db_init()
@@ -506,7 +508,7 @@ if __name__ == "__main__":
         .post_shutdown(post_shutdown)
         .build()
     )
-    job_clear = application.job_queue.run_repeating(cache_clear, interval=300)
+    job_clear = application.job_queue.run_repeating(callback_clear_cache, interval=300)
     application.add_handler(
         CommandHandler("start", start, filters=filters.ChatType.PRIVATE)
     )
