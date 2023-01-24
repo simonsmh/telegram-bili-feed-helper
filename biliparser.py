@@ -995,7 +995,7 @@ async def db_close() -> None:
     await Tortoise.close_connections()
 
 
-async def __db_status():
+async def db_status():
     tasks = [item.all().count() for item in CACHES.values()]
     result = await asyncio.gather(*tasks)
     ans = ""
@@ -1005,11 +1005,15 @@ async def __db_status():
     return ans
 
 
-async def db_status():
-    return await __db_status()
+async def cache_clear():
+    for item in CACHES.values():
+        await item.filter(created__lt=datetime.today() - item.timeout).delete()
+    return await db_status()
 
 
 async def db_clear(target):
     if CACHES.get(target):
-        await CACHES[target].filter(created__lt=datetime.today()).delete()
-    return await __db_status()
+        await CACHES[target].filter(created__lt=datetime.today() - CACHES[target].timeout).delete()
+    else:
+        return await cache_clear()
+    return await db_status()

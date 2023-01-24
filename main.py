@@ -36,6 +36,7 @@ from telegram.ext import (
 
 from biliparser import (
     biliparser,
+    cache_clear,
     db_clear,
     db_close,
     db_init,
@@ -472,7 +473,9 @@ async def delete_cache(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     data_list = data.split(" ")
     if len(data_list) > 1:
         result = await db_clear(data_list[1])
-        await message.reply_text(result)
+    else:
+        result = await cache_clear()
+    await message.reply_text(result)
 
 
 async def post_init(application: Application):
@@ -503,6 +506,7 @@ if __name__ == "__main__":
         .post_shutdown(post_shutdown)
         .build()
     )
+    job_clear = application.job_queue.run_repeating(cache_clear, interval=300)
     application.add_handler(
         CommandHandler("start", start, filters=filters.ChatType.PRIVATE)
     )
