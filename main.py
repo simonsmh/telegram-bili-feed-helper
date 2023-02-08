@@ -37,7 +37,6 @@ from telegram.ext import (
 from biliparser import (
     biliparser,
     cache_clear,
-    db_clear,
     db_close,
     db_init,
     db_status,
@@ -138,7 +137,10 @@ async def get_media(
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
-    await message.reply_chat_action(ChatAction.TYPING)
+    try:
+        await message.reply_chat_action(ChatAction.TYPING)
+    except:
+        pass
     data = message.text
     urls = re.findall(regex, data)
     logger.info(f"Parse: {urls}")
@@ -270,7 +272,10 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
-    await message.reply_chat_action(ChatAction.UPLOAD_DOCUMENT)
+    try:
+        await message.reply_chat_action(ChatAction.UPLOAD_DOCUMENT)
+    except:
+        pass
     data = message.text
     urls = re.findall(regex, data)
     logger.info(f"Fetch: {urls}")
@@ -461,24 +466,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
-    await message.reply_chat_action(ChatAction.TYPING)
     result = await db_status()
     await message.reply_text(result)
 
 
-async def delete_cache(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
-    await message.reply_chat_action(ChatAction.TYPING)
-    data = message.text
-    data_list = data.split(" ")
-    if len(data_list) > 1:
-        result = await db_clear(data_list[1])
-    else:
-        result = await cache_clear()
-    await message.reply_text(result)
-
 async def callback_clear_cache(context: ContextTypes.DEFAULT_TYPE):
     await cache_clear()
+
 
 async def post_init(application: Application):
     await db_init()
@@ -511,13 +505,6 @@ if __name__ == "__main__":
     job_clear = application.job_queue.run_repeating(callback_clear_cache, interval=300)
     application.add_handler(
         CommandHandler("start", start, filters=filters.ChatType.PRIVATE)
-    )
-    application.add_handler(
-        CommandHandler(
-            "delete_cache",
-            delete_cache,
-            filters=filters.ChatType.PRIVATE,
-        )
     )
     application.add_handler(
         CommandHandler("status", status, filters=filters.ChatType.PRIVATE)
