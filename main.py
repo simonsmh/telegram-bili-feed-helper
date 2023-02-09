@@ -139,6 +139,8 @@ async def get_media(
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
+    if not message:
+        return
     try:
         await message.reply_chat_action(ChatAction.TYPING)
     except:
@@ -224,7 +226,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     )
                     for img, mediaurl in zip(media, f.mediaurls)
                 ]
-                await message.reply_media_group(media, allow_sending_without_reply=True)
+                await message.reply_media_group(media=media, allow_sending_without_reply=True)
                 await message.reply_text(
                     captions(f, fallback),
                     parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
@@ -285,6 +287,8 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
+    if not message:
+        return
     try:
         await message.reply_chat_action(ChatAction.UPLOAD_DOCUMENT)
     except:
@@ -470,8 +474,11 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    if not message:
+        return
     bot_me = await context.bot.get_me()
-    await update.effective_message.reply_text(
+    await message.reply_text(
         f"欢迎使用 @{bot_me.username} 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组自动匹配消息。",
         reply_markup=sourcecodemarkup,
     )
@@ -479,6 +486,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
+    if not message:
+        return
     result = await db_status()
     await message.reply_text(result)
 
@@ -489,10 +498,13 @@ async def callback_clear_cache(context: ContextTypes.DEFAULT_TYPE):
 
 async def post_init(application: Application):
     await db_init()
-    await application.updater.bot.set_my_commands(
+    updater = application.updater
+    if not updater:
+        return
+    await updater.bot.set_my_commands(
         [["start", "关于本 Bot"], ["file", "获取匹配内容原始文件"], ["parse", "获取匹配内容"]]
     )
-    bot_me = await application.updater.bot.get_me()
+    bot_me = await updater.bot.get_me()
     logger.info(f"Bot @{bot_me.username} started.")
 
 
