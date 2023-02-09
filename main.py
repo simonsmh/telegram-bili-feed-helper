@@ -71,7 +71,9 @@ def origin_link(content: str) -> InlineKeyboardMarkup:
 
 
 @lru_cache(maxsize=16)
-def captions(f: Union[feed, Exception], fallback: bool = False, is_caption: bool = False) -> str:
+def captions(
+    f: Union[feed, Exception], fallback: bool = False, is_caption: bool = False
+) -> str:
     def parser_helper(content: str, md_flag: bool = True) -> str:
         if not content:
             return str()
@@ -251,21 +253,32 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 f.mediaraws = True
             except BadRequest as err:
                 logger.exception(err)
-                if "Can't parse" in err.message:
+                if "Not enough rights to send" in err.message:
+                    logger.warning(
+                        f"{err} 第{i}次异常->权限不足, 无法发送给{'@'+message.chat.username if message.chat.username else message.chat.id}"
+                    )
+                    await message.reply_text(
+                        captions(f, True),
+                        parse_mode=None,
+                        allow_sending_without_reply=True,
+                        reply_markup=origin_link(f.url),
+                    )
+                    break
+                elif "Can't parse" in err.message:
                     logger.info(f"{err} 第{i}次异常->去除Markdown: {f.url}")
                     markdown_fallback = True
                 else:
                     logger.info(f"{err} 第{i}次异常->下载后上传: {f.url}")
                     f.mediaraws = True
             except RetryAfter as err:
-                await asyncio.sleep(1)
+                await asyncio.sleep(2**i)
             except httpx.RequestError as err:
                 logger.exception(err)
                 logger.info(f"{err} 第{i}次异常->重试: {f.url}")
             except httpx.HTTPStatusError as err:
                 logger.exception(err)
                 logger.info(f"{err} 第{i}次异常->跳过： {f.url}")
-                break
+                continue
             else:
                 break
 
