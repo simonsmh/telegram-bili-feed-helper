@@ -256,14 +256,9 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             except BadRequest as err:
                 logger.exception(err)
                 if "Not enough rights to send" in err.message:
+                    await message.chat.leave()
                     logger.warning(
                         f"{err} 第{i}次异常->权限不足, 无法发送给{'@'+message.chat.username if message.chat.username else message.chat.id}"
-                    )
-                    await message.reply_text(
-                        captions(f, True),
-                        parse_mode=None,
-                        allow_sending_without_reply=True,
-                        reply_markup=origin_link(f.url),
                     )
                     break
                 elif "Can't parse" in err.message:
