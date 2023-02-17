@@ -1007,13 +1007,13 @@ async def db_status():
 
 async def cache_clear():
     for item in CACHES.values():
-        await item.filter(created__lt=datetime.today() - item.timeout).delete()
+        await item.filter(created__lt=datetime.utcnow() - item.timeout).delete()
     return await db_status()
 
 
 async def db_clear(target):
     if CACHES.get(target):
-        await CACHES[target].filter(created__lt=datetime.today() - CACHES[target].timeout).delete()
+        await CACHES[target].filter(created__lt=datetime.utcnow() - CACHES[target].timeout).delete()
     else:
         return await cache_clear()
     return await db_status()

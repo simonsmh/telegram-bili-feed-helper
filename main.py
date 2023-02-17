@@ -522,7 +522,7 @@ if __name__ == "__main__":
         .post_shutdown(post_shutdown)
         .build()
     )
-    job_clear = application.job_queue.run_repeating(callback_clear_cache, interval=300)
+    job_clear = application.job_queue.run_repeating(callback_clear_cache, interval=3600)
     application.add_handler(
         CommandHandler("start", start, filters=filters.ChatType.PRIVATE)
     )
