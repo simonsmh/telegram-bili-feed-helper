@@ -8,7 +8,6 @@ aiosqlite = "*"
 asyncpg = "*"
 beautifulsoup4 = "*"
 lxml = "*"
-telegraph = "*"
 Pillow = "*"
 loguru = "*"
 wand = "*"
@@ -16,6 +15,7 @@ aiomysql = "*"
 httpx = {extras = ["http2"], version = "*"}
 python-telegram-bot = {version = ">=20", extras = ["all"]}
 tortoise-orm = {extras = ["accel"], version = "*"}
+telegraph = {extras = ["aio"], version = "*"}
 
 [dev-packages]
 black = "*"

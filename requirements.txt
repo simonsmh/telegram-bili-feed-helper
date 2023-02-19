@@ -7,6 +7,6 @@ loguru
 lxml
 pillow
 python-telegram-bot[all]>=20
-telegraph
+telegraph[aio]
 tortoise-orm[accel]
 wand

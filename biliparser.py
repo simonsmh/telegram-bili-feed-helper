@@ -6,12 +6,11 @@ import re
 from datetime import datetime
 from functools import lru_cache
 from io import BytesIO
-from typing import Optional
 
 import httpx
 from bs4 import BeautifulSoup
 from bs4.element import Tag
-from telegraph import Telegraph
+from telegraph.aio import Telegraph
 from tortoise import Tortoise, timezone
 from tortoise.exceptions import IntegrityError
 from tortoise.expressions import Q
@@ -799,7 +798,7 @@ async def video_parser(client: httpx.AsyncClient, url: str):
 async def read_parser(client: httpx.AsyncClient, url: str):
     async def relink(img):
         src = img.attrs.pop("data-src")
-        img.attrs = {}
+        img.attrs = {"src": src}
         logger.info(f"下载图片: {src}")
         async with httpx.AsyncClient(
             headers=headers, http2=True, timeout=None, verify=False
@@ -812,14 +811,13 @@ async def read_parser(client: httpx.AsyncClient, url: str):
                 if mediatype in ["image/jpeg", "image/png"]:
                     logger.info(f"图片大小: {content_length} 压缩: {src} {mediatype}")
                     media = compress(media)
-            r = await client.post(
-                "https://telegra.ph/upload", files={"upload-file": media.getvalue()}
-            )
-            resp = r.json()
-            if isinstance(resp, list):
+            try:
+                resp = await telegraph.upload_file(media)
+                logger.info(f"图片上传: {resp}")
                 img.attrs["src"] = f"https://telegra.ph{resp[0].get('src')}"
-            else:
-                logger.warning(f"{src} -> {resp}")
+            except Exception as e:
+                logger.exception(f"图片上传错误: {e}")
+
 
     match = re.search(r"bilibili\.com\/read\/(?:cv|mobile\/|mobile\?id=)(\d+)", url)
     if not match:
@@ -856,19 +854,20 @@ async def read_parser(client: httpx.AsyncClient, url: str):
     else:
         article_content = cv_content.get("readInfo").get("content")
         telegraph = Telegraph()
-        telegraph.create_account(
-            "bilifeedbot", "bilifeedbot", "https://t.me/bilifeedbot"
-        )
+        if not telegraph.get_access_token():
+            await telegraph.create_account(
+                "bilifeedbot", "bilifeedbot", "https://t.me/bilifeedbot"
+            )
         try:
             article = json.loads(article_content)
             result = article.get("ops")[0].get("insert").split("\n")
             logger.info(result)
-            graphurl = telegraph.create_page(
+            graphurl = (await telegraph.create_page(
                 title=title,
                 content=result,
                 author_name=f.user,
                 author_url=f"https://space.bilibili.com/{f.uid}",
-            ).get("url")
+            )).get("url")
         except json.decoder.JSONDecodeError:
             article = BeautifulSoup(article_content, "lxml")
             if not isinstance(article, Tag):
@@ -887,12 +886,12 @@ async def read_parser(client: httpx.AsyncClient, url: str):
             result = "".join(
                 [str(i) for i in article.body.contents]
             )  ## convert tags to string
-            graphurl = telegraph.create_page(
+            graphurl = (await telegraph.create_page(
                 title=title,
                 html_content=result,
                 author_name=f.user,
                 author_url=f"https://space.bilibili.com/{f.uid}",
-            ).get("url")
+            )).get("url")
         logger.info(f"生成页面: {graphurl}")
         logger.info(f"文章缓存: {f.read_id}")
         cache = await read_cache.get_or_none(query)
@@ -1013,7 +1012,9 @@ async def cache_clear():
 
 async def db_clear(target):
     if CACHES.get(target):
-        await CACHES[target].filter(created__lt=datetime.today() - CACHES[target].timeout).delete()
+        await CACHES[target].filter(
+            created__lt=datetime.today() - CACHES[target].timeout
+        ).delete()
     else:
         return await cache_clear()
     return await db_status()
