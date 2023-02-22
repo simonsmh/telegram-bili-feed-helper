@@ -935,7 +935,7 @@ async def feed_parser(client: httpx.AsyncClient, url: str):
     elif re.search(r"video|bangumi/play|festival", url):
         return await video_parser(client, url)
     # dynamic
-    elif re.search(r"[th]\.|dynamic", url):
+    elif re.search(r"[th]\.|dynamic|opus", url):
         return await dynamic_parser(client, url)
     raise ParserException("URL错误", url)
 
