@@ -783,11 +783,17 @@ async def video_parser(client: httpx.AsyncClient, url: str):
     f.mediatype = "image"
     f.replycontent = await reply_parser(client, f.aid, f.reply_type)
     r = await client.get(
-        BILI_API+"/x/player/playurl",
+        BILI_API + "/x/player/playurl",
         params={"avid": f.aid, "cid": f.cid},
     )
-    video_result  = r.json()
-    if video_result.get("code") == 0:
+    video_result = r.json()
+    if (
+        video_result.get("code") == 0
+        and video_result.get("data")
+        and video_result.get("data").get("durl")
+        and video_result.get("data").get("durl")[0].get("size")
+        < 1024 * 1024 * 50  # video smaller than 50MB (container ram limit 500MB)
+    ):
         logger.info(f"视频内容: {video_result}")
         f.mediacontent = video_result
         f.mediaurls = f.mediacontent["data"]["durl"][0]["url"]
@@ -820,7 +826,6 @@ async def read_parser(client: httpx.AsyncClient, url: str):
                 img.attrs["src"] = f"https://telegra.ph{resp[0].get('src')}"
             except Exception as e:
                 logger.exception(f"图片上传错误: {e}")
-
 
     match = re.search(r"bilibili\.com\/read\/(?:cv|mobile\/|mobile\?id=)(\d+)", url)
     if not match:
@@ -865,12 +870,14 @@ async def read_parser(client: httpx.AsyncClient, url: str):
             article = json.loads(article_content)
             result = article.get("ops")[0].get("insert").split("\n")
             logger.info(result)
-            graphurl = (await telegraph.create_page(
-                title=title,
-                content=result,
-                author_name=f.user,
-                author_url=f"https://space.bilibili.com/{f.uid}",
-            )).get("url")
+            graphurl = (
+                await telegraph.create_page(
+                    title=title,
+                    content=result,
+                    author_name=f.user,
+                    author_url=f"https://space.bilibili.com/{f.uid}",
+                )
+            ).get("url")
         except json.decoder.JSONDecodeError:
             article = BeautifulSoup(article_content, "lxml")
             if not isinstance(article, Tag):
@@ -889,12 +896,14 @@ async def read_parser(client: httpx.AsyncClient, url: str):
             result = "".join(
                 [str(i) for i in article.body.contents]
             )  ## convert tags to string
-            graphurl = (await telegraph.create_page(
-                title=title,
-                html_content=result,
-                author_name=f.user,
-                author_url=f"https://space.bilibili.com/{f.uid}",
-            )).get("url")
+            graphurl = (
+                await telegraph.create_page(
+                    title=title,
+                    html_content=result,
+                    author_name=f.user,
+                    author_url=f"https://space.bilibili.com/{f.uid}",
+                )
+            ).get("url")
         logger.info(f"生成页面: {graphurl}")
         logger.info(f"文章缓存: {f.read_id}")
         cache = await read_cache.get_or_none(query)
@@ -1015,7 +1024,9 @@ async def cache_clear():
 
 async def db_clear(target):
     if CACHES.get(target):
-        await CACHES[target].filter(created__lt=datetime.utcnow() - CACHES[target].timeout).delete()
+        await CACHES[target].filter(
+            created__lt=datetime.utcnow() - CACHES[target].timeout
+        ).delete()
     else:
         return await cache_clear()
     return await db_status()
