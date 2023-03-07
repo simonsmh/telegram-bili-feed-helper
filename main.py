@@ -520,6 +520,8 @@ if __name__ == "__main__":
         .token(TOKEN)
         .post_init(post_init)
         .post_shutdown(post_shutdown)
+        .read_timeout(60)
+        .write_timeout(60)
         .build()
     )
     job_clear = application.job_queue.run_repeating(callback_clear_cache, interval=3600)
