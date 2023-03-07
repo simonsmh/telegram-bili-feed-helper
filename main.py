@@ -434,11 +434,11 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             reply_markup=origin_link(f.url),
                             thumb_url=f.mediathumb,
                             video_url=f.mediaurls[0],
-                            duration=f.mediaduration,
-                            width=f.mediadimention["height"]
+                            video_duration=f.mediaduration,
+                            video_width=f.mediadimention["height"]
                             if f.mediadimention["rotate"]
                             else f.mediadimention["width"],
-                            height=f.mediadimention["width"]
+                            video_height=f.mediadimention["width"]
                             if f.mediadimention["rotate"]
                             else f.mediadimention["height"],
                         )
