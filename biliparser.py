@@ -69,6 +69,7 @@ class feed:
     mediatype: str = ""
     mediathumb: str = ""
     mediaduration: int = 0
+    mediadimention: dict = {"width": 0, "height": 0, "rotate": 0}
     mediatitle: str = ""
     extra_markdown: str = ""
     replycontent: dict = {}
@@ -528,10 +529,10 @@ async def dynamic_parser(client: httpx.AsyncClient, url: str):
         if f.origin_type in detail_types_list.get("PIC"):
             f.mediaurls = [t.get("img_src") for t in f.card.get("item").get("pictures")]
             f.mediatype = "image"
-        elif f.origin_type in detail_types_list.get("CLIP"):
-            f.mediaurls = f.card.get("item").get("video_playurl")
-            f.mediathumb = f.card.get("item").get("cover").get("unclipped")
-            f.mediatype = "video"
+        # elif f.origin_type in detail_types_list.get("CLIP"):
+        #     f.mediaurls = f.card.get("item").get("video_playurl")
+        #     f.mediathumb = f.card.get("item").get("cover").get("unclipped")
+        #     f.mediatype = "video"
     # dynamic text
     elif f.origin_type in detail_types_list.get("WORD"):
         f.user = f.card.get("user").get("uname")
@@ -796,8 +797,10 @@ async def video_parser(client: httpx.AsyncClient, url: str):
     ):
         logger.info(f"视频内容: {video_result}")
         f.mediacontent = video_result
-        f.mediaurls = f.mediacontent["data"]["durl"][0]["url"]
         f.mediathumb = detail.get("pic")
+        f.mediaduration = round(f.mediacontent["data"]["durl"][0]["length"] / 1000)
+        f.mediadimention = detail.get("pages")[0].get("dimension")
+        f.mediaurls = f.mediacontent["data"]["durl"][0]["url"]
         f.mediatype = "video"
         f.mediaraws = True
     return f

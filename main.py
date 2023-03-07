@@ -181,6 +181,14 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     reply_markup=origin_link(f.url),
                     supports_streaming=True,
                     thumb=mediathumb,
+                    duration=f.mediaduration,
+                    write_timeout=600,
+                    width=f.mediadimention["height"]
+                    if f.mediadimention["rotate"]
+                    else f.mediadimention["width"],
+                    height=f.mediadimention["width"]
+                    if f.mediadimention["rotate"]
+                    else f.mediadimention["height"],
                 )
             elif f.mediatype == "audio":
                 await message.reply_audio(
@@ -193,6 +201,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     reply_markup=origin_link(f.url),
                     thumb=mediathumb,
                     title=f.mediatitle,
+                    write_timeout=600,
                 )
             elif len(f.mediaurls) == 1:
                 if ".gif" in f.mediaurls[0]:
@@ -202,6 +211,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                         allow_sending_without_reply=True,
                         reply_markup=origin_link(f.url),
+                        write_timeout=600,
                     )
                 else:
                     await message.reply_photo(
@@ -210,6 +220,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                         allow_sending_without_reply=True,
                         reply_markup=origin_link(f.url),
+                        write_timeout=600,
                     )
             else:
                 media = [
@@ -226,7 +237,11 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     )
                     for img, mediaurl in zip(media, f.mediaurls)
                 ]
-                await message.reply_media_group(media=media, allow_sending_without_reply=True)
+                await message.reply_media_group(
+                    media=media,
+                    allow_sending_without_reply=True,
+                    write_timeout=600,
+                )
                 await message.reply_text(
                     captions(f, fallback),
                     parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
@@ -313,6 +328,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 await message.reply_media_group(
                     medias,
                     allow_sending_without_reply=True,
+                    write_timeout=600,
                 )
                 try:
                     await message.reply_text(
@@ -337,6 +353,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         parse_mode=ParseMode.MARKDOWN_V2,
                         allow_sending_without_reply=True,
                         reply_markup=origin_link(f.url),
+                        write_timeout=600,
                     )
                 except BadRequest as err:
                     logger.exception(err)
@@ -346,6 +363,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         caption=captions(f, True, True),
                         allow_sending_without_reply=True,
                         reply_markup=origin_link(f.url),
+                        write_timeout=600,
                     )
 
 
@@ -416,6 +434,13 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             reply_markup=origin_link(f.url),
                             thumb_url=f.mediathumb,
                             video_url=f.mediaurls[0],
+                            duration=f.mediaduration,
+                            width=f.mediadimention["height"]
+                            if f.mediadimention["rotate"]
+                            else f.mediadimention["width"],
+                            height=f.mediadimention["width"]
+                            if f.mediadimention["rotate"]
+                            else f.mediadimention["height"],
                         )
                     ]
                 if f.mediatype == "audio":
@@ -520,8 +545,6 @@ if __name__ == "__main__":
         .token(TOKEN)
         .post_init(post_init)
         .post_shutdown(post_shutdown)
-        .read_timeout(60)
-        .write_timeout(60)
         .build()
     )
     job_clear = application.job_queue.run_repeating(callback_clear_cache, interval=3600)
