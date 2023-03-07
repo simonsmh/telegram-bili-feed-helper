@@ -782,15 +782,18 @@ async def video_parser(client: httpx.AsyncClient, url: str):
     f.mediaurls = detail.get("pic")
     f.mediatype = "image"
     f.replycontent = await reply_parser(client, f.aid, f.reply_type)
-    # r = await client.get(
-    #     BILI_API+"/x/player/playurl",
-    #     params={"avid": f.aid, "cid": f.cid, "fnval": 16},
-    # )
-    # f.mediacontent = r.json()
-    # f.mediaurls = f.mediacontent.get("data").get("dash").get("video")[0].get("base_url")
-    # f.mediathumb = detail.get("pic")
-    # f.mediatype = "video"
-    # f.mediaraws = True
+    r = await client.get(
+        BILI_API+"/x/player/playurl",
+        params={"avid": f.aid, "cid": f.cid},
+    )
+    video_result  = r.json()
+    if video_result.get("code") == 0:
+        logger.info(f"视频内容: {video_result}")
+        f.mediacontent = video_result
+        f.mediaurls = f.mediacontent["data"]["durl"][0]["url"]
+        f.mediathumb = detail.get("pic")
+        f.mediatype = "video"
+        f.mediaraws = True
     return f
 
 
