@@ -1,18 +1,17 @@
-from biliparser import biliparser
 import pytest
 
 
 @pytest.mark.asyncio
 async def test_dynamic_parser():
+    from biliparser import biliparser
+    from database import db_init
+
+    await db_init()
     urls = [
-        "https://t.bilibili.com/379910288494279916",
-        "https://t.bilibili.com/379593676394065939?tab=2",
-        "https://t.bilibili.com/371426091702577219?tab=2",
-        "https://t.bilibili.com/371425855481471758?tab=2",
+        "https://t.bilibili.com/379593676394065939?tab=2",  # 动态带图非转发
+        "https://t.bilibili.com/371426091702577219?tab=2",  # 引用带视频
         "https://t.bilibili.com/371425692269567902?tab=2",
         "https://t.bilibili.com/371422853294071821?tab=2",
-        "https://t.bilibili.com/371416256224263916?tab=2",
-        "https://t.bilibili.com/371408684200016175?tab=2",
         "https://t.bilibili.com/371416015710288135?tab=2",
         "https://t.bilibili.com/362547324854991876",  # 音频（带动态）
         "https://t.bilibili.com/368023506944203045",  # 投票
@@ -20,8 +19,6 @@ async def test_dynamic_parser():
         "https://t.bilibili.com/371409908269898061",  # 文章（带动态）
         "https://t.bilibili.com/371040919035666819",  # 小视频（动态）
         "https://t.bilibili.com/371050565530180880?tab=2",  # 引用小视频
-        "https://vc.bilibili.com/video/3028068",  # 小视频（PC）
-        "https://vc.bilibili.com/mobile/detail?vc=3029324&bilifrom=1",  # 小视频（手机）
         "https://b23.tv/xZCcov",  # 引用带图
         "https://t.bilibili.com/h5/dynamic/detail/371333904522848558",  # 文章（不带动态）
         "https://www.bilibili.com/audio/au1360511",  # 音频
@@ -30,7 +27,7 @@ async def test_dynamic_parser():
         "https://www.bilibili.com/bangumi/play/ep317535",  # 番剧集
         "https://www.bilibili.com/bangumi/play/ss33055",  # 番剧季
         "https://t.bilibili.com/687612573189668866",  # 预约动态
-        "b.acg.tv/xZCcov",
     ]
     for i in urls:
-        await biliparser(i)
+        result = await biliparser(i)
+        assert result

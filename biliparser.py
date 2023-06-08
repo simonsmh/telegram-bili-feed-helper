@@ -1,17 +1,17 @@
 import asyncio
 import html
 import json
-import os
 import re
-from datetime import datetime
 from functools import lru_cache
 from io import BytesIO
 
 import httpx
+from bilibili_api.dynamic import Dynamic
+from bilibili_api.exceptions.ResponseCodeException import ResponseCodeException
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 from telegraph.aio import Telegraph
-from tortoise import Tortoise, timezone
+from tortoise import timezone
 from tortoise.exceptions import IntegrityError
 from tortoise.expressions import Q
 
@@ -30,16 +30,6 @@ try:
     from functools import cached_property
 except ImportError:
     cached_property = property
-
-CACHES = {
-    "audio": audio_cache,
-    "bangumi": bangumi_cache,
-    "dynamic": dynamic_cache,
-    "live": live_cache,
-    "read": read_cache,
-    "reply": reply_cache,
-    "video": video_cache,
-}
 
 
 def escape_markdown(text):
@@ -287,6 +277,63 @@ class dynamic(feed):
     @cached_property
     def url(self):
         return f"https://t.bilibili.com/{self.dynamic_id}"
+
+
+class opus(feed):
+    detailcontent: dict = {}
+    dynamic_id: int = 0
+    user: str = ""
+    __content: str = ""
+    forward_user: str = ""
+    forward_uid: int = 0
+    forward_content: str = ""
+
+    @cached_property
+    def comment_type(self):
+        return int(self.detailcontent["item"]["basic"]["comment_type"])
+
+    @cached_property
+    def comment_id(self):
+        return int(self.detailcontent["item"]["basic"]["comment_id_str"])
+
+    @cached_property
+    def rid(self):
+        return int(self.detailcontent["item"]["basic"]["rid_str"])
+
+    @cached_property
+    def has_forward(self):
+        return "orig" in self.detailcontent["item"]
+
+    @property
+    @lru_cache(maxsize=1)
+    def content(self):
+        content = self.__content
+        if self.has_forward:
+            if self.forward_user:
+                content += f"//@{self.forward_user}:\n"
+            content += self.forward_content
+        return self.shrink_line(content)
+
+    @content.setter
+    def content(self, content):
+        self.__content = content
+
+    @cached_property
+    def content_markdown(self):
+        content_markdown = escape_markdown(self.__content)
+        if self.has_forward:
+            if self.uid:
+                content_markdown += f"//{self.make_user_markdown(self.forward_user, self.forward_uid)}:\n"
+            elif self.user:
+                content_markdown += f"//@{escape_markdown(self.forward_user)}:\n"
+            content_markdown += escape_markdown(self.forward_content)
+        if not content_markdown.endswith("\n"):
+            content_markdown += "\n"
+        return self.shrink_line(content_markdown)
+
+    @cached_property
+    def url(self):
+        return f"https://www.bilibili.com/opus/{self.dynamic_id}"
 
 
 class audio(feed):
@@ -554,6 +601,115 @@ async def dynamic_parser(client: httpx.AsyncClient, url: str):
         f.forward_uid = f.forward_card.get("user").get("uid")
         f.forward_content = f.forward_card.get("item").get("content")
     f.replycontent = await reply_parser(client, f.oid, f.reply_type)
+    return f
+
+
+def __opus_handle_major(f: opus, major: dict, forward: bool = False):
+    # extract from dyn-detail.js
+    # TODO: use avaliable parser instead
+    datapath_map = {
+        "MAJOR_TYPE_ARCHIVE": "archive",
+        "MAJOR_TYPE_PGC": "pgc",
+        "MAJOR_TYPE_ARTICLE": "article",
+        "MAJOR_TYPE_MUSIC": "music",
+        "MAJOR_TYPE_COMMON": "common",
+        "MAJOR_TYPE_LIVE": "live",
+        "MAJOR_TYPE_UGC_SEASON": "ugc_season",
+        "MAJOR_TYPE_DRAW": "draw",
+        "MAJOR_TYPE_OPUS": "opus",
+    }
+    if not major:
+        return
+    elif major["type"] == "MAJOR_TYPE_DRAW":
+        target = "draw"
+        f.mediaurls = [item["src"] for item in major[target]["items"]]
+        f.mediatype = "image"
+    elif major["type"] == "MAJOR_TYPE_OPUS":
+        target = "opus"
+        f.mediaurls = [item["url"] for item in major[target]["pics"]]
+        f.mediatype = "image"
+        if forward:
+            f.forward_content = escape_markdown(major[target]["summary"]["text"])
+        else:
+            f.content = escape_markdown(major[target]["summary"]["text"])
+        f.extra_markdown = f"[{escape_markdown(major[target]['title'])}]({major[target]['jump_url'] if 'http' in major[target]['jump_url'] else 'https:' + major[target]['jump_url']})"
+    elif datapath_map.get(major["type"]):
+        target = datapath_map.get(major["type"])
+        f.mediaurls = major[target]["cover"]
+        f.mediatype = "image"
+        f.extra_markdown = f"[{escape_markdown(major[target]['title'])}]({major[target]['jump_url'] if 'http' in major[target]['jump_url'] else 'https:' + major[target]['jump_url']})"
+
+
+def __opus_handle_desc_text(desc: dict):
+    if not desc:
+        return ""
+    return desc["text"]
+
+
+@safe_parser
+async def opus_parser(client: httpx.AsyncClient, url: str):
+    match = re.search(r"bilibili\.com[\/\w]*\/(\d+)", url)
+    if not match:
+        raise ParserException("动态链接错误", url)
+    f = opus(url)
+    f.dynamic_id = int(match.group(1))
+    query = (
+        Q(rid=match.group(1))
+        if "type=2" in match.group(0)
+        else Q(dynamic_id=match.group(1))
+    )
+    cache = await dynamic_cache.get_or_none(
+        query,
+        Q(created__gte=timezone.now() - dynamic_cache.timeout),
+    )
+    if cache:
+        logger.info(f"拉取opus动态缓存: {cache.created}")
+        f.detailcontent = cache.content
+    else:
+        r = Dynamic(f.dynamic_id)
+        try:
+            f.detailcontent = await r.get_info()
+        except ResponseCodeException as e:
+            raise ParserException("opus动态解析错误", url, str(e))
+        if not f.detailcontent.get("item"):
+            raise ParserException("opus动态解析错误", url, f.detailcontent)
+    logger.info(f"动态ID: {f.dynamic_id}")
+    if not cache:
+        logger.info(f"动态缓存: {f.dynamic_id}")
+        cache = await dynamic_cache.get_or_none(query)
+        try:
+            if cache:
+                cache.content = f.detailcontent
+                await cache.save(update_fields=["content", "created"])
+            else:
+                await dynamic_cache(
+                    dynamic_id=f.dynamic_id, rid=f.rid, content=f.detailcontent
+                ).save()
+        except Exception as e:
+            logger.exception(f"动态缓存错误: {e}")
+    f.user = f.detailcontent["item"]["modules"]["module_author"]["name"]
+    f.uid = f.detailcontent["item"]["modules"]["module_author"]["mid"]
+    f.content = __opus_handle_desc_text(
+        f.detailcontent["item"]["modules"]["module_dynamic"]["desc"]
+    )
+    __opus_handle_major(
+        f, f.detailcontent["item"]["modules"]["module_dynamic"]["major"]
+    )
+    if f.has_forward:
+        f.forward_user = f.detailcontent["item"]["orig"]["modules"]["module_author"][
+            "name"
+        ]
+        f.forward_uid = f.detailcontent["item"]["orig"]["modules"]["module_author"][
+            "mid"
+        ]
+        f.forward_content = __opus_handle_desc_text(
+            f.detailcontent["item"]["orig"]["modules"]["module_dynamic"]["desc"]
+        )
+        if not f.mediatype:
+            __opus_handle_major(
+                f, f.detailcontent["item"]["orig"]["modules"]["module_dynamic"]["major"]
+            )
+    f.replycontent = await reply_parser(client, f.comment_id, f.comment_type)
     return f
 
 
@@ -951,7 +1107,7 @@ async def feed_parser(client: httpx.AsyncClient, url: str):
         return await video_parser(client, url)
     # dynamic
     elif re.search(r"[th]\.|dynamic|opus", url):
-        return await dynamic_parser(client, url)
+        return await opus_parser(client, url)
     raise ParserException("URL错误", url)
 
 
@@ -991,45 +1147,3 @@ async def biliparser(urls):
                 f"媒体文件名: {f.mediafilename}"
             )
     return callbacks
-
-
-async def db_init() -> None:
-    try:
-        Tortoise.get_connection("default")
-    except:
-        await Tortoise.init(
-            db_url=os.environ.get("DATABASE_URL", "sqlite://cache.db"),
-            modules={"models": ["database"]},
-            use_tz=True,
-        )
-        await Tortoise.generate_schemas()
-
-
-async def db_close() -> None:
-    await Tortoise.close_connections()
-
-
-async def db_status():
-    tasks = [item.all().count() for item in CACHES.values()]
-    result = await asyncio.gather(*tasks)
-    ans = ""
-    for key, item in zip(CACHES.keys(), await asyncio.gather(*tasks)):
-        ans += f"{key}: {item}\n"
-    ans += f"总计: {sum(result)}"
-    return ans
-
-
-async def cache_clear():
-    for item in CACHES.values():
-        await item.filter(created__lt=datetime.utcnow() - item.timeout).delete()
-    return await db_status()
-
-
-async def db_clear(target):
-    if CACHES.get(target):
-        await CACHES[target].filter(
-            created__lt=datetime.utcnow() - CACHES[target].timeout
-        ).delete()
-    else:
-        return await cache_clear()
-    return await db_status()

@@ -1,6 +1,7 @@
-from datetime import timedelta
+import os
+from datetime import datetime, timedelta
 
-from tortoise import fields
+from tortoise import Tortoise, fields
 from tortoise.models import Model
 
 
@@ -67,6 +68,7 @@ class video_cache(Model):
     class Meta:
         table = "video"
 
+
 class read_cache(Model):
     read_id = fields.IntField(pk=True, unique=True)
     graphurl = fields.TextField()
@@ -75,3 +77,53 @@ class read_cache(Model):
 
     class Meta:
         table = "read"
+
+
+CACHES = {
+    "audio": audio_cache,
+    "bangumi": bangumi_cache,
+    "dynamic": dynamic_cache,
+    "live": live_cache,
+    "read": read_cache,
+    "reply": reply_cache,
+    "video": video_cache,
+}
+
+
+async def db_init() -> None:
+    await Tortoise.init(
+        db_url=os.environ.get("DATABASE_URL", "sqlite://cache.db"),
+        modules={"models": ["database"]},
+        use_tz=True,
+    )
+    await Tortoise.generate_schemas()
+
+
+async def db_close() -> None:
+    await Tortoise.close_connections()
+
+
+async def db_status():
+    tasks = [item.all().count() for item in CACHES.values()]
+    result = await asyncio.gather(*tasks)
+    ans = ""
+    for key, item in zip(CACHES.keys(), await asyncio.gather(*tasks)):
+        ans += f"{key}: {item}\n"
+    ans += f"总计: {sum(result)}"
+    return ans
+
+
+async def cache_clear():
+    for item in CACHES.values():
+        await item.filter(created__lt=datetime.utcnow() - item.timeout).delete()
+    return await db_status()
+
+
+async def db_clear(target):
+    if CACHES.get(target):
+        await CACHES[target].filter(
+            created__lt=datetime.utcnow() - CACHES[target].timeout
+        ).delete()
+    else:
+        return await cache_clear()
+    return await db_status()

@@ -8,41 +8,19 @@ from typing import IO, Union
 from uuid import uuid4
 
 import httpx
-from telegram import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    InlineQueryResultArticle,
-    InlineQueryResultAudio,
-    InlineQueryResultGif,
-    InlineQueryResultPhoto,
-    InlineQueryResultVideo,
-    InputMediaDocument,
-    InputMediaPhoto,
-    InputMediaVideo,
-    InputTextMessageContent,
-    Update,
-)
+from telegram import (InlineKeyboardButton, InlineKeyboardMarkup,
+                      InlineQueryResultArticle, InlineQueryResultAudio,
+                      InlineQueryResultGif, InlineQueryResultPhoto,
+                      InlineQueryResultVideo, InputMediaDocument,
+                      InputMediaPhoto, InputMediaVideo,
+                      InputTextMessageContent, Update)
 from telegram.constants import ChatAction, ParseMode
 from telegram.error import BadRequest, RetryAfter, TimedOut
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    ContextTypes,
-    InlineQueryHandler,
-    MessageHandler,
-    Updater,
-    filters,
-)
+from telegram.ext import (Application, CommandHandler, ContextTypes,
+                          InlineQueryHandler, MessageHandler, filters)
 
-from biliparser import (
-    biliparser,
-    cache_clear,
-    db_close,
-    db_init,
-    db_status,
-    escape_markdown,
-    feed,
-)
+from biliparser import biliparser, escape_markdown, feed
+from database import cache_clear, db_close, db_init, db_status
 from utils import compress, headers, logger
 
 regex = r"(?i)[\w\.]*?(?:bilibili\.com|(?:b23|acg)\.tv)\S+"

@@ -2,6 +2,7 @@ aiomysql
 aiosqlite
 asyncpg
 beautifulsoup4
+bilibili-api-python
 httpx[http2]
 loguru
 lxml
