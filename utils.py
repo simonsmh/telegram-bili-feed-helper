@@ -1,5 +1,7 @@
-import sys
+import html
 import os
+import re
+import sys
 from io import BytesIO
 
 from loguru import logger
@@ -32,7 +34,15 @@ logger.add("bili_feed.log", backtrace=True, diagnose=True, rotation="1 MB")
 
 headers = {
     "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1 Edg/109.0.0.0",
-    "cookie": "opus-goback=1"
+    "cookie": "opus-goback=1",
 }
 
 BILI_API = os.environ.get("BILI_API", "https://api.bilibili.com")
+
+
+def escape_markdown(text):
+    return (
+        re.sub(r"([_*\[\]()~`>\#\+\-=|{}\.!\\])", r"\\\1", html.unescape(text))
+        if text
+        else str()
+    )

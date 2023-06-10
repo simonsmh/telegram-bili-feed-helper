@@ -19,9 +19,9 @@ from telegram.error import BadRequest, RetryAfter, TimedOut
 from telegram.ext import (Application, CommandHandler, ContextTypes,
                           InlineQueryHandler, MessageHandler, filters)
 
-from biliparser import biliparser, escape_markdown, feed
+from biliparser import biliparser, feed
 from database import cache_clear, db_close, db_init, db_status
-from utils import compress, headers, logger
+from utils import compress, escape_markdown, headers, logger
 
 regex = r"(?i)[\w\.]*?(?:bilibili\.com|(?:b23|acg)\.tv)\S+"
 
