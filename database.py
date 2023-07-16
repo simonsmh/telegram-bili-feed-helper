@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 from tortoise import Tortoise, fields
 from tortoise.models import Model
 
+from utils import logger
+
 
 class reply_cache(Model):
     oid = fields.BigIntField(pk=True, unique=True)
@@ -92,8 +94,12 @@ CACHES = {
 
 
 async def db_init() -> None:
+    db_url = os.environ.get("DATABASE_URL", "sqlite://cache.db")
+    logger.info(f"db_url: {db_url}")
+    if "postgres" in db_url:
+        db_url.replace("sslmode", "ssl") # causing asyncpg TypeError
     await Tortoise.init(
-        db_url=os.environ.get("DATABASE_URL", "sqlite://cache.db"),
+        db_url=db_url,
         modules={"models": ["database"]},
         use_tz=True,
     )
