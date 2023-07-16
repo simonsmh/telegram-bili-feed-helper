@@ -95,8 +95,6 @@ CACHES = {
 
 async def db_init() -> None:
     db_url = os.environ.get("DATABASE_URL", "sqlite://cache.db")
-    if "sslmode" in db_url:
-        db_url = db_url.replace("?sslmode=disable", "") # causing asyncpg TypeError, wtf
     logger.info(f"db_url: {db_url}")
     await Tortoise.init(
         db_url=db_url,
