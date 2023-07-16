@@ -97,7 +97,7 @@ async def db_init() -> None:
     db_url = os.environ.get("DATABASE_URL", "sqlite://cache.db")
     logger.info(f"db_url: {db_url}")
     if "postgres" in db_url:
-        db_url.replace("sslmode", "ssl") # causing asyncpg TypeError
+        db_url.replace("?sslmode=disable", "") # causing asyncpg TypeError, wtf
     await Tortoise.init(
         db_url=db_url,
         modules={"models": ["database"]},
