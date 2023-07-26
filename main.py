@@ -8,16 +8,31 @@ from typing import IO, Union
 from uuid import uuid4
 
 import httpx
-from telegram import (InlineKeyboardButton, InlineKeyboardMarkup,
-                      InlineQueryResultArticle, InlineQueryResultAudio,
-                      InlineQueryResultGif, InlineQueryResultPhoto,
-                      InlineQueryResultVideo, InputMediaDocument,
-                      InputMediaPhoto, InputMediaVideo,
-                      InputTextMessageContent, Update)
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InlineQueryResultArticle,
+    InlineQueryResultAudio,
+    InlineQueryResultGif,
+    InlineQueryResultPhoto,
+    InlineQueryResultVideo,
+    InputMediaDocument,
+    InputMediaPhoto,
+    InputMediaVideo,
+    InputTextMessageContent,
+    Update,
+    MessageEntity,
+)
 from telegram.constants import ChatAction, ParseMode
 from telegram.error import BadRequest, RetryAfter, TimedOut
-from telegram.ext import (Application, CommandHandler, ContextTypes,
-                          InlineQueryHandler, MessageHandler, filters)
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    InlineQueryHandler,
+    MessageHandler,
+    filters,
+)
 
 from biliparser import biliparser, feed
 from database import cache_clear, db_close, db_init, db_status
@@ -98,7 +113,6 @@ def captions(
 async def get_media(
     f: feed, url: str, compression: bool = True, size: int = 320, filename: str = None
 ) -> IO[bytes]:
-
     async with httpx.AsyncClient(
         headers=headers, http2=True, timeout=None, verify=False
     ) as client:
@@ -125,6 +139,12 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         pass
     data = message.text
     urls = re.findall(regex, data)
+    if message.entities:
+        for entity in message.entities:
+            if entity.url:
+                urls.extend(re.findall(regex, entity.url))
+    if not urls:
+        return
     logger.info(f"Parse: {urls}")
 
     async def parse_send(f: feed, fallback: bool = False) -> None:
@@ -536,7 +556,15 @@ if __name__ == "__main__":
     )
     application.add_handler(CommandHandler("file", fetch))
     application.add_handler(CommandHandler("parse", parse))
-    application.add_handler(MessageHandler(filters.Regex(regex), parse))
+    application.add_handler(
+        MessageHandler(
+            filters.Entity(MessageEntity.URL)
+            | filters.Entity(MessageEntity.TEXT_LINK)
+            | filters.Regex(regex)
+            | filters.CaptionRegex(regex),
+            parse,
+        )
+    )
     application.add_handler(InlineQueryHandler(inlineparse))
     if os.environ.get("DOMAIN"):
         application.run_webhook(
