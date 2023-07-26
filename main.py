@@ -130,7 +130,7 @@ async def get_media(
 
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
+    message = update.message
     if not message:
         return
     try:
@@ -294,7 +294,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
+    message = update.message
     if not message:
         return
     try:
