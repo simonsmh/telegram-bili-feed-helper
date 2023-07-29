@@ -8,4 +8,6 @@ data
 .stignore
 *.js
 *.db
+*.db-shm
+*.db-wal
 *.log*
