@@ -133,10 +133,6 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     if not message:
         return
-    try:
-        await message.reply_chat_action(ChatAction.TYPING)
-    except:
-        pass
     data = message.text
     urls = re.findall(regex, data)
     if message.entities:
@@ -146,7 +142,10 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not urls:
         return
     logger.info(f"Parse: {urls}")
-
+    try:
+        await message.reply_chat_action(ChatAction.TYPING)
+    except:
+        pass
     async def parse_send(f: feed, fallback: bool = False) -> None:
         if not f.mediaurls:
             await message.reply_text(
@@ -297,12 +296,14 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     if not message:
         return
-    try:
-        await message.reply_chat_action(ChatAction.UPLOAD_DOCUMENT)
-    except:
-        pass
     data = message.text
     urls = re.findall(regex, data)
+    if message.entities:
+        for entity in message.entities:
+            if entity.url:
+                urls.extend(re.findall(regex, entity.url))
+    if not urls:
+        return
     logger.info(f"Fetch: {urls}")
     fs = await biliparser(urls)
     for num, f in enumerate(fs):
