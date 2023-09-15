@@ -415,11 +415,10 @@ async def reply_parser(client: httpx.AsyncClient, oid, reply_type):
             params={"oid": oid, "type": reply_type},
         )
         reply = r.json()
-        if reply.get("code") == 12002:
-            logger.warning(reply.get("message"))
-            return {}
         if not reply.get("data"):
-            raise ParserException("评论解析错误", reply, r)
+            logger.warning(reply.get("message", reply))
+            return {}
+            #raise ParserException("评论解析错误", reply, r)
     logger.info(f"评论ID: {oid}, 评论类型: {reply_type}")
     if not cache:
         logger.info(f"评论缓存: {oid}")
