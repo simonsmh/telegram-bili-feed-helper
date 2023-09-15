@@ -99,7 +99,7 @@ def captions(
     if is_caption and len(caption) > 1024:
         return prev_caption
     prev_caption = caption
-    if f.replycontent and f.replycontent.get("data") and f.comment:
+    if isinstance(f.replycontent, dict) and f.replycontent.get("data") and f.comment:
         caption += "〰〰〰〰〰〰〰〰〰〰\n" + (
             parser_helper(f.comment, False)
             if fallback
