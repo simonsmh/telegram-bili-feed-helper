@@ -177,7 +177,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     allow_sending_without_reply=True,
                     reply_markup=origin_link(f.url),
                     supports_streaming=True,
-                    thumb=mediathumb,
+                    thumbnail=mediathumb,
                     duration=f.mediaduration,
                     write_timeout=600,
                     width=f.mediadimention["height"]
@@ -196,7 +196,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     performer=f.user,
                     allow_sending_without_reply=True,
                     reply_markup=origin_link(f.url),
-                    thumb=mediathumb,
+                    thumbnail=mediathumb,
                     title=f.mediatitle,
                     write_timeout=600,
                 )
