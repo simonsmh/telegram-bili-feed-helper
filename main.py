@@ -4,7 +4,7 @@ import re
 import sys
 from functools import lru_cache
 from io import BytesIO
-from typing import IO, Union
+from typing import IO, Union, Optional
 from uuid import uuid4
 
 import httpx
@@ -111,7 +111,7 @@ def captions(
 
 
 async def get_media(
-    f: feed, url: str, compression: bool = True, size: int = 320, filename: str = None
+    f: feed, url: str, compression: bool = True, size: int = 320, filename: Optional[str] = None
 ) -> IO[bytes]:
     async with httpx.AsyncClient(
         headers=headers, http2=True, timeout=None, verify=False
@@ -131,9 +131,11 @@ async def get_media(
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
-    if not message:
+    if message is None:
         return
     data = message.text
+    if data is None:
+        return
     urls = re.findall(regex, data)
     if message.entities:
         for entity in message.entities:
@@ -294,9 +296,11 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
-    if not message:
+    if message is None:
         return
     data = message.text
+    if data is None:
+        return
     urls = re.findall(regex, data)
     if message.entities:
         for entity in message.entities:
@@ -368,6 +372,8 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     inline_query = update.inline_query
+    if inline_query is None:
+        return
     query = inline_query.query
     helpmsg = [
         InlineQueryResultArticle(
@@ -383,11 +389,11 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not query:
         await inline_query.answer(helpmsg)
         return
-    try:
-        url = re.search(regex, query).group(0)
-    except AttributeError:
+    url_re = re.search(regex, query)
+    if url_re is None:
         await inline_query.answer(helpmsg)
         return
+    url = url_re.group(0)
     logger.info(f"Inline: {url}")
     [f] = await biliparser(url)
     if isinstance(f, Exception):
@@ -431,7 +437,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             mime_type="video/mp4",
                             parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                             reply_markup=origin_link(f.url),
-                            thumb_url=f.mediathumb,
+                            thumbnail_url=f.mediathumb,
                             video_url=f.mediaurls[0],
                             video_duration=f.mediaduration,
                             video_width=f.mediadimention["height"]
@@ -448,13 +454,11 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             id=str(uuid4()),
                             caption=captions(f, fallback, True),
                             title=f.mediatitle,
-                            description=f.content,
                             audio_duration=f.mediaduration,
                             audio_url=f.mediaurls[0],
                             parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                             performer=f.user,
                             reply_markup=origin_link(f.url),
-                            thumb_url=f.mediathumb,
                         )
                     ]
                 else:
@@ -466,7 +470,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             gif_url=img,
                             parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                             reply_markup=origin_link(f.url),
-                            thumb_url=img,
+                            thumbnail_url=img,
                         )
                         if ".gif" in img
                         else InlineQueryResultPhoto(
@@ -477,11 +481,11 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                             photo_url=img + "@1280w.jpg",
                             reply_markup=origin_link(f.url),
-                            thumb_url=img + "@512w_512h.jpg",
+                            thumbnail_url=img + "@512w_512h.jpg",
                         )
                         for img in f.mediaurls
                     ]
-                    results.extend(helpmsg)
+                    results.extend(helpmsg) # type: ignore
             await inline_query.answer(results)
 
         try:
@@ -494,7 +498,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
-    if not message:
+    if message is None:
         return
     bot_me = await context.bot.get_me()
     await message.reply_text(
@@ -505,20 +509,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
-    if not message:
+    if message is None:
         return
     result = await db_status()
     await message.reply_text(result)
 
 
-async def callback_clear_cache(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def clear_cache(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await cache_clear()
+    await status(update, context)
 
 
 async def post_init(application: Application):
     await db_init()
     updater = application.updater
-    if not updater:
+    if updater is None:
         return
     await updater.bot.set_my_commands(
         [["start", "关于本 Bot"], ["file", "获取匹配内容原始文件"], ["parse", "获取匹配内容"]]
@@ -555,7 +560,7 @@ if __name__ == "__main__":
         CommandHandler("status", status, filters=filters.ChatType.PRIVATE)
     )
     application.add_handler(
-        CommandHandler("clear", callback_clear_cache, filters=filters.ChatType.PRIVATE)
+        CommandHandler("clear", clear_cache, filters=filters.ChatType.PRIVATE)
     )
     application.add_handler(CommandHandler("file", fetch))
     application.add_handler(CommandHandler("parse", parse))
