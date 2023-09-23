@@ -511,7 +511,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await message.reply_text(result)
 
 
-async def callback_clear_cache(context: ContextTypes.DEFAULT_TYPE):
+async def callback_clear_cache(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await cache_clear()
 
 
@@ -548,12 +548,14 @@ if __name__ == "__main__":
         .write_timeout(60)
         .build()
     )
-    job_clear = application.job_queue.run_repeating(callback_clear_cache, interval=3600)
     application.add_handler(
         CommandHandler("start", start, filters=filters.ChatType.PRIVATE)
     )
     application.add_handler(
         CommandHandler("status", status, filters=filters.ChatType.PRIVATE)
+    )
+    application.add_handler(
+        CommandHandler("clear", callback_clear_cache, filters=filters.ChatType.PRIVATE)
     )
     application.add_handler(CommandHandler("file", fetch))
     application.add_handler(CommandHandler("parse", parse))
