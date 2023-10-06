@@ -940,11 +940,11 @@ async def video_parser(client: httpx.AsyncClient, url: str):
     f.replycontent = await reply_parser(client, f.aid, f.reply_type)
 
     async def get_video_result(
-        client: httpx.AsyncClient, f: video, detail, NEED_HIGH_RESOLUTION: bool = False
+        client: httpx.AsyncClient, f: video, detail, qn: int
     ):
         params = {"avid": f.aid, "cid": f.cid}
-        if NEED_HIGH_RESOLUTION:
-            params["qn"] = 80
+        if qn:
+            params["qn"] = qn
         r = await client.get(
             BILI_API + "/x/player/playurl",
             params=params,
@@ -967,8 +967,9 @@ async def video_parser(client: httpx.AsyncClient, url: str):
             f.mediaraws = True
             return video_result
 
-    if not await get_video_result(client, f, detail, True):
-        await get_video_result(client, f, detail)
+    for item in [64, 32, 16]:
+        if await get_video_result(client, f, detail, item):
+            break
     return f
 
 
