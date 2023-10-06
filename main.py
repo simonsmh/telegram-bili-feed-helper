@@ -1,10 +1,12 @@
 import asyncio
 import os
+import pathlib
 import re
 import sys
+import time
 from functools import lru_cache
 from io import BytesIO
-from typing import IO, Union, Optional
+from typing import IO, Optional, Union
 from uuid import uuid4
 
 import httpx
@@ -20,8 +22,8 @@ from telegram import (
     InputMediaPhoto,
     InputMediaVideo,
     InputTextMessageContent,
-    Update,
     MessageEntity,
+    Update,
 )
 from telegram.constants import ChatAction, ParseMode
 from telegram.error import BadRequest, RetryAfter, TimedOut
@@ -111,22 +113,33 @@ def captions(
 
 
 async def get_media(
-    f: feed, url: str, compression: bool = True, size: int = 320, filename: Optional[str] = None
-) -> IO[bytes]:
-    async with httpx.AsyncClient(
-        headers=headers, http2=True, timeout=None, verify=False
-    ) as client:
-        r = await client.get(url, headers={"Referer": f.url})
-        media = BytesIO(r.read())
-        mediatype = r.headers.get("content-type")
-    if compression:
+    f: feed,
+    url: str,
+    compression: bool = True,
+    size: int = 320,
+    filename: Optional[str] = None,
+) -> IO[bytes] | pathlib.Path:
+    async with client.stream("GET", url, headers={"Referer": f.url}) as response:
+        mediatype = response.headers.get("content-type")
         if mediatype in ["image/jpeg", "image/png"]:
-            logger.info(f"压缩: {url} {mediatype}")
-            media = compress(media, size)
-    if filename:
-        media.name = filename
-    media.seek(0)
-    return media
+            media = BytesIO(await response.aread())
+            if compression:
+                logger.info(f"压缩: {url} {mediatype}")
+                media = compress(media, size)
+            if filename:
+                media.name = filename
+            media.seek(0)
+            return media
+        else:
+            if not os.path.exists(".tmp"):
+                os.mkdir(".tmp")
+            if not filename:
+                filename = f"{time.time()}.mp4"
+            with open(f".tmp/{filename}", "wb") as file:
+                async for chunk in response.aiter_bytes():
+                    file.write(chunk)
+            media = pathlib.Path(os.path.abspath(f".tmp/{filename}"))
+            return media
 
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -148,6 +161,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await message.reply_chat_action(ChatAction.TYPING)
     except:
         pass
+
     async def parse_send(f: feed, fallback: bool = False) -> None:
         if not f.mediaurls:
             await message.reply_text(
@@ -161,7 +175,10 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 await get_media(f, f.mediathumb, size=320) if f.mediathumb else None
             )
             if f.mediaraws:
-                tasks = [get_media(f, img, size=1280) for img in f.mediaurls]
+                tasks = [
+                    get_media(f, img, size=1280, filename=filename)
+                    for img, filename in zip(f.mediaurls, f.mediafilename)
+                ]
                 media = await asyncio.gather(*tasks)
                 logger.info(f"上传中: {f.url}")
             else:
@@ -222,7 +239,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         write_timeout=600,
                     )
             else:
-                media = [
+                medias = [
                     InputMediaVideo(
                         img,
                         caption=captions(f, fallback, True),
@@ -237,7 +254,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     for img, mediaurl in zip(media, f.mediaurls)
                 ]
                 await message.reply_media_group(
-                    media=media,
+                    media=medias,
                     allow_sending_without_reply=True,
                     write_timeout=600,
                 )
@@ -247,6 +264,9 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     allow_sending_without_reply=True,
                     reply_markup=origin_link(f.url),
                 )
+            for item in [mediathumb, *media]:
+                if isinstance(item, pathlib.Path):
+                    os.remove(item)
 
     fs = await biliparser(urls)
     for num, f in enumerate(fs):
@@ -368,6 +388,9 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         reply_markup=origin_link(f.url),
                         write_timeout=600,
                     )
+            for item in medias:
+                if isinstance(item, pathlib.Path):
+                    os.remove(item)
 
 
 async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -485,7 +508,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                         )
                         for img in f.mediaurls
                     ]
-                    results.extend(helpmsg) # type: ignore
+                    results.extend(helpmsg)  # type: ignore
             await inline_query.answer(results)
 
         try:
@@ -534,6 +557,7 @@ async def post_init(application: Application):
 
 async def post_shutdown(application: Application):
     await db_close()
+    await client.aclose()
 
 
 if __name__ == "__main__":
@@ -544,6 +568,7 @@ if __name__ == "__main__":
     else:
         logger.error(f"Need TOKEN.")
         sys.exit(1)
+    client = httpx.AsyncClient(headers=headers, http2=True, timeout=60, verify=False)
     application = (
         Application.builder()
         .token(TOKEN)

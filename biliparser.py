@@ -418,7 +418,7 @@ async def reply_parser(client: httpx.AsyncClient, oid, reply_type):
         if not reply.get("data"):
             logger.warning(reply.get("message", reply))
             return {}
-            #raise ParserException("评论解析错误", reply, r)
+            # raise ParserException("评论解析错误", reply, r)
     logger.info(f"评论ID: {oid}, 评论类型: {reply_type}")
     if not cache:
         logger.info(f"评论缓存: {oid}")
@@ -938,26 +938,37 @@ async def video_parser(client: httpx.AsyncClient, url: str):
     f.mediaurls = detail.get("pic")
     f.mediatype = "image"
     f.replycontent = await reply_parser(client, f.aid, f.reply_type)
-    r = await client.get(
-        BILI_API + "/x/player/playurl",
-        params={"avid": f.aid, "cid": f.cid},
-    )
-    video_result = r.json()
-    if (
-        video_result.get("code") == 0
-        and video_result.get("data")
-        and video_result.get("data").get("durl")
-        and video_result.get("data").get("durl")[0].get("size")
-        < 1024 * 1024 * 50  # video smaller than 50MB (container ram limit 500MB)
+
+    async def get_video_result(
+        client: httpx.AsyncClient, f: video, detail, NEED_HIGH_RESOLUTION: bool = False
     ):
-        logger.info(f"视频内容: {video_result}")
-        f.mediacontent = video_result
-        f.mediathumb = detail.get("pic")
-        f.mediaduration = round(f.mediacontent["data"]["durl"][0]["length"] / 1000)
-        f.mediadimention = detail.get("pages")[0].get("dimension")
-        f.mediaurls = f.mediacontent["data"]["durl"][0]["url"]
-        f.mediatype = "video"
-        f.mediaraws = True
+        params = {"avid": f.aid, "cid": f.cid}
+        if NEED_HIGH_RESOLUTION:
+            params["qn"] = 80
+        r = await client.get(
+            BILI_API + "/x/player/playurl",
+            params=params,
+        )
+        video_result = r.json()
+        if (
+            video_result.get("code") == 0
+            and video_result.get("data")
+            and video_result.get("data").get("durl")
+            and video_result.get("data").get("durl")[0].get("size")
+            < 1024 * 1024 * 50  # video smaller than 50MB https://core.telegram.org/bots/api#sending-files
+        ):
+            logger.info(f"视频内容: {video_result}")
+            f.mediacontent = video_result
+            f.mediathumb = detail.get("pic")
+            f.mediaduration = round(f.mediacontent["data"]["durl"][0]["length"] / 1000)
+            f.mediadimention = detail.get("pages")[0].get("dimension")
+            f.mediaurls = f.mediacontent["data"]["durl"][0]["url"]
+            f.mediatype = "video"
+            f.mediaraws = True
+            return video_result
+
+    if not await get_video_result(client, f, detail, True):
+        await get_video_result(client, f, detail)
     return f
 
 

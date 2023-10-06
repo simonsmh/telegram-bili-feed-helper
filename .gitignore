@@ -11,3 +11,5 @@ data
 *.db-shm
 *.db-wal
 *.log*
+
+.tmp/
