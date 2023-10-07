@@ -299,25 +299,18 @@ async def reply_parser(client: httpx.AsyncClient, oid, reply_type):
         logger.info(f"拉取评论缓存: {cache.created}")
         reply = cache.content
     else:
-        # params = {
-        #     "oid": oid,
-        #     "type": reply_type,
-        #     "mode": 3,
-        #     "pagination_str": '{"offset": ""}',
-        #     "plat": 1,
-        #     "seek_rpid": 0,
-        # }
-        # key = await get_mixin_key()
-        # enc_wbi(params, key)
-        # logger.info(f"评论mixin_key: {key}")
-        # r = await client.get(
-        #     BILI_API + "/x/v2/reply/wbi/main",
-        #     params=params,
-        # )
-        # reply = r.json().get("data")
-        reply = await get_comments_lazy(oid, CommentResourceType(reply_type))
+        r = await client.get(
+            BILI_API + "/x/v2/reply/main",
+            params={"oid": oid, "type": reply_type},
+            headers={"Referer": "https://www.bilibili.com/client"}
+        )
+        response = r.json()
+        if not response.get("data"):
+            logger.warning(f"评论ID: {oid}, 评论类型: {reply_type}, 获取错误: {response}")
+            return {}
+        reply = response.get("data")
         if not reply:
-            logger.warning(reply.get("message", reply))
+            logger.warning(f"评论ID: {oid}, 评论类型: {reply_type}, 解析错误: {response}")
             return {}
             # raise ParserException("评论解析错误", reply, r)
     logger.info(f"评论ID: {oid}, 评论类型: {reply_type}")
