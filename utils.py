@@ -28,13 +28,12 @@ except ImportError:
 
 
 logger.remove()
-logger.add(sys.stderr, backtrace=True, diagnose=True)
+logger.add(sys.stdout, backtrace=True, diagnose=True)
 logger.add("bili_feed.log", backtrace=True, diagnose=True, rotation="1 MB")
 
 
 headers = {
-    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1 Edg/109.0.0.0",
-    "cookie": "opus-goback=1",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) bilibili_pc/1.12.1 Chrome/106.0.5249.199 Electron/21.3.3 Safari/537.36"
 }
 
 BILI_API = os.environ.get("BILI_API", "https://api.bilibili.com")
