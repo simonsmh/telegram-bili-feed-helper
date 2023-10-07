@@ -2,13 +2,11 @@ import asyncio
 import html
 import json
 import re
-from functools import lru_cache
+from functools import lru_cache, reduce
 from io import BytesIO
 
 import httpx
-from bilibili_api.comment import CommentResourceType, get_comments_lazy
 
-# from bilibili_api.utils.network import get_mixin_key, enc_wbi
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 from telegraph.aio import Telegraph
@@ -325,6 +323,10 @@ async def reply_parser(client: httpx.AsyncClient, oid, reply_type):
     return reply
 
 
+def __list_dicts_to_dict(lists: list[dict]):
+    return reduce(lambda old, new: old.update(new) or old, lists, {})
+
+
 def __opus_handle_major(f: opus, major: dict):
     datapath_map = {
         "MDL_DYN_TYPE_ARCHIVE": "dyn_archive",
@@ -343,19 +345,12 @@ def __opus_handle_major(f: opus, major: dict):
     target = datapath_map.get(major["type"])
     if major["type"] == "MDL_DYN_TYPE_FORWARD":
         f.has_forward = True
-        f.forward_user = major[target]["item"]["modules"][0]["module_author"]["user"][
-            "name"
-        ]
-        f.forward_uid = major[target]["item"]["modules"][0]["module_author"]["user"][
-            "mid"
-        ]
-        f.forward_content = __opus_handle_desc_text(
-            major[target]["item"]["modules"][1]["module_desc"]
-        )
-        if not f.mediatype and len(major[target]["item"]["modules"]) > 2:
-            __opus_handle_major(
-                f, major[target]["item"]["modules"][2]["module_dynamic"]
-            )
+        majorcontent = __list_dicts_to_dict(major[target]["item"]["modules"])
+        f.forward_user = majorcontent["module_author"]["user"]["name"]
+        f.forward_uid = majorcontent["module_author"]["user"]["mid"]
+        f.forward_content = __opus_handle_desc_text(majorcontent["module_desc"])
+        if not f.mediatype and majorcontent.get("module_dynamic"):
+            __opus_handle_major(f, majorcontent["module_dynamic"])
     elif major["type"] == "MDL_DYN_TYPE_DRAW":
         f.mediaurls = [item["src"] for item in major[target]["items"]]
         f.mediatype = "image"
@@ -417,13 +412,12 @@ async def opus_parser(client: httpx.AsyncClient, url: str):
                 ).save()
         except Exception as e:
             logger.exception(f"动态缓存错误: {e}")
-    f.user = f.detailcontent["item"]["modules"][0]["module_author"]["user"]["name"]
-    f.uid = f.detailcontent["item"]["modules"][0]["module_author"]["user"]["mid"]
-    f.content = __opus_handle_desc_text(
-        f.detailcontent["item"]["modules"][1]["module_desc"]
-    )
-    if len(f.detailcontent["item"]["modules"]) > 2:
-        __opus_handle_major(f, f.detailcontent["item"]["modules"][2]["module_dynamic"])
+    detailcontent = __list_dicts_to_dict(f.detailcontent["item"]["modules"])
+    f.user = detailcontent["module_author"]["user"]["name"]
+    f.uid = detailcontent["module_author"]["user"]["mid"]
+    f.content = __opus_handle_desc_text(detailcontent["module_desc"])
+    if detailcontent.get("module_dynamic"):
+        __opus_handle_major(f, detailcontent["module_dynamic"])
     f.replycontent = await reply_parser(client, f.rid, f.reply_type)
     return f
 
