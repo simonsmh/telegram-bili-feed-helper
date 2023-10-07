@@ -302,7 +302,7 @@ async def reply_parser(client: httpx.AsyncClient, oid, reply_type):
         r = await client.get(
             BILI_API + "/x/v2/reply/main",
             params={"oid": oid, "type": reply_type},
-            headers={"Referer": "https://www.bilibili.com/client"}
+            headers={"Referer": "https://www.bilibili.com/client"},
         )
         response = r.json()
         if not response.get("data"):
@@ -328,7 +328,7 @@ async def reply_parser(client: httpx.AsyncClient, oid, reply_type):
     return reply
 
 
-def __opus_handle_major(f: opus, major: dict, forward: bool = False):
+def __opus_handle_major(f: opus, major: dict):
     datapath_map = {
         "MDL_DYN_TYPE_ARCHIVE": "dyn_archive",
         "MDL_DYN_TYPE_PGC": "dyn_pgc",
@@ -354,9 +354,9 @@ def __opus_handle_major(f: opus, major: dict, forward: bool = False):
         f.forward_content = __opus_handle_desc_text(
             major[target]["item"]["modules"][1]["module_desc"]
         )
-        if not f.mediatype:
+        if not f.mediatype and len(major[target]["item"]["modules"]) > 2:
             __opus_handle_major(
-                f, major[target]["item"]["modules"][2]["module_dynamic"], True
+                f, major[target]["item"]["modules"][2]["module_dynamic"]
             )
     elif major["type"] == "MDL_DYN_TYPE_DRAW":
         f.mediaurls = [item["src"] for item in major[target]["items"]]
@@ -365,7 +365,7 @@ def __opus_handle_major(f: opus, major: dict, forward: bool = False):
         if major[target].get("cover"):
             f.mediaurls = major[target]["cover"]
             f.mediatype = "image"
-        if major[target].get("aid") and major[target].get("title") :
+        if major[target].get("aid") and major[target].get("title"):
             f.extra_markdown = f"[{escape_markdown(major[target]['title'])}](https://www.bilibili.com/video/av{major[target]['aid']})"
 
 
@@ -424,7 +424,8 @@ async def opus_parser(client: httpx.AsyncClient, url: str):
     f.content = __opus_handle_desc_text(
         f.detailcontent["item"]["modules"][1]["module_desc"]
     )
-    __opus_handle_major(f, f.detailcontent["item"]["modules"][2]["module_dynamic"])
+    if len(f.detailcontent["item"]["modules"]) > 2:
+        __opus_handle_major(f, f.detailcontent["item"]["modules"][2]["module_dynamic"])
     f.replycontent = await reply_parser(client, f.rid, f.reply_type)
     return f
 
