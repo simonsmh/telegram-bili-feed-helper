@@ -165,6 +165,7 @@ class opus(feed):
     forward_user: str = ""
     forward_uid: int = 0
     forward_content: str = ""
+    has_forward: bool = False
 
     @cached_property
     def reply_type(self):
@@ -188,10 +189,6 @@ class opus(feed):
     @cached_property
     def rid(self):
         return int(self.detailcontent["item"]["basic"]["rid_str"])
-
-    @cached_property
-    def has_forward(self):
-        return "orig" in self.detailcontent["item"]
 
     @property
     @lru_cache(maxsize=1)
@@ -345,6 +342,7 @@ def __opus_handle_major(f: opus, major: dict):
         return
     target = datapath_map.get(major["type"])
     if major["type"] == "MDL_DYN_TYPE_FORWARD":
+        f.has_forward = True
         f.forward_user = major[target]["item"]["modules"][0]["module_author"]["user"][
             "name"
         ]
