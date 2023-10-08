@@ -9,6 +9,7 @@ import httpx
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag
+from telegram.constants import FileSizeLimit
 from telegraph.aio import Telegraph
 from tortoise import timezone
 from tortoise.exceptions import IntegrityError
@@ -664,9 +665,7 @@ async def video_parser(client: httpx.AsyncClient, url: str):
             and video_result.get("data")
             and video_result.get("data").get("durl")
             and video_result.get("data").get("durl")[0].get("size")
-            < 1024
-            * 1024
-            * 50  # video smaller than 50MB https://core.telegram.org/bots/api#sending-files
+            < FileSizeLimit.FILESIZE_UPLOAD
         ):
             f.mediacontent = video_result
             f.mediathumb = detail.get("pic")
@@ -677,7 +676,7 @@ async def video_parser(client: httpx.AsyncClient, url: str):
             f.mediaraws = (
                 False
                 if video_result.get("data").get("durl")[0].get("size")
-                < 1024 * 1024 * 20
+                < FileSizeLimit.FILESIZE_DOWNLOAD
                 else True
             )
             return video_result

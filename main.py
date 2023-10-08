@@ -26,7 +26,7 @@ from telegram import (
     MessageEntity,
     Update,
 )
-from telegram.constants import ChatAction, ParseMode
+from telegram.constants import ChatAction, ParseMode, MessageLimit
 from telegram.error import BadRequest, RetryAfter, TimedOut
 from telegram.ext import (
     Application,
@@ -116,7 +116,7 @@ def captions(
             if fallback
             else parser_helper(f.content_markdown)
         ) + "\n"
-    if is_caption and len(caption) > 1024:
+    if is_caption and len(caption) > MessageLimit.CAPTION_LENGTH:
         return prev_caption
     prev_caption = caption
     if isinstance(f.replycontent, dict) and f.replycontent.get("data") and f.comment:
@@ -125,7 +125,7 @@ def captions(
             if fallback
             else parser_helper(f.comment_markdown)
         )
-    if is_caption and len(caption) > 1024:
+    if is_caption and len(caption) > MessageLimit.CAPTION_LENGTH:
         return prev_caption
     return caption
 
