@@ -846,7 +846,7 @@ async def biliparser(urls):
                 client,
                 f"http://{url}" if not url.startswith(("http:", "https:")) else url,
             )
-            for url in urls
+            for url in list(set(urls))
         )
         callbacks = await asyncio.gather(*tasks)
     for num, f in enumerate(callbacks):
