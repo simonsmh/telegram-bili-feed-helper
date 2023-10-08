@@ -658,6 +658,7 @@ async def video_parser(client: httpx.AsyncClient, url: str):
             params=params,
         )
         video_result = r.json()
+        logger.debug(f"视频内容: {video_result}")
         if (
             video_result.get("code") == 0
             and video_result.get("data")
@@ -667,14 +668,18 @@ async def video_parser(client: httpx.AsyncClient, url: str):
             * 1024
             * 50  # video smaller than 50MB https://core.telegram.org/bots/api#sending-files
         ):
-            logger.info(f"视频内容: {video_result}")
             f.mediacontent = video_result
             f.mediathumb = detail.get("pic")
             f.mediaduration = round(f.mediacontent["data"]["durl"][0]["length"] / 1000)
             f.mediadimention = detail.get("pages")[0].get("dimension")
             f.mediaurls = f.mediacontent["data"]["durl"][0]["url"]
             f.mediatype = "video"
-            f.mediaraws = True
+            f.mediaraws = (
+                False
+                if video_result.get("data").get("durl")[0].get("size")
+                < 1024 * 1024 * 20
+                else True
+            )
             return video_result
 
     for item in [64, 32, 16]:

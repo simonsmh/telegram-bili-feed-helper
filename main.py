@@ -7,6 +7,7 @@ import time
 from functools import lru_cache
 from io import BytesIO
 from typing import IO, Optional, Union
+from urllib.parse import urlencode
 from uuid import uuid4
 
 import httpx
@@ -63,6 +64,23 @@ def origin_link(content: str) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def referer_url(url, referer):
+    if not referer:
+        return url
+    params = {
+        "url": url,
+        "referer": referer,
+    }
+    final = f"https://referer.simonsmh.workers.dev/?{urlencode(params)}"
+    logger.debug(final)
+    return final
+
+
+async def get_description(context: ContextTypes.DEFAULT_TYPE):
+    bot_me = await context.bot.get_me()
+    return f"欢迎使用 @{bot_me.username} 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组自动匹配消息。\nInline 模式限制: 只可发单张图，消耗设备流量，安全性低\n群组模式限制: 图片小于10M，视频小于50M，通过 Bot 上传速度较慢"
 
 
 @lru_cache(maxsize=16)
@@ -186,6 +204,8 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     media = [
                         i if ".gif" in i else i + "@1280w.jpg" for i in f.mediaurls
                     ]
+                elif f.mediatype == "video":
+                    media = [referer_url(f.mediaurls[0], f.url)]
                 else:
                     media = f.mediaurls
             if f.mediatype == "video":
@@ -402,10 +422,10 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         InlineQueryResultArticle(
             id=str(uuid4()),
             title="帮助",
-            description="将 Bot 添加到群组可以自动匹配消息, Inline 模式只可发单张图。",
+            description="将 Bot 添加到群组可以自动匹配消息, 请注意 Inline 模式存在限制: 只可发单张图，消耗设备流量。",
             reply_markup=sourcecodemarkup,
             input_message_content=InputTextMessageContent(
-                "欢迎使用 @bilifeedbot 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组自动匹配消息。"
+                await get_description(context)
             ),
         )
     ]
@@ -461,7 +481,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                             reply_markup=origin_link(f.url),
                             thumbnail_url=f.mediathumb,
-                            video_url=f.mediaurls[0],
+                            video_url=referer_url(f.mediaurls[0], f.url),
                             video_duration=f.mediaduration,
                             video_width=f.mediadimention["height"]
                             if f.mediadimention["rotate"]
@@ -471,7 +491,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             else f.mediadimention["height"],
                         )
                     ]
-                if f.mediatype == "audio":
+                elif f.mediatype == "audio":
                     results = [
                         InlineQueryResultAudio(
                             id=str(uuid4()),
@@ -508,7 +528,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                         )
                         for img in f.mediaurls
                     ]
-                    results.extend(helpmsg)  # type: ignore
             await inline_query.answer(results)
 
         try:
@@ -523,9 +542,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
     if message is None:
         return
-    bot_me = await context.bot.get_me()
     await message.reply_text(
-        f"欢迎使用 @{bot_me.username} 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组自动匹配消息。",
+        await get_description(context),
         reply_markup=sourcecodemarkup,
     )
 
