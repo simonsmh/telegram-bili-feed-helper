@@ -349,7 +349,8 @@ def __opus_handle_major(f: opus, major: dict):
         majorcontent = __list_dicts_to_dict(major[target]["item"]["modules"])
         f.forward_user = majorcontent["module_author"]["user"]["name"]
         f.forward_uid = majorcontent["module_author"]["user"]["mid"]
-        f.forward_content = __opus_handle_desc_text(majorcontent["module_desc"])
+        if majorcontent.get("module_desc"):
+            f.forward_content = __opus_handle_desc_text(majorcontent["module_desc"])
         if not f.mediatype and majorcontent.get("module_dynamic"):
             __opus_handle_major(f, majorcontent["module_dynamic"])
     elif major["type"] == "MDL_DYN_TYPE_DRAW":
@@ -416,7 +417,8 @@ async def opus_parser(client: httpx.AsyncClient, url: str):
     detailcontent = __list_dicts_to_dict(f.detailcontent["item"]["modules"])
     f.user = detailcontent["module_author"]["user"]["name"]
     f.uid = detailcontent["module_author"]["user"]["mid"]
-    f.content = __opus_handle_desc_text(detailcontent["module_desc"])
+    if detailcontent.get("module_desc"):
+        f.content = __opus_handle_desc_text(detailcontent["module_desc"])
     if detailcontent.get("module_dynamic"):
         __opus_handle_major(f, detailcontent["module_dynamic"])
     f.replycontent = await reply_parser(client, f.rid, f.reply_type)
