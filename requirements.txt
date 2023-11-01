@@ -1,8 +1,8 @@
+aiohttp==3.9.0b0
 aiomysql
 aiosqlite
 asyncpg
 beautifulsoup4
-bilibili-api-python
 httpx[http2]
 loguru
 lxml
@@ -11,3 +11,5 @@ python-telegram-bot[all]>=20
 telegraph[aio]
 tortoise-orm[accel]
 wand
+starlette
+uvicorn

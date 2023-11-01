@@ -7,7 +7,6 @@ name = "pypi"
 aiosqlite = "*"
 asyncpg = "*"
 beautifulsoup4 = "*"
-bilibili-api-python = "*"
 lxml = "*"
 Pillow = "*"
 loguru = "*"
@@ -17,6 +16,8 @@ httpx = {extras = ["http2"], version = "*"}
 python-telegram-bot = {version = ">=20", extras = ["all"]}
 tortoise-orm = {extras = ["accel"], version = "*"}
 telegraph = {extras = ["aio"], version = "*"}
+starlette = "*"
+uvicorn = "*"
 
 [dev-packages]
 black = "*"
