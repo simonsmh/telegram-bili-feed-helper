@@ -811,30 +811,24 @@ async def feed_parser(client: httpx.AsyncClient, url: str):
     r = await client.get(url)
     url = str(r.url)
     logger.debug(f"URL: {url}")
-    # API link
-    if re.search(r"api\..*\.bilibili", url):
-        pass
-    # blackboard link
-    elif "blackboard" in url:
-        pass
-    # user space link
-    elif "space" in url:
-        pass
-    # live image
-    elif "live" in url:
-        return await live_parser(client, url)
-    # au audio
-    elif "audio" in url:
-        return await audio_parser(client, url)
+    # main video
+    if re.search(r"video|bangumi/play|festival", url):
+        return await video_parser(client, url)
     # au audio
     elif "read" in url:
         return await read_parser(client, url)
-    # main video
-    elif re.search(r"video|bangumi/play|festival", url):
-        return await video_parser(client, url)
+    # au audio
+    elif "audio" in url:
+        return await audio_parser(client, url)
+    # live image
+    elif "live" in url:
+        return await live_parser(client, url)
     # dynamic
     elif re.search(r"[th]\.|dynamic|opus", url):
         return await opus_parser(client, url)
+    # API link blackboard link user space link
+    if re.search(r"api\..*\.bilibili|blackboard|space\.bilibili", url):
+        pass
     raise ParserException("URL错误", url)
 
 

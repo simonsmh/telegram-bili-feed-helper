@@ -55,6 +55,8 @@ sourcecodemarkup = InlineKeyboardMarkup(
     ]
 )
 
+client = httpx.AsyncClient(headers=headers, http2=True, timeout=60, verify=False)
+
 
 def origin_link(content: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -578,24 +580,7 @@ async def post_shutdown(application: Application):
     await client.aclose()
 
 
-if __name__ == "__main__":
-    if os.environ.get("TOKEN"):
-        TOKEN = os.environ["TOKEN"]
-    elif len(sys.argv) >= 2:
-        TOKEN = sys.argv[1]
-    else:
-        logger.error(f"Need TOKEN.")
-        sys.exit(1)
-    client = httpx.AsyncClient(headers=headers, http2=True, timeout=60, verify=False)
-    application = (
-        Application.builder()
-        .token(TOKEN)
-        .post_init(post_init)
-        .post_shutdown(post_shutdown)
-        .read_timeout(60)
-        .write_timeout(60)
-        .build()
-    )
+def add_handler(application: Application):
     application.add_handler(
         CommandHandler("start", start, filters=filters.ChatType.PRIVATE)
     )
@@ -617,6 +602,26 @@ if __name__ == "__main__":
         )
     )
     application.add_handler(InlineQueryHandler(inlineparse))
+
+
+if __name__ == "__main__":
+    if os.environ.get("TOKEN"):
+        TOKEN = os.environ["TOKEN"]
+    elif len(sys.argv) >= 2:
+        TOKEN = sys.argv[1]
+    else:
+        logger.error(f"Need TOKEN.")
+        sys.exit(1)
+    application = (
+        Application.builder()
+        .token(TOKEN)
+        .post_init(post_init)
+        .post_shutdown(post_shutdown)
+        .read_timeout(60)
+        .write_timeout(60)
+        .build()
+    )
+    add_handler(application)
     if os.environ.get("DOMAIN"):
         application.run_webhook(
             listen="0.0.0.0",
