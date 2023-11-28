@@ -1,4 +1,4 @@
-aiohttp==3.9.0b0
+aiohttp==3.9.0
 aiomysql
 aiosqlite
 asyncpg
