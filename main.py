@@ -138,17 +138,14 @@ async def get_media(
     compression: bool = True,
     size: int = 320,
     filename: Optional[str] = None,
-) -> IO[bytes]: #  | pathlib.Path
+) -> bytes: #  | pathlib.Path
     async with client.stream("GET", url, headers={"Referer": f.url}) as response:
         mediatype = response.headers.get("content-type")
-        media = BytesIO(await response.aread())
+        media = await response.aread()
         if mediatype in ["image/jpeg", "image/png"]:
             if compression:
                 logger.info(f"压缩: {url} {mediatype}")
-                media = compress(media, size)
-        if filename:
-            media.name = filename
-        media.seek(0)
+                media = compress(BytesIO(media), size).getvalue()
         return media
         # else:
             # if not os.path.exists(".tmp"):
