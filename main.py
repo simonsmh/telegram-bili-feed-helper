@@ -26,7 +26,7 @@ from telegram import (
     MessageEntity,
     Update,
 )
-from telegram.constants import ChatAction, ParseMode, MessageLimit
+from telegram.constants import ChatAction, MessageLimit, ParseMode
 from telegram.error import BadRequest, RetryAfter, TimedOut
 from telegram.ext import (
     Application,
@@ -39,7 +39,7 @@ from telegram.ext import (
 
 from biliparser import biliparser, feed
 from database import cache_clear, db_close, db_init, db_status
-from utils import compress, escape_markdown, headers, logger
+from utils import LOCAL_MODE, compress, escape_markdown, headers, logger
 
 regex = r"(?i)[\w\.]*?(?:bilibili\.com|(?:b23|acg)\.tv)\S+"
 
@@ -619,6 +619,11 @@ if __name__ == "__main__":
         .post_shutdown(post_shutdown)
         .read_timeout(60)
         .write_timeout(60)
+        .base_url(os.environ.get("API_BASE_URL", "https://api.telegram.org/bot"))
+        .base_file_url(
+            os.environ.get("API_BASE_FILE_URL", "https://api.telegram.org/file/bot")
+        )
+        .local_mode(bool(LOCAL_MODE))
         .build()
     )
     add_handler(application)

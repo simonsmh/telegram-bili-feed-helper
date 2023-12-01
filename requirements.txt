@@ -1,4 +1,3 @@
-aiohttp==3.9.0b0
 aiomysql
 aiosqlite
 asyncpg
@@ -7,7 +6,7 @@ httpx[http2]
 loguru
 lxml
 pillow
-python-telegram-bot[all]>=20
+python-telegram-bot[all]
 telegraph[aio]
 tortoise-orm[accel]
 wand

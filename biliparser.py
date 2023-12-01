@@ -6,7 +6,6 @@ from functools import lru_cache, reduce
 from io import BytesIO
 
 import httpx
-
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 from telegram.constants import FileSizeLimit
@@ -24,7 +23,7 @@ from database import (
     reply_cache,
     video_cache,
 )
-from utils import BILI_API, compress, headers, logger
+from utils import BILI_API, LOCAL_MODE, compress, headers, logger
 
 try:
     from functools import cached_property
@@ -667,7 +666,9 @@ async def video_parser(client: httpx.AsyncClient, url: str):
             and video_result.get("data")
             and video_result.get("data").get("durl")
             and video_result.get("data").get("durl")[0].get("size")
-            < FileSizeLimit.FILESIZE_UPLOAD
+            < FileSizeLimit.FILESIZE_UPLOAD_LOCAL_MODE
+            if LOCAL_MODE
+            else FileSizeLimit.FILESIZE_UPLOAD
         ):
             f.mediacontent = video_result
             f.mediathumb = detail.get("pic")
@@ -678,7 +679,11 @@ async def video_parser(client: httpx.AsyncClient, url: str):
             f.mediaraws = (
                 False
                 if video_result.get("data").get("durl")[0].get("size")
-                < FileSizeLimit.FILESIZE_DOWNLOAD
+                < (
+                    FileSizeLimit.FILESIZE_DOWNLOAD_LOCAL_MODE
+                    if LOCAL_MODE
+                    else FileSizeLimit.FILESIZE_DOWNLOAD
+                )
                 else True
             )
             return video_result

@@ -38,6 +38,8 @@ headers = {
 
 BILI_API = os.environ.get("BILI_API", "https://api.bilibili.com")
 
+LOCAL_MODE = os.environ.get("LOCAL_MODE", False)
+
 
 def escape_markdown(text):
     return (
