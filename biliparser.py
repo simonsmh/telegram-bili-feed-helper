@@ -1,6 +1,7 @@
 import asyncio
 import html
 import json
+import os
 import re
 from functools import lru_cache, reduce
 from io import BytesIO
@@ -666,7 +667,9 @@ async def video_parser(client: httpx.AsyncClient, url: str):
             and video_result.get("data")
             and video_result.get("data").get("durl")
             and video_result.get("data").get("durl")[0].get("size")
-            < FileSizeLimit.FILESIZE_UPLOAD_LOCAL_MODE
+            < os.environ.get(
+                "VIDEO_SIZE_LIMIT", FileSizeLimit.FILESIZE_UPLOAD_LOCAL_MODE
+            )
             if LOCAL_MODE
             else FileSizeLimit.FILESIZE_UPLOAD
         ):
