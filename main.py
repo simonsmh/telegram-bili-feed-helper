@@ -138,28 +138,28 @@ async def get_media(
     compression: bool = True,
     size: int = 320,
     filename: Optional[str] = None,
-) -> IO[bytes] | pathlib.Path:
+) -> IO[bytes]: #  | pathlib.Path
     async with client.stream("GET", url, headers={"Referer": f.url}) as response:
         mediatype = response.headers.get("content-type")
+        media = BytesIO(await response.aread())
         if mediatype in ["image/jpeg", "image/png"]:
-            media = BytesIO(await response.aread())
             if compression:
                 logger.info(f"压缩: {url} {mediatype}")
                 media = compress(media, size)
-            if filename:
-                media.name = filename
-            media.seek(0)
-            return media
-        else:
-            if not os.path.exists(".tmp"):
-                os.mkdir(".tmp")
-            if not filename:
-                filename = f"{time.time()}.mp4"
-            with open(f".tmp/{filename}", "wb") as file:
-                async for chunk in response.aiter_bytes():
-                    file.write(chunk)
-            media = pathlib.Path(os.path.abspath(f".tmp/{filename}"))
-            return media
+        if filename:
+            media.name = filename
+        media.seek(0)
+        return media
+        # else:
+            # if not os.path.exists(".tmp"):
+            #     os.mkdir(".tmp")
+            # if not filename:
+            #     filename = f"{time.time()}.mp4"
+            # with open(f".tmp/{filename}", "wb") as file:
+            #     async for chunk in response.aiter_bytes():
+            #         file.write(chunk)
+            # media = pathlib.Path(os.path.abspath(f".tmp/{filename}"))
+            # return media
 
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
