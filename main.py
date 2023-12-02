@@ -3,10 +3,10 @@ import os
 import pathlib
 import re
 import sys
-import time
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from io import BytesIO
-from typing import IO, Optional, Union
+from typing import Optional, Union
 from urllib.parse import urlencode
 from uuid import uuid4
 
@@ -56,6 +56,9 @@ sourcecodemarkup = InlineKeyboardMarkup(
 )
 
 client = httpx.AsyncClient(headers=headers, http2=True, timeout=60, verify=False)
+excutor = ThreadPoolExecutor(
+    max_workers=int(os.environ["POOL_SIZE"]) if os.environ.get("POOL_SIZE") else None
+)
 
 
 def origin_link(content: str) -> InlineKeyboardMarkup:
@@ -138,7 +141,7 @@ async def get_media(
     compression: bool = True,
     size: int = 320,
     filename: Optional[str] = None,
-) -> bytes: #  | pathlib.Path
+) -> bytes:  #  | pathlib.Path
     async with client.stream("GET", referer_url(url, f.url)) as response:
         mediatype = response.headers.get("content-type")
         media = await response.aread()
@@ -148,15 +151,15 @@ async def get_media(
                 media = compress(BytesIO(media), size).getvalue()
         return media
         # else:
-            # if not os.path.exists(".tmp"):
-            #     os.mkdir(".tmp")
-            # if not filename:
-            #     filename = f"{time.time()}.mp4"
-            # with open(f".tmp/{filename}", "wb") as file:
-            #     async for chunk in response.aiter_bytes():
-            #         file.write(chunk)
-            # media = pathlib.Path(os.path.abspath(f".tmp/{filename}"))
-            # return media
+        #     if not os.path.exists(".tmp"):
+        #         os.mkdir(".tmp")
+        #     if not filename:
+        #         filename = f"{time.time()}.mp4"
+        #     with open(f".tmp/{filename}", "wb") as file:
+        #         async for chunk in response.aiter_bytes():
+        #             file.write(chunk)
+        #     media = pathlib.Path(os.path.abspath(f".tmp/{filename}"))
+        #     return media
 
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -412,6 +415,18 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     os.remove(item)
 
 
+async def run_in_thread_worker_parse(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    excutor.submit(parse, update, context)
+
+
+async def run_in_thread_worker_fetch(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    excutor.submit(fetch, update, context)
+
+
 async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     inline_query = update.inline_query
     if inline_query is None:
@@ -573,6 +588,7 @@ async def post_init(application: Application):
 
 
 async def post_shutdown(application: Application):
+    excutor.shutdown()
     await db_close()
     await client.aclose()
 
@@ -587,8 +603,8 @@ def add_handler(application: Application):
     application.add_handler(
         CommandHandler("clear", clear_cache, filters=filters.ChatType.PRIVATE)
     )
-    application.add_handler(CommandHandler("file", fetch))
-    application.add_handler(CommandHandler("parse", parse))
+    application.add_handler(CommandHandler("file", run_in_thread_worker_fetch))
+    application.add_handler(CommandHandler("parse", run_in_thread_worker_parse))
     application.add_handler(
         MessageHandler(
             filters.Entity(MessageEntity.URL)
