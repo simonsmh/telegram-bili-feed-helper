@@ -3,7 +3,7 @@ import os
 import pathlib
 import re
 import sys
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from functools import lru_cache
 from io import BytesIO
 from typing import Optional, Union
@@ -56,7 +56,7 @@ sourcecodemarkup = InlineKeyboardMarkup(
 )
 
 client = httpx.AsyncClient(headers=headers, http2=True, timeout=60, verify=False)
-excutor = ThreadPoolExecutor(
+excutor = ProcessPoolExecutor(
     max_workers=int(os.environ["POOL_SIZE"]) if os.environ.get("POOL_SIZE") else None
 )
 
@@ -415,13 +415,13 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     os.remove(item)
 
 
-async def run_in_thread_worker_parse(
+async def run_in_worker_parse(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
     excutor.submit(parse, update, context)
 
 
-async def run_in_thread_worker_fetch(
+async def run_in_worker_fetch(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
     excutor.submit(fetch, update, context)
@@ -603,8 +603,8 @@ def add_handler(application: Application):
     application.add_handler(
         CommandHandler("clear", clear_cache, filters=filters.ChatType.PRIVATE)
     )
-    application.add_handler(CommandHandler("file", run_in_thread_worker_fetch))
-    application.add_handler(CommandHandler("parse", run_in_thread_worker_parse))
+    application.add_handler(CommandHandler("file", run_in_worker_fetch))
+    application.add_handler(CommandHandler("parse", run_in_worker_parse))
     application.add_handler(
         MessageHandler(
             filters.Entity(MessageEntity.URL)
