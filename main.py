@@ -55,7 +55,6 @@ sourcecodemarkup = InlineKeyboardMarkup(
     ]
 )
 
-client = httpx.AsyncClient(headers=headers, http2=True, timeout=60, verify=False)
 excutor = ProcessPoolExecutor(
     max_workers=int(os.environ["POOL_SIZE"]) if os.environ.get("POOL_SIZE") else None
 )
@@ -136,30 +135,20 @@ def captions(
 
 
 async def get_media(
+    client: httpx.AsyncClient,
     f: feed,
     url: str,
     compression: bool = True,
     size: int = 320,
-    filename: Optional[str] = None,
 ) -> bytes:  #  | pathlib.Path
-    async with client.stream("GET", referer_url(url, f.url)) as response:
-        mediatype = response.headers.get("content-type")
-        media = await response.aread()
-        if mediatype in ["image/jpeg", "image/png"]:
-            if compression:
-                logger.info(f"压缩: {url} {mediatype}")
-                media = compress(BytesIO(media), size).getvalue()
-        return media
-        # else:
-        #     if not os.path.exists(".tmp"):
-        #         os.mkdir(".tmp")
-        #     if not filename:
-        #         filename = f"{time.time()}.mp4"
-        #     with open(f".tmp/{filename}", "wb") as file:
-        #         async for chunk in response.aiter_bytes():
-        #             file.write(chunk)
-        #     media = pathlib.Path(os.path.abspath(f".tmp/{filename}"))
-        #     return media
+    response = await client.get(referer_url(url, f.url), timeout=60)
+    mediatype = response.headers.get("content-type")
+    media = await response.aread()
+    if mediatype in ["image/jpeg", "image/png"]:
+        if compression:
+            logger.info(f"压缩: {url} {mediatype}")
+            media = compress(BytesIO(media), size).getvalue()
+    return media
 
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -191,14 +180,14 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 reply_markup=origin_link(f.url),
             )
         else:
+            client = httpx.AsyncClient()
             mediathumb = (
-                await get_media(f, f.mediathumb, size=320) if f.mediathumb else None
+                await get_media(client, f, f.mediathumb, size=320)
+                if f.mediathumb
+                else None
             )
             if f.mediaraws:
-                tasks = [
-                    get_media(f, img, size=1280, filename=filename)
-                    for img, filename in zip(f.mediaurls, f.mediafilename)
-                ]
+                tasks = [get_media(client, f, img, size=1280) for img in f.mediaurls]
                 media = await asyncio.gather(*tasks)
                 logger.info(f"上传中: {f.url}")
             else:
@@ -221,6 +210,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     thumbnail=mediathumb,
                     duration=f.mediaduration,
                     write_timeout=600,
+                    filename=f.mediafilename[0],
                     width=f.mediadimention["height"]
                     if f.mediadimention["rotate"]
                     else f.mediadimention["width"],
@@ -240,6 +230,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     thumbnail=mediathumb,
                     title=f.mediatitle,
                     write_timeout=600,
+                    filename=f.mediafilename[0],
                 )
             elif len(f.mediaurls) == 1:
                 if ".gif" in f.mediaurls[0]:
@@ -250,6 +241,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         allow_sending_without_reply=True,
                         reply_markup=origin_link(f.url),
                         write_timeout=600,
+                        filename=f.mediafilename[0],
                     )
                 else:
                     await message.reply_photo(
@@ -259,6 +251,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         allow_sending_without_reply=True,
                         reply_markup=origin_link(f.url),
                         write_timeout=600,
+                        filename=f.mediafilename[0],
                     )
             else:
                 medias = [
@@ -266,12 +259,14 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         img,
                         caption=captions(f, fallback, True),
                         parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                        filename=f.mediafilename[0],
                     )
                     if ".gif" in mediaurl
                     else InputMediaPhoto(
                         img,
                         caption=captions(f, fallback, True),
                         parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                        filename=f.mediafilename[0],
                     )
                     for img, mediaurl in zip(media, f.mediaurls)
                 ]
@@ -286,6 +281,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     allow_sending_without_reply=True,
                     reply_markup=origin_link(f.url),
                 )
+            await client.aclose()
             for item in [mediathumb, *media]:
                 if isinstance(item, pathlib.Path):
                     os.remove(item)
@@ -362,14 +358,17 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             continue
         if f.mediaurls:
+            client = httpx.AsyncClient()
             tasks = [
-                get_media(f, img, filename=filename, compression=False)
-                for img, filename in zip(f.mediaurls, f.mediafilename)
+                get_media(client, f, img, compression=False) for img in f.mediaurls
             ]
             medias = await asyncio.gather(*tasks)
             logger.info(f"上传中: {f.url}")
             if len(medias) > 1:
-                medias = [InputMediaDocument(media) for media in medias]
+                medias = [
+                    InputMediaDocument(media, filename=filename)
+                    for media, filename in zip(medias, f.mediafilename)
+                ]
                 await message.reply_media_group(
                     medias,
                     allow_sending_without_reply=True,
@@ -399,6 +398,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         allow_sending_without_reply=True,
                         reply_markup=origin_link(f.url),
                         write_timeout=600,
+                        filename=f.mediafilename[0],
                     )
                 except BadRequest as err:
                     logger.exception(err)
@@ -409,21 +409,19 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         allow_sending_without_reply=True,
                         reply_markup=origin_link(f.url),
                         write_timeout=600,
+                        filename=f.mediafilename[0],
                     )
+            await client.aclose()
             for item in medias:
                 if isinstance(item, pathlib.Path):
                     os.remove(item)
 
 
-async def run_in_worker_parse(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-):
+async def run_in_worker_parse(update: Update, context: ContextTypes.DEFAULT_TYPE):
     excutor.submit(parse, update, context)
 
 
-async def run_in_worker_fetch(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-):
+async def run_in_worker_fetch(update: Update, context: ContextTypes.DEFAULT_TYPE):
     excutor.submit(fetch, update, context)
 
 
@@ -590,7 +588,6 @@ async def post_init(application: Application):
 async def post_shutdown(application: Application):
     excutor.shutdown()
     await db_close()
-    await client.aclose()
 
 
 def add_handler(application: Application):
