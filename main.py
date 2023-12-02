@@ -139,7 +139,7 @@ async def get_media(
     size: int = 320,
     filename: Optional[str] = None,
 ) -> bytes: #  | pathlib.Path
-    async with client.stream("GET", url, headers={"Referer": f.url}) as response:
+    async with client.stream("GET", referer_url(url, f.url)) as response:
         mediatype = response.headers.get("content-type")
         media = await response.aread()
         if mediatype in ["image/jpeg", "image/png"]:
