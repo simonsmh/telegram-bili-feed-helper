@@ -4,7 +4,7 @@ import pathlib
 import re
 import sys
 import time
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from io import BytesIO
 from typing import Union
@@ -56,7 +56,7 @@ sourcecodemarkup = InlineKeyboardMarkup(
     ]
 )
 
-excutor = ProcessPoolExecutor(
+excutor = ThreadPoolExecutor(
     max_workers=int(os.environ["POOL_SIZE"]) if os.environ.get("POOL_SIZE") else None
 )
 
