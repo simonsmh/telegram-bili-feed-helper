@@ -3,10 +3,11 @@ import os
 import pathlib
 import re
 import sys
+import time
 from concurrent.futures import ProcessPoolExecutor
 from functools import lru_cache
 from io import BytesIO
-from typing import Optional, Union
+from typing import Union
 from urllib.parse import urlencode
 from uuid import uuid4
 
@@ -140,15 +141,24 @@ async def get_media(
     url: str,
     compression: bool = True,
     size: int = 320,
-) -> bytes:  #  | pathlib.Path
-    response = await client.get(referer_url(url, f.url), timeout=60)
-    mediatype = response.headers.get("content-type")
-    media = await response.aread()
-    if mediatype in ["image/jpeg", "image/png"]:
-        if compression:
-            logger.info(f"压缩: {url} {mediatype}")
-            media = compress(BytesIO(media), size).getvalue()
-    return media
+) -> bytes | pathlib.Path:
+    async with client.stream("GET", referer_url(url, f.url)) as response:
+        response = await client.get(referer_url(url, f.url), timeout=60)
+        mediatype = response.headers.get("content-type")
+        if mediatype in ["image/jpeg", "image/png"]:
+            media = await response.aread()
+            if compression:
+                logger.info(f"压缩: {url} {mediatype}")
+                media = compress(BytesIO(media), size).getvalue()
+        else:
+            if not os.path.exists(".tmp"):
+                os.mkdir(".tmp")
+            filename = f"{time.time()}.mp4"
+            media = pathlib.Path(os.path.abspath(f".tmp/{filename}"))
+            with open(f".tmp/{filename}", "wb") as file:
+                async for chunk in response.aiter_bytes():
+                    file.write(chunk)
+        return media
 
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
