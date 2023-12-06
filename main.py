@@ -142,8 +142,7 @@ async def get_media(
     compression: bool = True,
     size: int = 320,
 ) -> bytes | pathlib.Path:
-    async with client.stream("GET", referer_url(url, f.url)) as response:
-        response = await client.get(referer_url(url, f.url), timeout=60)
+    async with client.stream("GET", referer_url(url, f.url), timeout=60) as response:
         mediatype = response.headers.get("content-type")
         if mediatype in ["image/jpeg", "image/png"]:
             media = await response.aread()
