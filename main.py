@@ -28,7 +28,7 @@ from telegram import (
     Update,
 )
 from telegram.constants import ChatAction, MessageLimit, ParseMode
-from telegram.error import BadRequest, RetryAfter, TimedOut
+from telegram.error import BadRequest, NetworkError, RetryAfter
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -59,6 +59,8 @@ sourcecodemarkup = InlineKeyboardMarkup(
 excutor = ThreadPoolExecutor(
     max_workers=int(os.environ["POOL_SIZE"]) if os.environ.get("POOL_SIZE") else None
 )
+
+MAX_RETRY = 3
 
 
 def origin_link(content: str) -> InlineKeyboardMarkup:
@@ -307,15 +309,10 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 )
             continue
         markdown_fallback = False
-        for i in range(1, 5):
+        for i in range(1, MAX_RETRY):
             try:
                 await parse_send(f, markdown_fallback)
-            except TimedOut as err:
-                logger.exception(err)
-                logger.info(f"{err} 第{i}次异常->下载后上传: {f.url}")
-                f.mediaraws = True
             except BadRequest as err:
-                logger.exception(err)
                 if "Not enough rights to send" in err.message:
                     await message.chat.leave()
                     logger.warning(
@@ -323,20 +320,16 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     )
                     break
                 elif "Can't parse" in err.message:
-                    logger.info(f"{err} 第{i}次异常->去除Markdown: {f.url}")
+                    logger.error(f"{err} 第{i}次异常->去除Markdown: {f.url}")
                     markdown_fallback = True
                 else:
-                    logger.info(f"{err} 第{i}次异常->下载后上传: {f.url}")
+                    logger.error(f"{err} 第{i}次异常->下载后上传: {f.url}")
                     f.mediaraws = True
             except RetryAfter as err:
-                await asyncio.sleep(2**i)
-            except httpx.RequestError as err:
-                logger.exception(err)
-                logger.info(f"{err} 第{i}次异常->重试: {f.url}")
-            except httpx.HTTPStatusError as err:
-                logger.exception(err)
-                logger.info(f"{err} 第{i}次异常->跳过： {f.url}")
-                continue
+                await asyncio.sleep(err.retry_after)
+                logger.error(f"{err} 第{i}次异常->限流: {f.url}")
+            except httpx.HTTPError or NetworkError as err:
+                logger.error(f"{err} 第{i}次异常->服务错误: {f.url}")
             else:
                 break
 
@@ -559,6 +552,10 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await answer_results(f, True)
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.exception(context.error)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
     if message is None:
@@ -621,6 +618,7 @@ def add_handler(application: Application):
         )
     )
     application.add_handler(InlineQueryHandler(inlineparse))
+    application.add_error_handler(error_handler)
 
 
 if __name__ == "__main__":
