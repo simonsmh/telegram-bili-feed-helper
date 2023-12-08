@@ -328,7 +328,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             except RetryAfter as err:
                 await asyncio.sleep(err.retry_after)
                 logger.error(f"{err} 第{i}次异常->限流: {f.url}")
-            except httpx.HTTPError or NetworkError as err:
+            except NetworkError as err:
                 logger.error(f"{err} 第{i}次异常->服务错误: {f.url}")
             else:
                 break
