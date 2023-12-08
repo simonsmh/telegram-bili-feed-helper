@@ -60,7 +60,7 @@ excutor = ThreadPoolExecutor(
     max_workers=int(os.environ["POOL_SIZE"]) if os.environ.get("POOL_SIZE") else None
 )
 
-MAX_RETRY = 3
+MAX_RETRY = 4
 
 
 def origin_link(content: str) -> InlineKeyboardMarkup:
