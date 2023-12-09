@@ -312,18 +312,18 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     fs = await biliparser(urls)
     for num, f in enumerate(fs):
-        if isinstance(f, Exception):
-            logger.warning(f"解析错误! {f}")
-            if data.startswith("/parse"):
-                await message.reply_text(
-                    captions(f),
-                    allow_sending_without_reply=True,
-                    disable_notification=True,
-                    reply_markup=origin_link(urls[num]),
-                )
-            continue
         markdown_fallback = False
         for i in range(1, MAX_RETRY):
+            if isinstance(f, Exception):
+                logger.warning(f"解析错误! {f}")
+                if data.startswith("/parse"):
+                    await message.reply_text(
+                        captions(f),
+                        allow_sending_without_reply=True,
+                        disable_notification=True,
+                        reply_markup=origin_link(urls[num]),
+                    )
+                continue
             try:
                 await parse_send(f, markdown_fallback)
             except BadRequest as err:
@@ -339,13 +339,20 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 else:
                     logger.error(f"{err} 第{i}次异常->下载后上传: {f.url}")
                     f.mediaraws = True
+                continue
             except RetryAfter as err:
                 await asyncio.sleep(err.retry_after)
                 logger.error(f"{err} 第{i}次异常->限流: {f.url}")
+                continue
             except NetworkError as err:
                 logger.error(f"{err} 第{i}次异常->服务错误: {f.url}")
+            except httpx.HTTPError as err:
+                logger.error(f"{err} 第{i}次异常->请求异常: {f.url}")
+            except Exception as err:
+                logger.exception(err)
             else:
                 break
+            f = (await biliparser(f.url))[0]  # 重试获取该条链接信息
 
 
 async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
