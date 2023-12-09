@@ -145,7 +145,9 @@ async def get_media(
     size: int = 320,
     media_check_ignore: bool = False,
 ) -> bytes | pathlib.Path:
-    async with client.stream("GET", referer_url(url, f.url), timeout=60) as response:
+    async with client.stream("GET", url, headers={"Referer": f.url}) as response:
+        if response.status_code != 200:
+            raise NetworkError(f"媒体文件获取错误: {response.status_code} {url}->{f.url}")
         mediatype = response.headers.get("content-type").split("/")
         if mediatype[0] in ["video", "audio"]:
             if not os.path.exists(".tmp"):
