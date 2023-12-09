@@ -708,7 +708,7 @@ async def read_parser(client: httpx.AsyncClient, url: str):
         img.attrs = {"src": src}
         logger.info(f"下载图片: {src}")
         async with httpx.AsyncClient(
-            headers=headers, http2=True, timeout=None, verify=False
+            headers=headers, http2=True, timeout=60, verify=False, follow_redirects=True
         ) as client:
             r = await client.get(f"https:{src}")
             media = BytesIO(r.read())
@@ -851,7 +851,7 @@ async def biliparser(urls):
     elif isinstance(urls, tuple):
         urls = list(urls)
     async with httpx.AsyncClient(
-        headers=headers, http2=True, timeout=None, verify=False, follow_redirects=True
+        headers=headers, http2=True, timeout=60, verify=False, follow_redirects=True
     ) as client:
         tasks = list(
             feed_parser(

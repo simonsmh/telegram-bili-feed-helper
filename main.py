@@ -188,10 +188,13 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 captions(f, fallback),
                 parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                 allow_sending_without_reply=True,
+                disable_notification=True,
                 reply_markup=origin_link(f.url),
             )
         else:
-            client = httpx.AsyncClient()
+            client = httpx.AsyncClient(
+                http2=True, timeout=60, verify=False, follow_redirects=True
+            )
             mediathumb = (
                 await get_media(client, f, f.mediathumb, size=320)
                 if f.mediathumb
@@ -216,11 +219,12 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     caption=captions(f, fallback, True),
                     parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                     allow_sending_without_reply=True,
+                    disable_notification=True,
                     reply_markup=origin_link(f.url),
                     supports_streaming=True,
                     thumbnail=mediathumb,
                     duration=f.mediaduration,
-                    write_timeout=600,
+                    write_timeout=60,
                     filename=f.mediafilename[0],
                     width=f.mediadimention["height"]
                     if f.mediadimention["rotate"]
@@ -237,10 +241,11 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                     performer=f.user,
                     allow_sending_without_reply=True,
+                    disable_notification=True,
                     reply_markup=origin_link(f.url),
                     thumbnail=mediathumb,
                     title=f.mediatitle,
-                    write_timeout=600,
+                    write_timeout=60,
                     filename=f.mediafilename[0],
                 )
             elif len(f.mediaurls) == 1:
@@ -250,8 +255,9 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         caption=captions(f, fallback, True),
                         parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                         allow_sending_without_reply=True,
+                        disable_notification=True,
                         reply_markup=origin_link(f.url),
-                        write_timeout=600,
+                        write_timeout=60,
                         filename=f.mediafilename[0],
                     )
                 else:
@@ -260,8 +266,9 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         caption=captions(f, fallback, True),
                         parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                         allow_sending_without_reply=True,
+                        disable_notification=True,
                         reply_markup=origin_link(f.url),
-                        write_timeout=600,
+                        write_timeout=60,
                         filename=f.mediafilename[0],
                     )
             else:
@@ -271,6 +278,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         caption=captions(f, fallback, True),
                         parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                         filename=f.mediafilename[0],
+                        supports_streaming=True,
                     )
                     if ".gif" in mediaurl
                     else InputMediaPhoto(
@@ -284,12 +292,14 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 await message.reply_media_group(
                     media=medias,
                     allow_sending_without_reply=True,
-                    write_timeout=600,
+                    disable_notification=True,
+                    write_timeout=60,
                 )
                 await message.reply_text(
                     captions(f, fallback),
                     parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                     allow_sending_without_reply=True,
+                    disable_notification=True,
                     reply_markup=origin_link(f.url),
                 )
             await client.aclose()
@@ -305,6 +315,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 await message.reply_text(
                     captions(f),
                     allow_sending_without_reply=True,
+                    disable_notification=True,
                     reply_markup=origin_link(urls[num]),
                 )
             continue
@@ -356,11 +367,14 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await message.reply_text(
                 captions(f),
                 allow_sending_without_reply=True,
+                disable_notification=True,
                 reply_markup=origin_link(urls[num]),
             )
             continue
         if f.mediaurls:
-            client = httpx.AsyncClient()
+            client = httpx.AsyncClient(
+                http2=True, timeout=60, verify=False, follow_redirects=True
+            )
             tasks = [
                 get_media(client, f, img, compression=False) for img in f.mediaurls
             ]
@@ -374,13 +388,15 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 await message.reply_media_group(
                     medias,
                     allow_sending_without_reply=True,
-                    write_timeout=600,
+                    disable_notification=True,
+                    write_timeout=60,
                 )
                 try:
                     await message.reply_text(
                         captions(f),
                         parse_mode=ParseMode.MARKDOWN_V2,
                         allow_sending_without_reply=True,
+                        disable_notification=True,
                         reply_markup=origin_link(f.url),
                     )
                 except BadRequest as err:
@@ -389,6 +405,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     await message.reply_text(
                         captions(f, True),
                         allow_sending_without_reply=True,
+                        disable_notification=True,
                         reply_markup=origin_link(f.url),
                     )
             else:
@@ -398,8 +415,9 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         caption=captions(f, False, True),
                         parse_mode=ParseMode.MARKDOWN_V2,
                         allow_sending_without_reply=True,
+                        disable_notification=True,
                         reply_markup=origin_link(f.url),
-                        write_timeout=600,
+                        write_timeout=60,
                         filename=f.mediafilename[0],
                     )
                 except BadRequest as err:
@@ -409,8 +427,9 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         document=medias[0],
                         caption=captions(f, True, True),
                         allow_sending_without_reply=True,
+                        disable_notification=True,
                         reply_markup=origin_link(f.url),
-                        write_timeout=600,
+                        write_timeout=60,
                         filename=f.mediafilename[0],
                     )
             await client.aclose()
