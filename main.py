@@ -323,7 +323,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         disable_notification=True,
                         reply_markup=origin_link(urls[num]),
                     )
-                continue
+                break
             try:
                 await parse_send(f, markdown_fallback)
             except BadRequest as err:
