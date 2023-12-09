@@ -146,9 +146,9 @@ async def get_media(
 ) -> bytes | pathlib.Path:
     async with client.stream("GET", referer_url(url, f.url), timeout=60) as response:
         mediatype = response.headers.get("content-type")
-        if mediatype in ["image/jpeg", "image/png"]:
+        if "image" in mediatype:
             media = await response.aread()
-            if compression:
+            if compression and mediatype in ["image/jpeg", "image/png"]:
                 logger.info(f"压缩: {url} {mediatype}")
                 media = compress(BytesIO(media), size).getvalue()
         else:
