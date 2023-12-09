@@ -143,22 +143,25 @@ async def get_media(
     url: str,
     compression: bool = True,
     size: int = 320,
+    media_check_ignore: bool = False,
 ) -> bytes | pathlib.Path:
     async with client.stream("GET", referer_url(url, f.url), timeout=60) as response:
-        mediatype = response.headers.get("content-type")
-        if "image" in mediatype:
-            media = await response.aread()
-            if compression and mediatype in ["image/jpeg", "image/png"]:
-                logger.info(f"压缩: {url} {mediatype}")
-                media = compress(BytesIO(media), size).getvalue()
-        else:
+        mediatype = response.headers.get("content-type").split("/")
+        if mediatype[0] in ["video", "audio"]:
             if not os.path.exists(".tmp"):
                 os.mkdir(".tmp")
-            filename = f"{time.time()}.mp4"
+            filename = f"{time.time()}.{mediatype[1]}"
             media = pathlib.Path(os.path.abspath(f".tmp/{filename}"))
             with open(f".tmp/{filename}", "wb") as file:
                 async for chunk in response.aiter_bytes():
                     file.write(chunk)
+        elif media_check_ignore or mediatype[0] == "image":
+            media = await response.aread()
+            if compression and mediatype[1] in ["jpeg", "png"]:
+                logger.info(f"压缩: {url} {mediatype[1]}")
+                media = compress(BytesIO(media), size).getvalue()
+        else:
+            raise NetworkError(f"媒体文件类型错误: {mediatype} {url}->{f.url}")
         return media
 
 
@@ -376,7 +379,8 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 http2=True, timeout=60, verify=False, follow_redirects=True
             )
             tasks = [
-                get_media(client, f, img, compression=False) for img in f.mediaurls
+                get_media(client, f, img, compression=False, media_check_ignore=True)
+                for img in f.mediaurls
             ]
             medias = await asyncio.gather(*tasks)
             logger.info(f"上传中: {f.url}")
