@@ -708,7 +708,7 @@ async def read_parser(client: httpx.AsyncClient, url: str):
         img.attrs = {"src": src}
         logger.info(f"下载图片: {src}")
         async with httpx.AsyncClient(
-            headers=headers, http2=True, timeout=60, verify=False, follow_redirects=True
+            headers=headers, http2=True, timeout=90, follow_redirects=True
         ) as client:
             r = await client.get(f"https:{src}")
             media = BytesIO(r.read())
@@ -844,14 +844,14 @@ async def feed_parser(client: httpx.AsyncClient, url: str):
     raise ParserException("URL错误", url)
 
 
-async def biliparser(urls):
+async def biliparser(urls) -> list[feed]:
     logger.debug(BILI_API)
     if isinstance(urls, str):
         urls = [urls]
     elif isinstance(urls, tuple):
         urls = list(urls)
     async with httpx.AsyncClient(
-        headers=headers, http2=True, timeout=60, verify=False, follow_redirects=True
+        headers=headers, http2=True, timeout=90, follow_redirects=True
     ) as client:
         tasks = list(
             feed_parser(

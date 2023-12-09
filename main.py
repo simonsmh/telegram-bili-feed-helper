@@ -60,8 +60,6 @@ excutor = ThreadPoolExecutor(
     max_workers=int(os.environ["POOL_SIZE"]) if os.environ.get("POOL_SIZE") else None
 )
 
-MAX_RETRY = 4
-
 
 def origin_link(content: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -198,7 +196,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
         else:
             client = httpx.AsyncClient(
-                http2=True, timeout=60, verify=False, follow_redirects=True
+                http2=True, timeout=90, follow_redirects=True
             )
             mediathumb = (
                 await get_media(client, f, f.mediathumb, size=320)
@@ -315,7 +313,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     fs = await biliparser(urls)
     for num, f in enumerate(fs):
         markdown_fallback = False
-        for i in range(1, MAX_RETRY):
+        for i in range(1, 5):
             if isinstance(f, Exception):
                 logger.warning(f"解析错误! {f}")
                 if data.startswith("/parse"):
@@ -385,7 +383,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             continue
         if f.mediaurls:
             client = httpx.AsyncClient(
-                http2=True, timeout=60, verify=False, follow_redirects=True
+                http2=True, timeout=90, follow_redirects=True
             )
             tasks = [
                 get_media(client, f, img, compression=False, media_check_ignore=True)
