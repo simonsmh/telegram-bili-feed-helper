@@ -686,16 +686,16 @@ async def video_parser(client: httpx.AsyncClient, url: str):
                         return False
                     return True
 
-            url = f.mediacontent["data"]["durl"][0]["url"]
+            url = video_result["data"]["durl"][0]["url"]
             result = await test_url_status_code(url)
-            if not result and f.mediacontent["data"]["durl"][0].get("backup_url", None):
-                url = f.mediacontent["data"]["durl"][0]["backup_url"]
+            if not result and video_result["data"]["durl"][0].get("backup_url", None):
+                url = video_result["data"]["durl"][0]["backup_url"]
                 result = await test_url_status_code(url)
             if result:
                 f.mediacontent = video_result
                 f.mediathumb = detail.get("pic")
                 f.mediaduration = round(
-                    f.mediacontent["data"]["durl"][0]["length"] / 1000
+                    video_result["data"]["durl"][0]["length"] / 1000
                 )
                 f.mediadimention = detail.get("pages")[0].get("dimension")
                 f.mediaurls = url
@@ -710,7 +710,7 @@ async def video_parser(client: httpx.AsyncClient, url: str):
                     )
                     else True
                 )
-                return video_result
+                return True
 
     for item in [64, 32, 16]:
         if await get_video_result(client, f, detail, item):
