@@ -447,14 +447,6 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     os.remove(item)
 
 
-async def run_in_worker_parse(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    excutor.submit(parse, update, context)
-
-
-async def run_in_worker_fetch(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    excutor.submit(fetch, update, context)
-
-
 async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     inline_query = update.inline_query
     if inline_query is None:
@@ -575,9 +567,25 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         try:
             await answer_results(f)
         except BadRequest as err:
-            logger.exception(err)
-            logger.info(f"{err} -> 去除Markdown: {f.url}")
-            await answer_results(f, True)
+            if "query is too old and response timeout expired or query ID is invalid" in err.message:
+                logger.error(f"{err} -> Inline请求超时: {f.url}")
+            elif "Can't parse" in err.message:
+                logger.info(f"{err} -> 去除Markdown: {f.url}")
+                await answer_results(f, True)
+            else:
+                logger.exception(err)
+
+
+async def run_in_worker_parse(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    excutor.submit(parse, update, context)
+
+
+async def run_in_worker_fetch(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    excutor.submit(fetch, update, context)
+
+
+async def run_in_worker_inline(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    excutor.submit(inlineparse, update, context)
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -645,7 +653,7 @@ def add_handler(application: Application):
             parse,
         )
     )
-    application.add_handler(InlineQueryHandler(inlineparse))
+    application.add_handler(InlineQueryHandler(run_in_worker_inline))
     application.add_error_handler(error_handler)
 
 
