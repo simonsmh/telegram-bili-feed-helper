@@ -659,7 +659,7 @@ def add_handler(application: Application):
             block=False,
         )
     )
-    application.add_handler(InlineQueryHandler(run_in_worker_inline, block=False))
+    application.add_handler(InlineQueryHandler(inlineparse, block=False))
     application.add_error_handler(error_handler)
 
 
