@@ -677,23 +677,40 @@ async def video_parser(client: httpx.AsyncClient, url: str):
                 else FileSizeLimit.FILESIZE_UPLOAD
             )
         ):
-            f.mediacontent = video_result
-            f.mediathumb = detail.get("pic")
-            f.mediaduration = round(f.mediacontent["data"]["durl"][0]["length"] / 1000)
-            f.mediadimention = detail.get("pages")[0].get("dimension")
-            f.mediaurls = f.mediacontent["data"]["durl"][0]["url"]
-            f.mediatype = "video"
-            f.mediaraws = (
-                False
-                if video_result.get("data").get("durl")[0].get("size")
-                < (
-                    FileSizeLimit.FILESIZE_DOWNLOAD_LOCAL_MODE
-                    if LOCAL_MODE
-                    else FileSizeLimit.FILESIZE_DOWNLOAD
+
+            async def test_url_status_code(url):
+                header = headers.copy()
+                header["Referer"] = f.url
+                async with client.stream("GET", url, headers=header) as response:
+                    if response.status_code != 200:
+                        return False
+                    return True
+
+            url = f.mediacontent["data"]["durl"][0]["url"]
+            result = await test_url_status_code(url)
+            if not result and f.mediacontent["data"]["durl"][0].get("backup_url", None):
+                url = f.mediacontent["data"]["durl"][0]["backup_url"]
+                result = await test_url_status_code(url)
+            if result:
+                f.mediacontent = video_result
+                f.mediathumb = detail.get("pic")
+                f.mediaduration = round(
+                    f.mediacontent["data"]["durl"][0]["length"] / 1000
                 )
-                else True
-            )
-            return video_result
+                f.mediadimention = detail.get("pages")[0].get("dimension")
+                f.mediaurls = url
+                f.mediatype = "video"
+                f.mediaraws = (
+                    False
+                    if video_result.get("data").get("durl")[0].get("size")
+                    < (
+                        FileSizeLimit.FILESIZE_DOWNLOAD_LOCAL_MODE
+                        if LOCAL_MODE
+                        else FileSizeLimit.FILESIZE_DOWNLOAD
+                    )
+                    else True
+                )
+                return video_result
 
     for item in [64, 32, 16]:
         if await get_video_result(client, f, detail, item):

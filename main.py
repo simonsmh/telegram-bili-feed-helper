@@ -143,7 +143,9 @@ async def get_media(
     size: int = 320,
     media_check_ignore: bool = False,
 ) -> bytes | pathlib.Path:
-    async with client.stream("GET", url, headers={"Referer": f.url}) as response:
+    header = headers.copy()
+    header["Referer"] = f.url
+    async with client.stream("GET", url, headers=header) as response:
         if response.status_code != 200:
             raise NetworkError(f"媒体文件获取错误: {response.status_code} {url}->{f.url}")
         mediatype = response.headers.get("content-type").split("/")
@@ -195,9 +197,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 reply_markup=origin_link(f.url),
             )
         else:
-            client = httpx.AsyncClient(
-                http2=True, timeout=90, follow_redirects=True
-            )
+            client = httpx.AsyncClient(http2=True, timeout=90, follow_redirects=True)
             mediathumb = (
                 await get_media(client, f, f.mediathumb, size=320)
                 if f.mediathumb
@@ -382,9 +382,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             continue
         if f.mediaurls:
-            client = httpx.AsyncClient(
-                http2=True, timeout=90, follow_redirects=True
-            )
+            client = httpx.AsyncClient(http2=True, timeout=90, follow_redirects=True)
             tasks = [
                 get_media(client, f, img, compression=False, media_check_ignore=True)
                 for img in f.mediaurls
