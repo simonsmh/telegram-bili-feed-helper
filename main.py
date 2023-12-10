@@ -567,7 +567,10 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         try:
             await answer_results(f)
         except BadRequest as err:
-            if "query is too old and response timeout expired or query ID is invalid" in err.message:
+            if (
+                "query is too old and response timeout expired or query ID is invalid"
+                in err.message
+            ):
                 logger.error(f"{err} -> Inline请求超时: {f.url}")
             elif "Can't parse" in err.message:
                 logger.info(f"{err} -> 去除Markdown: {f.url}")
@@ -634,16 +637,18 @@ async def post_shutdown(application: Application):
 
 def add_handler(application: Application):
     application.add_handler(
-        CommandHandler("start", start, filters=filters.ChatType.PRIVATE)
+        CommandHandler("start", start, filters=filters.ChatType.PRIVATE, block=False)
     )
     application.add_handler(
-        CommandHandler("status", status, filters=filters.ChatType.PRIVATE)
+        CommandHandler("status", status, filters=filters.ChatType.PRIVATE, block=False)
     )
     application.add_handler(
-        CommandHandler("clear", clear_cache, filters=filters.ChatType.PRIVATE)
+        CommandHandler(
+            "clear", clear_cache, filters=filters.ChatType.PRIVATE, block=False
+        )
     )
-    application.add_handler(CommandHandler("file", run_in_worker_fetch))
-    application.add_handler(CommandHandler("parse", run_in_worker_parse))
+    application.add_handler(CommandHandler("file", run_in_worker_fetch, block=False))
+    application.add_handler(CommandHandler("parse", run_in_worker_parse, block=False))
     application.add_handler(
         MessageHandler(
             filters.Entity(MessageEntity.URL)
@@ -651,9 +656,10 @@ def add_handler(application: Application):
             | filters.Regex(regex)
             | filters.CaptionRegex(regex),
             parse,
+            block=False,
         )
     )
-    application.add_handler(InlineQueryHandler(run_in_worker_inline))
+    application.add_handler(InlineQueryHandler(run_in_worker_inline, block=False))
     application.add_error_handler(error_handler)
 
 
