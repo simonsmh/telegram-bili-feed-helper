@@ -1,5 +1,4 @@
 import asyncio
-import html
 import json
 import os
 import re
@@ -24,30 +23,22 @@ from database import (
     reply_cache,
     video_cache,
 )
-from utils import BILI_API, LOCAL_MODE, compress, headers, logger
+from utils import (
+    BILI_API,
+    LOCAL_MODE,
+    ParserException,
+    compress,
+    escape_markdown,
+    headers,
+    logger,
+)
 
 try:
     from functools import cached_property
 except ImportError:
     cached_property = property
 
-
-def escape_markdown(text):
-    return (
-        re.sub(r"([_*\[\]()~`>\#\+\-=|{}\.!\\])", r"\\\1", html.unescape(text))
-        if text
-        else str()
-    )
-
-
-class ParserException(Exception):
-    def __init__(self, msg, url, res=None):
-        self.msg = msg
-        self.url = url
-        self.res = str(res) if res else None
-
-    def __str__(self):
-        return f"{self.msg}: {self.url} ->\n{self.res}"
+telegraph = Telegraph(access_token=os.environ.get("TELEGRAPH_ACCESS_TOKEN", None))
 
 
 class feed:
@@ -724,20 +715,25 @@ async def read_parser(client: httpx.AsyncClient, url: str):
         src = img.attrs.pop("data-src")
         img.attrs = {"src": src}
         logger.info(f"下载图片: {src}")
-        r = await client.get(f"https:{src}")
-        media = BytesIO(r.read())
-        content_length = int(r.headers.get("content-length"))
-        if content_length > 1024 * 1024 * 5:
-            mediatype = r.headers.get("content-type")
+        async with client.stream("GET", f"https:{src}") as response:
+            if response.status_code != 200:
+                logger.error(f"图片获取错误: {src}")
+                return
+            media = BytesIO(await response.aread())
+            mediatype = response.headers.get("content-type")
             if mediatype in ["image/jpeg", "image/png"]:
+                content_length = int(response.headers.get("content-length"))
                 logger.info(f"图片大小: {content_length} 压缩: {src} {mediatype}")
-                media = compress(media)
-        try:
-            resp = await telegraph.upload_file(media)
-            logger.info(f"图片上传: {resp}")
-            img.attrs["src"] = f"https://telegra.ph{resp[0].get('src')}"
-        except Exception as e:
-            logger.exception(f"图片上传错误: {e}")
+                if content_length > 1024 * 1024 * 5:
+                    media = compress(media, fix_ratio=True)
+                else:
+                    media = compress(media, size=0, fix_ratio=True)
+            try:
+                resp = await telegraph.upload_file(media)
+                logger.info(f"图片上传: {resp}")
+                img.attrs["src"] = f"https://telegra.ph{resp[0].get('src')}"
+            except Exception as e:
+                logger.exception(f"图片上传错误: {e}")
 
     match = re.search(r"bilibili\.com\/read\/(?:cv|mobile\/|mobile\?id=)(\d+)", url)
     if not match:
@@ -773,11 +769,12 @@ async def read_parser(client: httpx.AsyncClient, url: str):
         graphurl = cache.graphurl
     else:
         article_content = cv_content.get("readInfo").get("content")
-        telegraph = Telegraph()
         if not telegraph.get_access_token():
-            await telegraph.create_account(
+            logger.info("creating_account")
+            result = await telegraph.create_account(
                 "bilifeedbot", "bilifeedbot", "https://t.me/bilifeedbot"
             )
+            logger.info(f"Telegraph create_account: {result}")
         try:
             article = json.loads(article_content)
             result = article.get("ops")[0].get("insert").split("\n")

@@ -9,6 +9,3 @@ pillow
 python-telegram-bot[all]
 telegraph[aio]
 tortoise-orm[accel]
-wand
-starlette
-uvicorn
