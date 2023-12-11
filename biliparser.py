@@ -724,23 +724,20 @@ async def read_parser(client: httpx.AsyncClient, url: str):
         src = img.attrs.pop("data-src")
         img.attrs = {"src": src}
         logger.info(f"下载图片: {src}")
-        async with httpx.AsyncClient(
-            headers=headers, http2=True, timeout=90, follow_redirects=True
-        ) as client:
-            r = await client.get(f"https:{src}")
-            media = BytesIO(r.read())
-            content_length = int(r.headers.get("content-length"))
-            if content_length > 1024 * 1024 * 5:
-                mediatype = r.headers.get("content-type")
-                if mediatype in ["image/jpeg", "image/png"]:
-                    logger.info(f"图片大小: {content_length} 压缩: {src} {mediatype}")
-                    media = compress(media)
-            try:
-                resp = await telegraph.upload_file(media)
-                logger.info(f"图片上传: {resp}")
-                img.attrs["src"] = f"https://telegra.ph{resp[0].get('src')}"
-            except Exception as e:
-                logger.exception(f"图片上传错误: {e}")
+        r = await client.get(f"https:{src}")
+        media = BytesIO(r.read())
+        content_length = int(r.headers.get("content-length"))
+        if content_length > 1024 * 1024 * 5:
+            mediatype = r.headers.get("content-type")
+            if mediatype in ["image/jpeg", "image/png"]:
+                logger.info(f"图片大小: {content_length} 压缩: {src} {mediatype}")
+                media = compress(media)
+        try:
+            resp = await telegraph.upload_file(media)
+            logger.info(f"图片上传: {resp}")
+            img.attrs["src"] = f"https://telegra.ph{resp[0].get('src')}"
+        except Exception as e:
+            logger.exception(f"图片上传错误: {e}")
 
     match = re.search(r"bilibili\.com\/read\/(?:cv|mobile\/|mobile\?id=)(\d+)", url)
     if not match:
@@ -852,17 +849,16 @@ async def feed_parser(client: httpx.AsyncClient, url: str):
     # live image
     elif "live" in url:
         return await live_parser(client, url)
-    # dynamic
-    elif re.search(r"[th]\.|dynamic|opus", url):
-        return await opus_parser(client, url)
     # API link blackboard link user space link
-    if re.search(r"api\..*\.bilibili|blackboard|space\.bilibili", url):
+    elif re.search(r"^api|^www\.bilibili\.com/blackboard|^space\.bilibili\.com", url):
         pass
+    # dynamic opus
+    elif re.search(r"^[th]\.|dynamic|opus", url):
+        return await opus_parser(client, url)
     raise ParserException("URL错误", url)
 
 
 async def biliparser(urls) -> list[feed]:
-    logger.debug(BILI_API)
     if isinstance(urls, str):
         urls = [urls]
     elif isinstance(urls, tuple):
