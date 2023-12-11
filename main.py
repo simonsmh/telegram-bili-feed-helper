@@ -56,10 +56,6 @@ sourcecodemarkup = InlineKeyboardMarkup(
     ]
 )
 
-excutor = ThreadPoolExecutor(
-    max_workers=int(os.environ["POOL_SIZE"]) if os.environ.get("POOL_SIZE") else None
-)
-
 
 def origin_link(content: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -448,6 +444,22 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def inline_query_answer(inline_query, msg):
+        try:
+            await inline_query.answer(msg)
+        except BadRequest as err:
+            if (
+                "Query is too old and response timeout expired or query id is invalid"
+                in err.message
+            ):
+                logger.error(f"{err} -> Inline请求超时: {f.url}")
+            else:
+                logger.exception(err)
+                raise err
+        except Exception as err:
+            logger.exception(err)
+            raise err
+
     inline_query = update.inline_query
     if inline_query is None:
         return
@@ -464,11 +476,11 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
     ]
     if not query:
-        await inline_query.answer(helpmsg)
+        await inline_query_answer(inline_query, helpmsg)
         return
     url_re = re.search(regex, query)
     if url_re is None:
-        await inline_query.answer(helpmsg)
+        await inline_query_answer(inline_query, helpmsg)
         return
     url = url_re.group(0)
     logger.info(f"Inline: {url}")
@@ -486,7 +498,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 ),
             )
         ]
-        await inline_query.answer(results)
+        await inline_query_answer(inline_query, results)
     else:
 
         async def answer_results(f: feed, fallback: bool = False):
@@ -562,33 +574,18 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                         )
                         for img in f.mediaurls
                     ]
-            await inline_query.answer(results)
+            await inline_query_answer(inline_query, results)
 
         try:
             await answer_results(f)
         except BadRequest as err:
-            if (
-                "query is too old and response timeout expired or query ID is invalid"
-                in err.message
-            ):
-                logger.error(f"{err} -> Inline请求超时: {f.url}")
-            elif "Can't parse" in err.message:
+            if "Can't parse" in err.message:
                 logger.info(f"{err} -> 去除Markdown: {f.url}")
                 await answer_results(f, True)
             else:
                 logger.exception(err)
-
-
-async def run_in_worker_parse(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    excutor.submit(parse, update, context)
-
-
-async def run_in_worker_fetch(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    excutor.submit(fetch, update, context)
-
-
-async def run_in_worker_inline(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    excutor.submit(inlineparse, update, context)
+        except Exception as err:
+            logger.exception(err)
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -631,24 +628,11 @@ async def post_init(application: Application):
 
 
 async def post_shutdown(application: Application):
-    excutor.shutdown()
     await db_close()
 
 
 def add_handler(application: Application):
-    application.add_handler(
-        CommandHandler("start", start, filters=filters.ChatType.PRIVATE, block=False)
-    )
-    application.add_handler(
-        CommandHandler("status", status, filters=filters.ChatType.PRIVATE, block=False)
-    )
-    application.add_handler(
-        CommandHandler(
-            "clear", clear_cache, filters=filters.ChatType.PRIVATE, block=False
-        )
-    )
-    application.add_handler(CommandHandler("file", run_in_worker_fetch, block=False))
-    application.add_handler(CommandHandler("parse", run_in_worker_parse, block=False))
+    application.add_handler(CommandHandler("start", start, block=False))
     application.add_handler(
         MessageHandler(
             filters.Entity(MessageEntity.URL)
@@ -660,6 +644,16 @@ def add_handler(application: Application):
         )
     )
     application.add_handler(InlineQueryHandler(inlineparse, block=False))
+    application.add_handler(CommandHandler("parse", parse, block=False))
+    application.add_handler(CommandHandler("file", fetch, block=False))
+    application.add_handler(
+        CommandHandler("status", status, filters=filters.ChatType.PRIVATE, block=False)
+    )
+    application.add_handler(
+        CommandHandler(
+            "clear", clear_cache, filters=filters.ChatType.PRIVATE, block=False
+        )
+    )
     application.add_error_handler(error_handler)
 
 
@@ -683,6 +677,11 @@ if __name__ == "__main__":
             os.environ.get("API_BASE_FILE_URL", "https://api.telegram.org/file/bot")
         )
         .local_mode(bool(LOCAL_MODE))
+        .concurrent_updates(
+            int(os.environ.get("SEMAPHORE_SIZE", 256))
+            if os.environ.get("SEMAPHORE_SIZE")
+            else True
+        )
         .build()
     )
     add_handler(application)
