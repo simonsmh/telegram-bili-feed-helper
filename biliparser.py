@@ -847,10 +847,10 @@ async def feed_parser(client: httpx.AsyncClient, url: str):
     elif "live" in url:
         return await live_parser(client, url)
     # API link blackboard link user space link
-    elif re.search(r"^api|^www\.bilibili\.com/blackboard|^space\.bilibili\.com", url):
+    elif re.search(r"^(?:https:\/\/)(?:api|www\.bilibili\.com\/blackboard|space\.bilibili\.com)", url):
         pass
     # dynamic opus
-    elif re.search(r"^[th]\.|dynamic|opus", url):
+    elif re.search(r"^https:\/\/[th]\.|dynamic|opus", url):
         return await opus_parser(client, url)
     raise ParserException("URL错误", url)
 
