@@ -521,8 +521,8 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                         InlineQueryResultVideo(
                             id=str(uuid4()),
                             caption=captions(f, fallback, True),
-                            title=f.user,
-                            description=f.content,
+                            title=f.mediatitle,
+                            description=f"{f.user}: {f.content}",
                             mime_type="video/mp4",
                             parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                             reply_markup=origin_link(f.url),
