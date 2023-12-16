@@ -317,7 +317,6 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         captions(f),
                         allow_sending_without_reply=True,
                         disable_notification=True,
-                        reply_markup=origin_link(urls[num]),
                     )
                 break
             try:
@@ -374,7 +373,6 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 captions(f),
                 allow_sending_without_reply=True,
                 disable_notification=True,
-                reply_markup=origin_link(urls[num]),
             )
             continue
         if f.mediaurls:
@@ -492,7 +490,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 id=str(uuid4()),
                 title="解析错误!",
                 description=f.__str__(),
-                reply_markup=origin_link(url),
                 input_message_content=InputTextMessageContent(
                     captions(f),
                 ),
