@@ -193,118 +193,122 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 reply_markup=origin_link(f.url),
             )
         else:
-            client = httpx.AsyncClient(http2=True, timeout=90, follow_redirects=True)
-            mediathumb = (
-                await get_media(client, f, f.mediathumb, size=320)
-                if f.mediathumb
-                else None
-            )
-            if f.mediaraws:
-                tasks = [get_media(client, f, img, size=1280) for img in f.mediaurls]
-                media = await asyncio.gather(*tasks)
-                logger.info(f"上传中: {f.url}")
-            else:
-                if f.mediatype == "image":
-                    media = [
-                        i if ".gif" in i else i + "@1280w.jpg" for i in f.mediaurls
-                    ]
-                elif f.mediatype == "video":
-                    media = [referer_url(f.mediaurls[0], f.url)]
-                else:
-                    media = f.mediaurls
-            if f.mediatype == "video":
-                await message.reply_video(
-                    media[0],
-                    caption=captions(f, fallback, True),
-                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                    allow_sending_without_reply=True,
-                    disable_notification=True,
-                    reply_markup=origin_link(f.url),
-                    supports_streaming=True,
-                    thumbnail=mediathumb,
-                    duration=f.mediaduration,
-                    write_timeout=60,
-                    filename=f.mediafilename[0],
-                    width=f.mediadimention["height"]
-                    if f.mediadimention["rotate"]
-                    else f.mediadimention["width"],
-                    height=f.mediadimention["width"]
-                    if f.mediadimention["rotate"]
-                    else f.mediadimention["height"],
-                )
-            elif f.mediatype == "audio":
-                await message.reply_audio(
-                    media[0],
-                    caption=captions(f, fallback, True),
-                    duration=f.mediaduration,
-                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                    performer=f.user,
-                    allow_sending_without_reply=True,
-                    disable_notification=True,
-                    reply_markup=origin_link(f.url),
-                    thumbnail=mediathumb,
-                    title=f.mediatitle,
-                    write_timeout=60,
-                    filename=f.mediafilename[0],
-                )
-            elif len(f.mediaurls) == 1:
-                if ".gif" in f.mediaurls[0]:
-                    await message.reply_animation(
-                        media[0],
-                        caption=captions(f, fallback, True),
-                        parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                        allow_sending_without_reply=True,
-                        disable_notification=True,
-                        reply_markup=origin_link(f.url),
-                        write_timeout=60,
-                        filename=f.mediafilename[0],
+            medias = []
+            try:
+                async with httpx.AsyncClient(http2=True, timeout=90, follow_redirects=True) as client:
+                    mediathumb = (
+                        await get_media(client, f, f.mediathumb, size=320)
+                        if f.mediathumb
+                        else None
                     )
-                else:
-                    await message.reply_photo(
-                        media[0],
-                        caption=captions(f, fallback, True),
-                        parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                        allow_sending_without_reply=True,
-                        disable_notification=True,
-                        reply_markup=origin_link(f.url),
-                        write_timeout=60,
-                        filename=f.mediafilename[0],
-                    )
-            else:
-                medias = [
-                    InputMediaVideo(
-                        img,
-                        caption=captions(f, fallback, True),
-                        parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                        filename=f.mediafilename[0],
-                        supports_streaming=True,
-                    )
-                    if ".gif" in mediaurl
-                    else InputMediaPhoto(
-                        img,
-                        caption=captions(f, fallback, True),
-                        parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                        filename=f.mediafilename[0],
-                    )
-                    for img, mediaurl in zip(media, f.mediaurls)
-                ]
-                await message.reply_media_group(
-                    media=medias,
-                    allow_sending_without_reply=True,
-                    disable_notification=True,
-                    write_timeout=60,
-                )
-                await message.reply_text(
-                    captions(f, fallback),
-                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                    allow_sending_without_reply=True,
-                    disable_notification=True,
-                    reply_markup=origin_link(f.url),
-                )
-            await client.aclose()
-            for item in [mediathumb, *media]:
-                if isinstance(item, pathlib.Path):
-                    os.remove(item)
+                    if f.mediaraws:
+                        tasks = [
+                            get_media(client, f, img, size=1280) for img in f.mediaurls
+                        ]
+                        media = await asyncio.gather(*tasks)
+                        logger.info(f"上传中: {f.url}")
+                    else:
+                        if f.mediatype == "image":
+                            media = [
+                                i if ".gif" in i else i + "@1280w.jpg" for i in f.mediaurls
+                            ]
+                        elif f.mediatype == "video":
+                            media = [referer_url(f.mediaurls[0], f.url)]
+                        else:
+                            media = f.mediaurls
+                    if f.mediatype == "video":
+                        await message.reply_video(
+                            media[0],
+                            caption=captions(f, fallback, True),
+                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                            allow_sending_without_reply=True,
+                            disable_notification=True,
+                            reply_markup=origin_link(f.url),
+                            supports_streaming=True,
+                            thumbnail=mediathumb,
+                            duration=f.mediaduration,
+                            write_timeout=60,
+                            filename=f.mediafilename[0],
+                            width=f.mediadimention["height"]
+                            if f.mediadimention["rotate"]
+                            else f.mediadimention["width"],
+                            height=f.mediadimention["width"]
+                            if f.mediadimention["rotate"]
+                            else f.mediadimention["height"],
+                        )
+                    elif f.mediatype == "audio":
+                        await message.reply_audio(
+                            media[0],
+                            caption=captions(f, fallback, True),
+                            duration=f.mediaduration,
+                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                            performer=f.user,
+                            allow_sending_without_reply=True,
+                            disable_notification=True,
+                            reply_markup=origin_link(f.url),
+                            thumbnail=mediathumb,
+                            title=f.mediatitle,
+                            write_timeout=60,
+                            filename=f.mediafilename[0],
+                        )
+                    elif len(f.mediaurls) == 1:
+                        if ".gif" in f.mediaurls[0]:
+                            await message.reply_animation(
+                                media[0],
+                                caption=captions(f, fallback, True),
+                                parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                                allow_sending_without_reply=True,
+                                disable_notification=True,
+                                reply_markup=origin_link(f.url),
+                                write_timeout=60,
+                                filename=f.mediafilename[0],
+                            )
+                        else:
+                            await message.reply_photo(
+                                media[0],
+                                caption=captions(f, fallback, True),
+                                parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                                allow_sending_without_reply=True,
+                                disable_notification=True,
+                                reply_markup=origin_link(f.url),
+                                write_timeout=60,
+                                filename=f.mediafilename[0],
+                            )
+                    else:
+                        await message.reply_media_group(
+                            media=[
+                                InputMediaVideo(
+                                    img,
+                                    caption=captions(f, fallback, True),
+                                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                                    filename=f.mediafilename[0],
+                                    supports_streaming=True,
+                                )
+                                if ".gif" in mediaurl
+                                else InputMediaPhoto(
+                                    img,
+                                    caption=captions(f, fallback, True),
+                                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                                    filename=f.mediafilename[0],
+                                )
+                                for img, mediaurl in zip(media, f.mediaurls)
+                            ],
+                            allow_sending_without_reply=True,
+                            disable_notification=True,
+                            write_timeout=60,
+                        )
+                        await message.reply_text(
+                            captions(f, fallback),
+                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                            allow_sending_without_reply=True,
+                            disable_notification=True,
+                            reply_markup=origin_link(f.url),
+                        )
+                    medias = [mediathumb, *media]
+            finally:
+                for item in medias:
+                    if isinstance(item, pathlib.Path):
+                        os.remove(item)
 
     fs = await biliparser(urls)
     for num, f in enumerate(fs):
@@ -376,69 +380,73 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             continue
         if f.mediaurls:
-            client = httpx.AsyncClient(http2=True, timeout=90, follow_redirects=True)
-            tasks = [
-                get_media(client, f, img, compression=False, media_check_ignore=True)
-                for img in f.mediaurls
-            ]
-            medias = await asyncio.gather(*tasks)
-            logger.info(f"上传中: {f.url}")
-            if len(medias) > 1:
-                medias = [
-                    InputMediaDocument(media, filename=filename)
-                    for media, filename in zip(medias, f.mediafilename)
-                ]
-                await message.reply_media_group(
-                    medias,
-                    allow_sending_without_reply=True,
-                    disable_notification=True,
-                    write_timeout=60,
-                )
-                try:
-                    await message.reply_text(
-                        captions(f),
-                        parse_mode=ParseMode.MARKDOWN_V2,
-                        allow_sending_without_reply=True,
-                        disable_notification=True,
-                        reply_markup=origin_link(f.url),
-                    )
-                except BadRequest as err:
-                    logger.exception(err)
-                    logger.info(f"{err} -> 去除Markdown: {f.url}")
-                    await message.reply_text(
-                        captions(f, True),
-                        allow_sending_without_reply=True,
-                        disable_notification=True,
-                        reply_markup=origin_link(f.url),
-                    )
-            else:
-                try:
-                    await message.reply_document(
-                        document=medias[0],
-                        caption=captions(f, False, True),
-                        parse_mode=ParseMode.MARKDOWN_V2,
-                        allow_sending_without_reply=True,
-                        disable_notification=True,
-                        reply_markup=origin_link(f.url),
-                        write_timeout=60,
-                        filename=f.mediafilename[0],
-                    )
-                except BadRequest as err:
-                    logger.exception(err)
-                    logger.info(f"{err} -> 去除Markdown: {f.url}")
-                    await message.reply_document(
-                        document=medias[0],
-                        caption=captions(f, True, True),
-                        allow_sending_without_reply=True,
-                        disable_notification=True,
-                        reply_markup=origin_link(f.url),
-                        write_timeout=60,
-                        filename=f.mediafilename[0],
-                    )
-            await client.aclose()
-            for item in medias:
-                if isinstance(item, pathlib.Path):
-                    os.remove(item)
+            medias = []
+            try:
+                async with httpx.AsyncClient(http2=True, timeout=90, follow_redirects=True) as client:
+                    tasks = [
+                        get_media(
+                            client, f, img, compression=False, media_check_ignore=True
+                        )
+                        for img in f.mediaurls
+                    ]
+                    medias = await asyncio.gather(*tasks)
+                    logger.info(f"上传中: {f.url}")
+                    if len(medias) > 1:
+                        medias = [
+                            InputMediaDocument(media, filename=filename)
+                            for media, filename in zip(medias, f.mediafilename)
+                        ]
+                        await message.reply_media_group(
+                            medias,
+                            allow_sending_without_reply=True,
+                            disable_notification=True,
+                            write_timeout=60,
+                        )
+                        try:
+                            await message.reply_text(
+                                captions(f),
+                                parse_mode=ParseMode.MARKDOWN_V2,
+                                allow_sending_without_reply=True,
+                                disable_notification=True,
+                                reply_markup=origin_link(f.url),
+                            )
+                        except BadRequest as err:
+                            logger.exception(err)
+                            logger.info(f"{err} -> 去除Markdown: {f.url}")
+                            await message.reply_text(
+                                captions(f, True),
+                                allow_sending_without_reply=True,
+                                disable_notification=True,
+                                reply_markup=origin_link(f.url),
+                            )
+                    else:
+                        try:
+                            await message.reply_document(
+                                document=medias[0],
+                                caption=captions(f, False, True),
+                                parse_mode=ParseMode.MARKDOWN_V2,
+                                allow_sending_without_reply=True,
+                                disable_notification=True,
+                                reply_markup=origin_link(f.url),
+                                write_timeout=60,
+                                filename=f.mediafilename[0],
+                            )
+                        except BadRequest as err:
+                            logger.exception(err)
+                            logger.info(f"{err} -> 去除Markdown: {f.url}")
+                            await message.reply_document(
+                                document=medias[0],
+                                caption=captions(f, True, True),
+                                allow_sending_without_reply=True,
+                                disable_notification=True,
+                                reply_markup=origin_link(f.url),
+                                write_timeout=60,
+                                filename=f.mediafilename[0],
+                            )
+            finally:
+                for item in medias:
+                    if isinstance(item, pathlib.Path):
+                        os.remove(item)
 
 
 async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
