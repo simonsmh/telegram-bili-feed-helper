@@ -6,6 +6,6 @@ httpx[http2]
 loguru
 lxml
 pillow
-python-telegram-bot[all]
+python-telegram-bot[all] >= 20
 telegraph[aio]
 tortoise-orm[accel]
