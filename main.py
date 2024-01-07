@@ -145,7 +145,7 @@ async def get_media(
         if response.status_code != 200:
             raise NetworkError(f"媒体文件获取错误: {response.status_code} {url}->{f.url}")
         mediatype = response.headers.get("content-type").split("/")
-        if mediatype[0] in ["video", "audio"]:
+        if mediatype[0] in ["video", "audio", "application"]:
             if not os.path.exists(".tmp"):
                 os.mkdir(".tmp")
             filename = f"{time.time()}.{mediatype[1]}"
@@ -696,6 +696,7 @@ if __name__ == "__main__":
             port=int(os.environ.get("PORT", 9000)),
             url_path=TOKEN,
             webhook_url=f'{os.environ.get("DOMAIN")}{TOKEN}',
+            max_connections=100,
         )
     else:
         application.run_polling()
