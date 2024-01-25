@@ -167,7 +167,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     if message is None:
         return
-    data = message.text
+    data = message.text or message.caption
     if data is None:
         return
     urls = re.findall(regex, data)
