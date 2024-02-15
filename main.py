@@ -11,6 +11,7 @@ from urllib.parse import urlencode
 from uuid import uuid4
 
 import httpx
+import pytz
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -32,6 +33,7 @@ from telegram.ext import (
     Application,
     CommandHandler,
     ContextTypes,
+    Defaults,
     InlineQueryHandler,
     MessageHandler,
     filters,
@@ -139,7 +141,9 @@ async def get_media(
     header["Referer"] = f.url
     async with client.stream("GET", url, headers=header) as response:
         if response.status_code != 200:
-            raise NetworkError(f"媒体文件获取错误: {response.status_code} {url}->{f.url}")
+            raise NetworkError(
+                f"媒体文件获取错误: {response.status_code} {url}->{f.url}"
+            )
         mediatype = response.headers.get("content-type").split("/")
         if mediatype[0] in ["video", "audio", "application"]:
             if not os.path.exists(".tmp"):
@@ -184,8 +188,6 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await message.reply_text(
                 captions(f, fallback),
                 parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                allow_sending_without_reply=True,
-                disable_notification=True,
                 reply_markup=origin_link(f.url),
             )
         else:
@@ -220,20 +222,22 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             media[0],
                             caption=captions(f, fallback, True),
                             parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                            allow_sending_without_reply=True,
-                            disable_notification=True,
                             reply_markup=origin_link(f.url),
                             supports_streaming=True,
                             thumbnail=mediathumb,
                             duration=f.mediaduration,
                             write_timeout=60,
                             filename=f.mediafilename[0],
-                            width=f.mediadimention["height"]
-                            if f.mediadimention["rotate"]
-                            else f.mediadimention["width"],
-                            height=f.mediadimention["width"]
-                            if f.mediadimention["rotate"]
-                            else f.mediadimention["height"],
+                            width=(
+                                f.mediadimention["height"]
+                                if f.mediadimention["rotate"]
+                                else f.mediadimention["width"]
+                            ),
+                            height=(
+                                f.mediadimention["width"]
+                                if f.mediadimention["rotate"]
+                                else f.mediadimention["height"]
+                            ),
                         )
                     elif f.mediatype == "audio":
                         await message.reply_audio(
@@ -242,8 +246,6 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             duration=f.mediaduration,
                             parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                             performer=f.user,
-                            allow_sending_without_reply=True,
-                            disable_notification=True,
                             reply_markup=origin_link(f.url),
                             thumbnail=mediathumb,
                             title=f.mediatitle,
@@ -256,8 +258,6 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 media[0],
                                 caption=captions(f, fallback, True),
                                 parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                                allow_sending_without_reply=True,
-                                disable_notification=True,
                                 reply_markup=origin_link(f.url),
                                 write_timeout=60,
                                 filename=f.mediafilename[0],
@@ -267,8 +267,6 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 media[0],
                                 caption=captions(f, fallback, True),
                                 parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                                allow_sending_without_reply=True,
-                                disable_notification=True,
                                 reply_markup=origin_link(f.url),
                                 write_timeout=60,
                                 filename=f.mediafilename[0],
@@ -276,35 +274,33 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     else:
                         await message.reply_media_group(
                             media=[
-                                InputMediaVideo(
-                                    img,
-                                    caption=captions(f, fallback, True),
-                                    parse_mode=None
-                                    if fallback
-                                    else ParseMode.MARKDOWN_V2,
-                                    filename=f.mediafilename[0],
-                                    supports_streaming=True,
-                                )
-                                if ".gif" in mediaurl
-                                else InputMediaPhoto(
-                                    img,
-                                    caption=captions(f, fallback, True),
-                                    parse_mode=None
-                                    if fallback
-                                    else ParseMode.MARKDOWN_V2,
-                                    filename=f.mediafilename[0],
+                                (
+                                    InputMediaVideo(
+                                        img,
+                                        caption=captions(f, fallback, True),
+                                        parse_mode=(
+                                            None if fallback else ParseMode.MARKDOWN_V2
+                                        ),
+                                        filename=f.mediafilename[0],
+                                        supports_streaming=True,
+                                    )
+                                    if ".gif" in mediaurl
+                                    else InputMediaPhoto(
+                                        img,
+                                        caption=captions(f, fallback, True),
+                                        parse_mode=(
+                                            None if fallback else ParseMode.MARKDOWN_V2
+                                        ),
+                                        filename=f.mediafilename[0],
+                                    )
                                 )
                                 for img, mediaurl in zip(media, f.mediaurls)
                             ],
-                            allow_sending_without_reply=True,
-                            disable_notification=True,
                             write_timeout=60,
                         )
                         await message.reply_text(
                             captions(f, fallback),
                             parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                            allow_sending_without_reply=True,
-                            disable_notification=True,
                             reply_markup=origin_link(f.url),
                         )
                     medias = [mediathumb, *media]
@@ -322,8 +318,6 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 if data.startswith("/parse"):
                     await message.reply_text(
                         captions(f),
-                        allow_sending_without_reply=True,
-                        disable_notification=True,
                     )
                 break
             try:
@@ -378,8 +372,6 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.warning(f"解析错误! {f}")
             await message.reply_text(
                 captions(f),
-                allow_sending_without_reply=True,
-                disable_notification=True,
             )
             continue
         if f.mediaurls:
@@ -403,16 +395,11 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         ]
                         await message.reply_media_group(
                             medias,
-                            allow_sending_without_reply=True,
-                            disable_notification=True,
                             write_timeout=60,
                         )
                         try:
                             await message.reply_text(
                                 captions(f),
-                                parse_mode=ParseMode.MARKDOWN_V2,
-                                allow_sending_without_reply=True,
-                                disable_notification=True,
                                 reply_markup=origin_link(f.url),
                             )
                         except BadRequest as err:
@@ -420,8 +407,6 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             logger.info(f"{err} -> 去除Markdown: {f.url}")
                             await message.reply_text(
                                 captions(f, True),
-                                allow_sending_without_reply=True,
-                                disable_notification=True,
                                 reply_markup=origin_link(f.url),
                             )
                     else:
@@ -429,9 +414,6 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             await message.reply_document(
                                 document=medias[0],
                                 caption=captions(f, False, True),
-                                parse_mode=ParseMode.MARKDOWN_V2,
-                                allow_sending_without_reply=True,
-                                disable_notification=True,
                                 reply_markup=origin_link(f.url),
                                 write_timeout=60,
                                 filename=f.mediafilename[0],
@@ -442,8 +424,6 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             await message.reply_document(
                                 document=medias[0],
                                 caption=captions(f, True, True),
-                                allow_sending_without_reply=True,
-                                disable_notification=True,
                                 reply_markup=origin_link(f.url),
                                 write_timeout=60,
                                 filename=f.mediafilename[0],
@@ -539,12 +519,16 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             thumbnail_url=f.mediathumb,
                             video_url=referer_url(f.mediaurls[0], f.url),
                             video_duration=f.mediaduration,
-                            video_width=f.mediadimention["height"]
-                            if f.mediadimention["rotate"]
-                            else f.mediadimention["width"],
-                            video_height=f.mediadimention["width"]
-                            if f.mediadimention["rotate"]
-                            else f.mediadimention["height"],
+                            video_width=(
+                                f.mediadimention["height"]
+                                if f.mediadimention["rotate"]
+                                else f.mediadimention["width"]
+                            ),
+                            video_height=(
+                                f.mediadimention["width"]
+                                if f.mediadimention["rotate"]
+                                else f.mediadimention["height"]
+                            ),
                         )
                     ]
                 elif f.mediatype == "audio":
@@ -562,25 +546,27 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     ]
                 else:
                     results = [
-                        InlineQueryResultGif(
-                            id=str(uuid4()),
-                            caption=captions(f, fallback, True),
-                            title=f"{f.user}: {f.content}",
-                            gif_url=img,
-                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                            reply_markup=origin_link(f.url),
-                            thumbnail_url=img,
-                        )
-                        if ".gif" in img
-                        else InlineQueryResultPhoto(
-                            id=str(uuid4()),
-                            caption=captions(f, fallback, True),
-                            title=f.user,
-                            description=f.content,
-                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                            photo_url=img + "@1280w.jpg",
-                            reply_markup=origin_link(f.url),
-                            thumbnail_url=img + "@512w_512h.jpg",
+                        (
+                            InlineQueryResultGif(
+                                id=str(uuid4()),
+                                caption=captions(f, fallback, True),
+                                title=f"{f.user}: {f.content}",
+                                gif_url=img,
+                                parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                                reply_markup=origin_link(f.url),
+                                thumbnail_url=img,
+                            )
+                            if ".gif" in img
+                            else InlineQueryResultPhoto(
+                                id=str(uuid4()),
+                                caption=captions(f, fallback, True),
+                                title=f.user,
+                                description=f.content,
+                                parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                                photo_url=img + "@1280w.jpg",
+                                reply_markup=origin_link(f.url),
+                                thumbnail_url=img + "@512w_512h.jpg",
+                            )
                         )
                         for img in f.mediaurls
                     ]
@@ -631,7 +617,11 @@ async def post_init(application: Application):
     if updater is None:
         return
     await updater.bot.set_my_commands(
-        [["start", "关于本 Bot"], ["file", "获取匹配内容原始文件"], ["parse", "获取匹配内容"]]
+        [
+            ["start", "关于本 Bot"],
+            ["file", "获取匹配内容原始文件"],
+            ["parse", "获取匹配内容"],
+        ]
     )
     bot_me = await updater.bot.get_me()
     logger.info(f"Bot @{bot_me.username} started.")
@@ -677,6 +667,15 @@ if __name__ == "__main__":
         sys.exit(1)
     application = (
         Application.builder()
+        .defaults(
+            Defaults(
+                parse_mode=ParseMode.MARKDOWN_V2,
+                disable_notification=True,
+                allow_sending_without_reply=True,
+                block=False,
+                tzinfo=pytz.timezone("Asia/Shanghai"),
+            )
+        )
         .token(TOKEN)
         .post_init(post_init)
         .post_shutdown(post_shutdown)

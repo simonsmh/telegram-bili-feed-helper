@@ -645,7 +645,9 @@ async def video_parser(client: httpx.AsyncClient, url: str):
             logger.exception(f"视频缓存错误: {e}")
     f.user = detail.get("owner").get("name")
     f.uid = detail.get("owner").get("mid")
-    f.content = f"{detail.get('tname')} - {detail.get('dynamic') or detail.get('desc')}"
+    f.content = detail.get('tname', "")
+    if detail.get('dynamic') or detail.get('desc'):
+        f.content += f" - {detail.get('dynamic') or detail.get('desc')}"
     f.extra_markdown = f"[{escape_markdown(detail.get('title'))}]({f.url})"
     f.mediatitle = detail.get("title")
     f.mediaurls = detail.get("pic")
