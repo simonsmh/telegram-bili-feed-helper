@@ -8,15 +8,15 @@ aiosqlite = "*"
 asyncpg = "*"
 beautifulsoup4 = "*"
 lxml = "*"
-Pillow = "*"
 loguru = "*"
 wand = "*"
 aiomysql = "*"
-httpx = {extras = ["http2"], version = "*"}
-python-telegram-bot = {version = ">=20", extras = ["all"]}
-tortoise-orm = {extras = ["accel"], version = "*"}
-telegraph = {extras = ["aio"], version = "*"}
 uvicorn = "*"
+httpx = {extras = ["http2"], version = "*"}
+pillow = "*"
+python-telegram-bot = {extras = ["all"], version = "==20.7"}
+telegraph = {extras = ["aio"], version = "*"}
+tortoise-orm = {extras = ["accel"], version = "*"}
 
 [dev-packages]
 black = "*"
