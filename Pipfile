@@ -16,7 +16,6 @@ httpx = {extras = ["http2"], version = "*"}
 python-telegram-bot = {version = ">=20", extras = ["all"]}
 tortoise-orm = {extras = ["accel"], version = "*"}
 telegraph = {extras = ["aio"], version = "*"}
-starlette = "*"
 uvicorn = "*"
 
 [dev-packages]

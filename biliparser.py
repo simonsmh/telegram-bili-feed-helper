@@ -473,7 +473,16 @@ async def audio_parser(client: httpx.AsyncClient, url: str):
     f.mediaduration = detail.get("duration")
     f.mediaurls = f.mediacontent.get("data").get("cdns")
     f.mediatype = "audio"
-    f.mediaraws = True
+    f.mediaraws = (
+        False
+        if detail.get("data").get("size")
+        < (
+            FileSizeLimit.FILESIZE_DOWNLOAD_LOCAL_MODE
+            if LOCAL_MODE
+            else FileSizeLimit.FILESIZE_DOWNLOAD
+        )
+        else True
+    )
     f.replycontent = await reply_parser(client, f.audio_id, f.reply_type)
     return f
 
@@ -636,7 +645,7 @@ async def video_parser(client: httpx.AsyncClient, url: str):
             logger.exception(f"视频缓存错误: {e}")
     f.user = detail.get("owner").get("name")
     f.uid = detail.get("owner").get("mid")
-    f.content = detail.get("dynamic", detail.get("desc"))
+    f.content = f"{detail.get('tname')} - {detail.get('dynamic') or detail.get('desc')}"
     f.extra_markdown = f"[{escape_markdown(detail.get('title'))}]({f.url})"
     f.mediatitle = detail.get("title")
     f.mediaurls = detail.get("pic")
@@ -847,7 +856,9 @@ async def feed_parser(client: httpx.AsyncClient, url: str):
     elif "live" in url:
         return await live_parser(client, url)
     # API link blackboard link user space link
-    elif re.search(r"^https?:\/\/(?:api|www\.bilibili\.com\/blackboard|space\.bilibili\.com)", url):
+    elif re.search(
+        r"^https?:\/\/(?:api|www\.bilibili\.com\/blackboard|space\.bilibili\.com)", url
+    ):
         pass
     # dynamic opus
     elif re.search(r"^https?:\/\/[th]\.|dynamic|opus", url):

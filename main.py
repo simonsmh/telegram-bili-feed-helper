@@ -4,7 +4,6 @@ import pathlib
 import re
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from io import BytesIO
 from typing import Union
@@ -91,14 +90,11 @@ def captions(
     def parser_helper(content: str, md_flag: bool = True) -> str:
         if not content:
             return str()
+        ## Refine cn tag style display: #abc# -> #abc
         if md_flag:
-            content = re.sub(r"\\#\\#", "\\# ", content)
-            content = re.sub(r"\\# ", " ", content)
-            content = re.sub(r"\\#$", "", content)
+            content = re.sub(r"\\#((?:(?!\\#).)+)\\#", r"\\#\1 ", content)
         else:
-            content = re.sub(r"##", "# ", content)
-            content = re.sub(r"# ", " ", content)
-            content = re.sub(r"#$", "", content)
+            content = re.sub(r"#((?:(?!#).)+)#", r"#\1 ", content)
         return content
 
     if isinstance(f, Exception):
@@ -195,7 +191,9 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         else:
             medias = []
             try:
-                async with httpx.AsyncClient(http2=True, timeout=90, follow_redirects=True) as client:
+                async with httpx.AsyncClient(
+                    http2=True, timeout=90, follow_redirects=True
+                ) as client:
                     mediathumb = (
                         await get_media(client, f, f.mediathumb, size=320)
                         if f.mediathumb
@@ -210,9 +208,10 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     else:
                         if f.mediatype == "image":
                             media = [
-                                i if ".gif" in i else i + "@1280w.jpg" for i in f.mediaurls
+                                i if ".gif" in i else i + "@1280w.jpg"
+                                for i in f.mediaurls
                             ]
-                        elif f.mediatype == "video":
+                        elif f.mediatype in ["video", "audio"]:
                             media = [referer_url(f.mediaurls[0], f.url)]
                         else:
                             media = f.mediaurls
@@ -280,7 +279,9 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 InputMediaVideo(
                                     img,
                                     caption=captions(f, fallback, True),
-                                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                                    parse_mode=None
+                                    if fallback
+                                    else ParseMode.MARKDOWN_V2,
                                     filename=f.mediafilename[0],
                                     supports_streaming=True,
                                 )
@@ -288,7 +289,9 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 else InputMediaPhoto(
                                     img,
                                     caption=captions(f, fallback, True),
-                                    parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                                    parse_mode=None
+                                    if fallback
+                                    else ParseMode.MARKDOWN_V2,
                                     filename=f.mediafilename[0],
                                 )
                                 for img, mediaurl in zip(media, f.mediaurls)
@@ -382,7 +385,9 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if f.mediaurls:
             medias = []
             try:
-                async with httpx.AsyncClient(http2=True, timeout=90, follow_redirects=True) as client:
+                async with httpx.AsyncClient(
+                    http2=True, timeout=90, follow_redirects=True
+                ) as client:
                     tasks = [
                         get_media(
                             client, f, img, compression=False, media_check_ignore=True
@@ -549,7 +554,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             caption=captions(f, fallback, True),
                             title=f.mediatitle,
                             audio_duration=f.mediaduration,
-                            audio_url=f.mediaurls[0],
+                            audio_url=referer_url(f.mediaurls[0], f.url),
                             parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                             performer=f.user,
                             reply_markup=origin_link(f.url),
