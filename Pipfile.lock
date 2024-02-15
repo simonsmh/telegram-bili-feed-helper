@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "1213ffc939c635063ca218738ea32580bdb8c3079ddf4134484b8275127ae1c6"
+            "sha256": "061d12dd13b2f749f4e859915e7a3f76a443c7ea39f5f26d5ce660951fc59c2a"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -432,11 +432,11 @@
                 "http2"
             ],
             "hashes": [
-                "sha256:8b8fcaa0c8ea7b05edd69a094e63a2094c4efcb48129fb757361bc423c0ad9e8",
-                "sha256:a05d3d052d9b2dfce0e3896636467f8a5342fb2b902c819428e1ac65413ca118"
+                "sha256:451b55c30d5185ea6b23c2c793abf9bb237d2a7dfb901ced6ff69ad37ec1dfaf",
+                "sha256:8915f5a3627c4d47b73e8202457cb28f1266982d1159bd5779d86a80c0eab1cd"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==0.25.2"
+            "version": "==0.26.0"
         },
         "hyperframe": {
             "hashes": [
@@ -682,7 +682,6 @@
                 "sha256:f379abd2f1e3dddb2b61bc67977a6b5a0a3f7485538bcc6f39ec76163891ee48",
                 "sha256:fe4c15f6c9285dc54ce6553a3ce908ed37c8f3825b5a51a15c91442bb955b868"
             ],
-            "index": "pypi",
             "markers": "python_version >= '3.8'",
             "version": "==10.2.0"
         },
@@ -714,11 +713,11 @@
                 "all"
             ],
             "hashes": [
-                "sha256:462326c65671c8c39e76c8c96756ee918be6797d225f8db84d2ec0f883383b8c",
-                "sha256:4f146c39de5f5e0b3723c2abedaf78046ebd30a6a49d2281ee4b3af5eb116b68"
+                "sha256:0e1e4a6dbce3f4ba606990d66467a5a2d2018368fe44756fae07410a74e960dc",
+                "sha256:a98ddf2f237d6584b03a2f8b20553e1b5e02c8d3a1ea8e17fd06cc955af78c14"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==20.7"
+            "version": "==20.8"
         },
         "pytz": {
             "hashes": [
@@ -778,19 +777,19 @@
         },
         "tornado": {
             "hashes": [
-                "sha256:1bd19ca6c16882e4d37368e0152f99c099bad93e0950ce55e71daed74045908f",
-                "sha256:22d3c2fa10b5793da13c807e6fc38ff49a4f6e1e3868b0a6f4164768bb8e20f5",
-                "sha256:502fba735c84450974fec147340016ad928d29f1e91f49be168c0a4c18181e1d",
-                "sha256:65ceca9500383fbdf33a98c0087cb975b2ef3bfb874cb35b8de8740cf7f41bd3",
-                "sha256:71a8db65160a3c55d61839b7302a9a400074c9c753040455494e2af74e2501f2",
-                "sha256:7ac51f42808cca9b3613f51ffe2a965c8525cb1b00b7b2d56828b8045354f76a",
-                "sha256:7d01abc57ea0dbb51ddfed477dfe22719d376119844e33c661d873bf9c0e4a16",
-                "sha256:805d507b1f588320c26f7f097108eb4023bbaa984d63176d1652e184ba24270a",
-                "sha256:9dc4444c0defcd3929d5c1eb5706cbe1b116e762ff3e0deca8b715d14bf6ec17",
-                "sha256:ceb917a50cd35882b57600709dd5421a418c29ddc852da8bcdab1f0db33406b0",
-                "sha256:e7d8db41c0181c80d76c982aacc442c0783a2c54d6400fe028954201a2e032fe"
+                "sha256:02ccefc7d8211e5a7f9e8bc3f9e5b0ad6262ba2fbb683a6443ecc804e5224ce0",
+                "sha256:10aeaa8006333433da48dec9fe417877f8bcc21f48dda8d661ae79da357b2a63",
+                "sha256:27787de946a9cffd63ce5814c33f734c627a87072ec7eed71f7fc4417bb16263",
+                "sha256:6f8a6c77900f5ae93d8b4ae1196472d0ccc2775cc1dfdc9e7727889145c45052",
+                "sha256:71ddfc23a0e03ef2df1c1397d859868d158c8276a0603b96cf86892bff58149f",
+                "sha256:72291fa6e6bc84e626589f1c29d90a5a6d593ef5ae68052ee2ef000dfd273dee",
+                "sha256:88b84956273fbd73420e6d4b8d5ccbe913c65d31351b4c004ae362eba06e1f78",
+                "sha256:e43bc2e5370a6a8e413e1e1cd0c91bedc5bd62a74a532371042a18ef19e10579",
+                "sha256:f0251554cdd50b4b44362f73ad5ba7126fc5b2c2895cc62b14a1c2d7ea32f212",
+                "sha256:f7894c581ecdcf91666a0912f18ce5e757213999e183ebfc2c3fdbf4d5bd764e",
+                "sha256:fd03192e287fbd0899dd8f81c6fb9cbbc69194d2074b38f384cb6fa72b80e9c2"
             ],
-            "version": "==6.3.3"
+            "version": "==6.4"
         },
         "tortoise-orm": {
             "extras": [
