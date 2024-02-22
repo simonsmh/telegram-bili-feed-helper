@@ -100,7 +100,7 @@ def captions(
         return content
 
     if isinstance(f, Exception):
-        return f.__str__()
+        return escape_markdown(f.__str__())
     caption = (
         f.url
         if fallback
@@ -482,7 +482,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             InlineQueryResultArticle(
                 id=str(uuid4()),
                 title="解析错误!",
-                description=f.__str__(),
+                description=escape_markdown(f.__str__()),
                 input_message_content=InputTextMessageContent(
                     captions(f),
                 ),
