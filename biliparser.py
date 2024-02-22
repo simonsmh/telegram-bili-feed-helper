@@ -539,17 +539,24 @@ async def live_parser(client: httpx.AsyncClient, url: str):
 @safe_parser
 async def video_parser(client: httpx.AsyncClient, url: str):
     match = re.search(
-        r"(?i)(?:bilibili\.com/(?:video|bangumi/play|festival)|b23\.tv|acg\.tv)/(?:(?P<bvid>bv\w+)|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+)|(?P<festivalid>\w+))",
+        r"(?:bilibili\.com/(?:video|bangumi/play)|b23\.tv|acg\.tv)/(?:(?P<bvid>BV\w+)|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+))",
         url,
     )
-    if not match:
+    match_fes = re.search(r"bilibili\.com/festival/(?P<festivalid>\w+)\?(?:bvid=(?P<bvid>BV\w+))",url)
+    if match_fes:
+        festivalid = match_fes.group("festivalid")
+        bvid = match_fes.group("bvid")
+        epid = None
+        aid = None
+        ssid = None
+    elif match:
+        bvid = match.group("bvid")
+        epid = match.group("epid")
+        aid = match.group("aid")
+        ssid = match.group("ssid")
+    else:
         raise ParserException("视频链接错误", url)
     f = video(url)
-    epid = match.group("epid")
-    bvid = match.group("bvid")
-    aid = match.group("aid")
-    ssid = match.group("ssid")
-    festivalid = match.group("festivalid")
     if epid:
         params = {"ep_id": epid}
     elif bvid:
@@ -559,7 +566,7 @@ async def video_parser(client: httpx.AsyncClient, url: str):
     elif ssid:
         params = {"season_id": ssid}
     else:
-        params = {}
+        raise ParserException("视频链接解析错误", url)
     if "ep_id" in params or "season_id" in params:
         query = Q(
             Q(epid=params.get("ep_id")),

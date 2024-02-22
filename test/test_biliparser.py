@@ -27,6 +27,10 @@ async def test_dynamic_parser():
         "https://www.bilibili.com/bangumi/play/ep317535",  # 番剧集
         "https://www.bilibili.com/bangumi/play/ss33055",  # 番剧季
         "https://t.bilibili.com/687612573189668866",  # 预约动态
+        "https://www.bilibili.com/festival/gswdm?bvid=BV1bW411n7fY&",  # 视频（活动）
+        "https://www.bilibili.com/festival/bnj2024?bvid=BV1at421p79N",  # 视频（活动）
+        "https://www.bilibili.com/video/BV1bW411n7fY/",  # 视频（活动）
+        "https://b23.tv/BV1bW411n7fY",  # 视频（活动）
     ]
     for i in urls:
         result = await biliparser(i)
