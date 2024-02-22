@@ -842,6 +842,9 @@ async def read_parser(client: httpx.AsyncClient, url: str):
 
 @safe_parser
 async def feed_parser(client: httpx.AsyncClient, url: str):
+    # bypass b23 short link
+    if re.search(r"b23\.tv/(?:av|BV)", url):
+        return await video_parser(client, url)
     r = await client.get(url)
     url = str(r.url)
     logger.debug(f"URL: {url}")
