@@ -1,5 +1,5 @@
+aiomysql
 aiosqlite
-asyncmy
 asyncpg
 beautifulsoup4
 httpx[http2]
