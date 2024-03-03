@@ -7,7 +7,6 @@ import time
 from functools import lru_cache
 from io import BytesIO
 from typing import Union
-from urllib.parse import urlencode
 from uuid import uuid4
 
 import httpx
@@ -41,7 +40,7 @@ from telegram.ext import (
 
 from biliparser import biliparser, feed
 from database import cache_clear, db_close, db_init, db_status
-from utils import LOCAL_MODE, compress, escape_markdown, headers, logger
+from utils import LOCAL_MODE, compress, escape_markdown, headers, logger, referer_url
 
 regex = r"(?i)[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv)\S+"
 
@@ -66,18 +65,6 @@ def origin_link(content: str) -> InlineKeyboardMarkup:
             ]
         ]
     )
-
-
-def referer_url(url, referer):
-    if not referer:
-        return url
-    params = {
-        "url": url,
-        "referer": referer,
-    }
-    final = f"https://referer.simonsmh.workers.dev/?{urlencode(params)}"
-    logger.debug(final)
-    return final
 
 
 async def get_description(context: ContextTypes.DEFAULT_TYPE):
@@ -196,18 +183,19 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 async with httpx.AsyncClient(
                     http2=True, timeout=90, follow_redirects=True
                 ) as client:
-                    mediathumb = (
-                        await get_media(client, f, f.mediathumb, size=320)
-                        if f.mediathumb
-                        else None
-                    )
                     if f.mediaraws:
+                        mediathumb = (
+                            await get_media(client, f, f.mediathumb, size=320)
+                            if f.mediathumb
+                            else None
+                        )
                         tasks = [
                             get_media(client, f, img, size=1280) for img in f.mediaurls
                         ]
                         media = await asyncio.gather(*tasks)
                         logger.info(f"上传中: {f.url}")
                     else:
+                        mediathumb = referer_url(f.mediathumb, f.url)
                         if f.mediatype == "image":
                             media = [
                                 i if ".gif" in i else i + "@1280w.jpg"
@@ -613,17 +601,14 @@ async def clear_cache(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def post_init(application: Application):
     await db_init()
-    updater = application.updater
-    if updater is None:
-        return
-    await updater.bot.set_my_commands(
+    await application.bot.set_my_commands(
         [
             ["start", "关于本 Bot"],
             ["file", "获取匹配内容原始文件"],
             ["parse", "获取匹配内容"],
         ]
     )
-    bot_me = await updater.bot.get_me()
+    bot_me = await application.bot.get_me()
     logger.info(f"Bot @{bot_me.username} started.")
 
 

@@ -4,14 +4,15 @@ import os
 import re
 import sys
 from io import BytesIO
+from urllib.parse import urlencode
 
 from loguru import logger
 from PIL import Image
 
-
 logger.remove()
 logger.add(sys.stdout, backtrace=True, diagnose=True)
-logger.add("bili_feed.log", backtrace=True, diagnose=True, rotation="1 MB")
+if os.environ.get("LOG_TO_FILE"):
+    logger.add("bili_feed.log", backtrace=True, diagnose=True, rotation="1 MB")
 
 
 headers = {
@@ -56,9 +57,14 @@ def compress(inpil, size=1280, fix_ratio=False) -> BytesIO:
     return outpil
 
 
-def escape_markdown(text):
-    return (
-        re.sub(r"([_*\[\]()~`>\#\+\-=|{}\.!\\])", r"\\\1", html.unescape(text))
-        if text
-        else str()
-    )
+def escape_markdown(text: str):
+    if not text:
+        return ""
+    return re.sub(r"([_*\[\]()~`>\#\+\-=|{}\.!\\])", r"\\\1", html.unescape(text))
+
+
+def referer_url(url: str, referer: str):
+    if not referer:
+        return url
+    params = {"url": url, "referer": referer}
+    return f"https://referer.simonsmh.workers.dev/?{urlencode(params)}"
