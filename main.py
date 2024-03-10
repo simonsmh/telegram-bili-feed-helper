@@ -496,16 +496,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             else:
                 if f.mediatype == "video":
                     results = [
-                        InlineQueryResultPhoto(
-                            id=uuid4().hex,
-                            caption=captions(f, fallback, True),
-                            title=f.user,
-                            description=f.content,
-                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                            photo_url=f.mediathumb + "@1280w.jpg",
-                            reply_markup=origin_link(f.url),
-                            thumbnail_url=f.mediathumb + "@512w_512h.jpg",
-                        ),
                         InlineQueryResultVideo(
                             id=uuid4().hex,
                             caption=captions(f, fallback, True),
