@@ -539,10 +539,12 @@ async def live_parser(client: httpx.AsyncClient, url: str):
 @safe_parser
 async def video_parser(client: httpx.AsyncClient, url: str):
     match = re.search(
-        r"(?:bilibili\.com/(?:video|bangumi/play)|b23\.tv|acg\.tv)/(?:(?P<bvid>BV\w+)|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+))",
+        r"(?:bilibili\.com/(?:video|bangumi/play)|b23\.tv|acg\.tv)/(?:(?P<bvid>BV\w{10})|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+))",
         url,
     )
-    match_fes = re.search(r"bilibili\.com/festival/(?P<festivalid>\w+)\?(?:bvid=(?P<bvid>BV\w+))",url)
+    match_fes = re.search(
+        r"bilibili\.com/festival/(?P<festivalid>\w+)\?(?:bvid=(?P<bvid>BV\w{10}))", url
+    )
     if match_fes:
         festivalid = match_fes.group("festivalid")
         bvid = match_fes.group("bvid")
@@ -850,8 +852,8 @@ async def read_parser(client: httpx.AsyncClient, url: str):
 @safe_parser
 async def feed_parser(client: httpx.AsyncClient, url: str):
     # bypass b23 short link
-    if re.search(r"b23\.tv/(?:av|BV)", url):
-        return await video_parser(client, url)
+    if re.search(r"BV\w{10}|av\d+|ep\d+|ss\d+", url):
+        return await video_parser(client, url if "/" in url else f"b23.tv/{url}")
     r = await client.get(url)
     url = str(r.url)
     logger.debug(f"URL: {url}")
@@ -889,7 +891,9 @@ async def biliparser(urls) -> list[feed]:
         tasks = list(
             feed_parser(
                 client,
-                f"http://{url}" if not url.startswith(("http:", "https:")) else url,
+                f"http://{url}"
+                if not url.startswith(("http:", "https:", "av", "BV"))
+                else url,
             )
             for url in list(set(urls))
         )

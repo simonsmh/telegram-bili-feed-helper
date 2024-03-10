@@ -31,6 +31,8 @@ async def test_dynamic_parser():
         "https://www.bilibili.com/festival/bnj2024?bvid=BV1at421p79N",  # 视频（活动）
         "https://www.bilibili.com/video/BV1bW411n7fY/",  # 视频（活动）
         "https://b23.tv/BV1bW411n7fY",  # 视频（活动）
+        "av912905698",  # 视频（短链）
+        "BV1bW411n7fY",  # 视频（短链）
     ]
     for i in urls:
         result = await biliparser(i)

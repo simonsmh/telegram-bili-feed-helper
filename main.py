@@ -42,7 +42,7 @@ from biliparser import biliparser, feed
 from database import cache_clear, db_close, db_init, db_status
 from utils import LOCAL_MODE, compress, escape_markdown, headers, logger, referer_url
 
-regex = r"(?i)[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv)\S+"
+regex = r"(?i)[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv)\S+|av\d+|BV\w{10}"
 
 
 sourcecodemarkup = InlineKeyboardMarkup(
@@ -445,7 +445,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     query = inline_query.query
     helpmsg = [
         InlineQueryResultArticle(
-            id=str(uuid4()),
+            id=uuid4().hex,
             title="帮助",
             description="将 Bot 添加到群组可以自动匹配消息, 请注意 Inline 模式存在限制: 只可发单张图，消耗设备流量。",
             reply_markup=sourcecodemarkup,
@@ -468,7 +468,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         logger.warning(f"解析错误! {f}")
         results = [
             InlineQueryResultArticle(
-                id=str(uuid4()),
+                id=uuid4().hex,
                 title="解析错误!",
                 description=escape_markdown(f.__str__()),
                 input_message_content=InputTextMessageContent(
@@ -483,7 +483,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             if not f.mediaurls:
                 results = [
                     InlineQueryResultArticle(
-                        id=str(uuid4()),
+                        id=uuid4().hex,
                         title=f.user,
                         description=f.content,
                         reply_markup=origin_link(f.url),
@@ -496,8 +496,18 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             else:
                 if f.mediatype == "video":
                     results = [
+                        InlineQueryResultPhoto(
+                            id=uuid4().hex,
+                            caption=captions(f, fallback, True),
+                            title=f.user,
+                            description=f.content,
+                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                            photo_url=f.mediathumb + "@1280w.jpg",
+                            reply_markup=origin_link(f.url),
+                            thumbnail_url=f.mediathumb + "@512w_512h.jpg",
+                        ),
                         InlineQueryResultVideo(
-                            id=str(uuid4()),
+                            id=uuid4().hex,
                             caption=captions(f, fallback, True),
                             title=f.mediatitle,
                             description=f"{f.user}: {f.content}",
@@ -517,12 +527,12 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                                 if f.mediadimention["rotate"]
                                 else f.mediadimention["height"]
                             ),
-                        )
+                        ),
                     ]
                 elif f.mediatype == "audio":
                     results = [
                         InlineQueryResultAudio(
-                            id=str(uuid4()),
+                            id=uuid4().hex,
                             caption=captions(f, fallback, True),
                             title=f.mediatitle,
                             audio_duration=f.mediaduration,
@@ -530,13 +540,13 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                             performer=f.user,
                             reply_markup=origin_link(f.url),
-                        )
+                        ),
                     ]
                 else:
                     results = [
                         (
                             InlineQueryResultGif(
-                                id=str(uuid4()),
+                                id=uuid4().hex,
                                 caption=captions(f, fallback, True),
                                 title=f"{f.user}: {f.content}",
                                 gif_url=img,
@@ -546,7 +556,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             )
                             if ".gif" in img
                             else InlineQueryResultPhoto(
-                                id=str(uuid4()),
+                                id=uuid4().hex,
                                 caption=captions(f, fallback, True),
                                 title=f.user,
                                 description=f.content,
