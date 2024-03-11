@@ -42,7 +42,7 @@ from biliparser import biliparser, feed
 from database import cache_clear, db_close, db_init, db_status
 from utils import LOCAL_MODE, compress, escape_markdown, headers, logger, referer_url
 
-regex = r"(?i)[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv)\S+|av\d+|BV\w{10}"
+regex = r"(?i)[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv)\S+|BV\w{10}"
 
 
 sourcecodemarkup = InlineKeyboardMarkup(
