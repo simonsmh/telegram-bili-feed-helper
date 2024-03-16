@@ -309,15 +309,15 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     )
                 break
             try:
-                try:
-                    # for link sharing privacy under channel
-                    if i == 1 and len(urls) == 1 and update.channel_post:
-                        # try to delete only if bot have delete permission and this message is only for sharing
-                        match = re.match(share_link_regex, data)
-                        if urls[0] == data or (match and match.group(0) == data):
-                            await message.delete()
-                except:
-                    pass
+                # for link sharing privacy under channel
+                if i == 1 and len(urls) == 1 and update.channel_post:
+                    # try to delete only if bot have delete permission and this message is only for sharing
+                    match = re.match(share_link_regex, data)
+                    if urls[0] == data or (match and match.group(0) == data):
+                        await message.delete()
+            except:
+                pass
+            try:
                 await parse_send(f, markdown_fallback)
             except BadRequest as err:
                 if (
