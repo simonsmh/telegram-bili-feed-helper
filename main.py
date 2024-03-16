@@ -14,6 +14,7 @@ import pytz
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    InlineQuery,
     InlineQueryResultArticle,
     InlineQueryResultAudio,
     InlineQueryResultGif,
@@ -435,9 +436,9 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    async def inline_query_answer(inline_query, msg):
+    async def inline_query_answer(inline_query: InlineQuery, msg):
         try:
-            await inline_query.answer(msg)
+            await inline_query.answer(msg, cache_time=0, is_personal=True)
         except BadRequest as err:
             if (
                 "Query is too old and response timeout expired or query id is invalid"
