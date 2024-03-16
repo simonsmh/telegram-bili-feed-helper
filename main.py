@@ -151,7 +151,7 @@ async def get_media(
 
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.message
+    message = update.message or update.channel_post
     if message is None:
         return
     data = message.text or message.caption
@@ -311,7 +311,10 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             try:
                 await parse_send(f, markdown_fallback)
             except BadRequest as err:
-                if "Not enough rights to send" in err.message:
+                if (
+                    "Not enough rights to send" in err.message
+                    or "Need administrator rights in the channel chat" in err.message
+                ):
                     await message.chat.leave()
                     logger.warning(
                         f"{err} 第{i}次异常->权限不足, 无法发送给{'@'+message.chat.username if message.chat.username else message.chat.id}"
@@ -340,7 +343,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.message
+    message = update.message or update.channel_post
     if message is None:
         return
     data = message.text
