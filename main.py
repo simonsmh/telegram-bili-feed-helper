@@ -42,8 +42,8 @@ from biliparser import biliparser, feed
 from database import cache_clear, db_close, db_init, db_status
 from utils import LOCAL_MODE, compress, escape_markdown, headers, logger, referer_url
 
-regex = r"(?i)[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv)\S+|BV\w{10}"
-
+regex = r"(?i)(?:https?://)?[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv)\S+|BV\w{10}"
+share_link_regex = r"(?i)【.*】 https://[\w\.]*?(?:bilibili\.com|b23\.tv)\S+"
 
 sourcecodemarkup = InlineKeyboardMarkup(
     [
@@ -309,6 +309,15 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     )
                 break
             try:
+                try:
+                    # for link sharing privacy
+                    if i == 1 and len(urls) == 1:
+                        # try to delete only if bot have delete permission and this message is only for sharing
+                        match = re.match(share_link_regex, data)
+                        if urls[0] == data or (match and match.group(0) == data):
+                            await message.delete()
+                except:
+                    pass
                 await parse_send(f, markdown_fallback)
             except BadRequest as err:
                 if (
