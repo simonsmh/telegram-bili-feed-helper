@@ -4,7 +4,7 @@ import pytest
 @pytest.mark.asyncio
 async def test_dynamic_parser():
     from biliparser import biliparser
-    from database import db_init
+    from biliparser.database import db_init
 
     await db_init()
     urls = [

@@ -8,6 +8,7 @@ from urllib.parse import urlencode
 
 from loguru import logger
 from PIL import Image
+from tortoise.exceptions import IntegrityError
 
 logger.remove()
 logger.add(sys.stdout, backtrace=True, diagnose=True)
@@ -32,6 +33,20 @@ class ParserException(Exception):
 
     def __str__(self):
         return f"{self.msg}: {self.url} ->\n{self.res}"
+
+
+def retry_catcher(func):
+    async def inner_function(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except ParserException as err:
+            logger.error(err)
+            return err
+        except BaseException as err:
+            logger.exception(err)
+            return err
+
+    return inner_function
 
 
 def compress(inpil, size=1280, fix_ratio=False) -> BytesIO:

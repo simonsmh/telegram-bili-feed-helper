@@ -39,9 +39,17 @@ from telegram.ext import (
     filters,
 )
 
-from biliparser import biliparser, feed
-from database import cache_clear, db_close, db_init, db_status
-from utils import LOCAL_MODE, compress, escape_markdown, headers, logger, referer_url
+from biliparser import biliparser
+from biliparser.model import Feed
+from biliparser.database import cache_clear, db_close, db_init, db_status
+from biliparser.utils import (
+    LOCAL_MODE,
+    compress,
+    escape_markdown,
+    headers,
+    logger,
+    referer_url,
+)
 
 regex = r"(?i)(?:https?://)?[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv)\S+|BV\w{10}"
 share_link_regex = r"(?i)【.*】 https://[\w\.]*?(?:bilibili\.com|b23\.tv)\S+"
@@ -75,7 +83,7 @@ async def get_description(context: ContextTypes.DEFAULT_TYPE):
 
 @lru_cache(maxsize=16)
 def captions(
-    f: Union[feed, Exception], fallback: bool = False, is_caption: bool = False
+    f: Union[Feed, Exception], fallback: bool = False, is_caption: bool = False
 ) -> str:
     def parser_helper(content: str, md_flag: bool = True) -> str:
         if not content:
@@ -119,7 +127,7 @@ def captions(
 
 async def get_media(
     client: httpx.AsyncClient,
-    f: feed,
+    f: Feed,
     url: str,
     compression: bool = True,
     size: int = 320,
@@ -171,7 +179,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     except:
         pass
 
-    async def parse_send(f: feed, fallback: bool = False) -> None:
+    async def parse_send(f: Feed, fallback: bool = False) -> None:
         if not f.mediaurls:
             await message.reply_text(
                 captions(f, fallback),
@@ -492,7 +500,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await inline_query_answer(inline_query, results)
     else:
 
-        async def answer_results(f: feed, fallback: bool = False):
+        async def answer_results(f: Feed, fallback: bool = False):
             if not f.mediaurls:
                 results = [
                     InlineQueryResultArticle(
@@ -661,7 +669,7 @@ if __name__ == "__main__":
     elif len(sys.argv) >= 2:
         TOKEN = sys.argv[1]
     else:
-        logger.error(f"Need TOKEN.")
+        logger.error("Need TOKEN.")
         sys.exit(1)
     application = (
         Application.builder()
