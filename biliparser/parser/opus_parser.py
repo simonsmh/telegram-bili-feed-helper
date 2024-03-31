@@ -2,11 +2,11 @@ import re
 from functools import reduce
 
 import httpx
-from tortoise import timezone
-from tortoise.expressions import Q
+import orjson
 
-from ..database import (
-    dynamic_cache,
+from ..cache import (
+    CACHES_TIMER,
+    RedisCache,
 )
 from ..model import Opus
 from ..utils import (
@@ -67,48 +67,47 @@ def __opus_handle_desc_text(desc: dict):
 
 @retry_catcher
 async def parse_opus(client: httpx.AsyncClient, url: str):
+    logger.info(f"处理动态信息: 链接: {url}")
     match = re.search(r"bilibili\.com[\/\w]*\/(\d+)", url)
     if not match:
         raise ParserException("动态链接错误", url)
     f = Opus(url)
     f.dynamic_id = int(match.group(1))
-    query = (
-        Q(rid=match.group(1))
-        if "type=2" in match.group(0)
-        else Q(dynamic_id=match.group(1))
-    )
-    cache = await dynamic_cache.get_or_none(
-        query,
-        created__gte=timezone.now() - dynamic_cache.timeout,
-    )
+    # 1.获取缓存
+    try:
+        cache = RedisCache().get(f"opus:dynamic_id:{f.dynamic_id}")
+    except Exception as e:
+        logger.exception(f"拉取动态缓存错误: {e}")
+        cache = None
+    # 2.拉取动态
     if cache:
-        logger.info(f"拉取opus动态缓存: {cache.created}")
-        f.detailcontent = cache.content
+        logger.info(f"拉取动态缓存: {f.dynamic_id}")
+        f.detailcontent = orjson.loads(cache)  # type: ignore
     else:
         r = await client.get(
             BILI_API + "/x/polymer/web-dynamic/desktop/v1/detail",
             params={"id": f.dynamic_id},
         )
-        response = r.json()
-        if not response.get("data"):
-            raise ParserException("opus动态获取错误", url, response)
-        f.detailcontent = response["data"]
-        if not f.detailcontent.get("item"):
-            raise ParserException("opus动态解析错误", url, f.detailcontent)
-    logger.info(f"动态ID: {f.dynamic_id}")
-    if not cache:
-        logger.info(f"动态缓存: {f.dynamic_id}")
-        cache = await dynamic_cache.get_or_none(query)
         try:
-            if cache:
-                cache.content = f.detailcontent
-                await cache.save(update_fields=["content", "created"])
-            else:
-                await dynamic_cache(
-                    dynamic_id=f.dynamic_id, rid=f.rid, content=f.detailcontent
-                ).save()
+            response = r.json()
         except Exception as e:
-            logger.exception(f"动态缓存错误: {e}")
+            raise ParserException(
+                f"动态获取错误:{f.dynamic_id} {e}", r.url
+            )
+        # 3.动态解析
+        if not response or not response.get("data") or not response["data"].get("item"):
+            raise ParserException("动态解析错误", url, response)
+        f.detailcontent = response["data"]
+        # 4.缓存动态
+        try:
+            cache = RedisCache().set(
+                f"opus:dynamic_id:{f.dynamic_id}",
+                orjson.dumps(f.detailcontent),
+                ex=CACHES_TIMER.get("opus"),
+                nx=True,
+            )
+        except Exception as e:
+            logger.exception(f"缓存动态错误: {e}")
     detailcontent = __list_dicts_to_dict(f.detailcontent["item"]["modules"])
     f.user = detailcontent["module_author"]["user"]["name"]
     f.uid = detailcontent["module_author"]["user"]["mid"]

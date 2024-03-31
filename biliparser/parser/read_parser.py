@@ -53,6 +53,7 @@ async def parse_read(client: httpx.AsyncClient, url: str):
             except Exception as e:
                 logger.exception(f"图片上传错误: {e}")
 
+    logger.info(f"处理文章信息: 链接: {url}")
     match = re.search(r"bilibili\.com\/read\/(?:cv|mobile\/|mobile\?id=)(\d+)", url)
     if not match:
         raise ParserException("文章链接错误", url)

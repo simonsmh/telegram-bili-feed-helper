@@ -1,9 +1,9 @@
 import httpx
-from tortoise import timezone
-from tortoise.expressions import Q
+import orjson
 
-from ..database import (
-    reply_cache,
+from ..cache import (
+    CACHES_TIMER,
+    RedisCache,
 )
 from ..utils import (
     BILI_API,
@@ -14,43 +14,41 @@ from ..utils import (
 
 @retry_catcher
 async def parse_reply(client: httpx.AsyncClient, oid, reply_type):
-    query = Q(oid=oid, reply_type=reply_type)
-    cache = await reply_cache.get_or_none(
-        query,
-        created__gte=timezone.now() - reply_cache.timeout,
-    )
+    logger.info(f"处理评论信息: 评论ID: {oid} 评论类型: {reply_type}")
+    # 1.获取缓存
+    try:
+        cache = RedisCache().get(f"reply:{oid}:{reply_type}")
+    except Exception as e:
+        logger.exception(f"拉取评论缓存错误: {e}")
+        cache = None
+    # 2.拉取评论
     if cache:
-        logger.info(f"拉取评论缓存: {cache.created}")
-        reply = cache.content
+        logger.info(f"拉取评论缓存: {oid}")
+        reply = orjson.loads(cache) # type: ignore
     else:
         r = await client.get(
             BILI_API + "/x/v2/reply/main",
             params={"oid": oid, "type": reply_type},
             headers={"Referer": "https://www.bilibili.com/client"},
         )
-        response = r.json()
-        if not response.get("data"):
-            logger.warning(
-                f"评论ID: {oid}, 评论类型: {reply_type}, 获取错误: {response}"
-            )
-            return {}
-        reply = response.get("data")
-        if not reply:
-            logger.warning(
-                f"评论ID: {oid}, 评论类型: {reply_type}, 解析错误: {response}"
-            )
-            return {}
-            # raise ParserException("评论解析错误", reply, r)
-    logger.info(f"评论ID: {oid}, 评论类型: {reply_type}")
-    if not cache:
-        logger.info(f"评论缓存: {oid}")
-        cache = await reply_cache.get_or_none(query)
         try:
-            if cache:
-                cache.content = reply
-                await cache.save(update_fields=["content", "created"])
-            else:
-                await reply_cache(oid=oid, reply_type=reply_type, content=reply).save()
+            response = r.json()
         except Exception as e:
-            logger.exception(f"评论缓存错误: {e}")
+            logger.exception(f"评论获取错误: {oid}-{reply_type} {e}")
+            return {}
+        # 3.评论解析
+        if not response or not response.get("data"):
+            logger.warning(f"评论解析错误: {oid}-{reply_type} {response}")
+            return {}
+        reply = response["data"]
+        # 4.缓存评论
+        try:
+            cache = RedisCache().set(
+                f"reply:{oid}:{reply_type}",
+                orjson.dumps(reply),
+                ex=CACHES_TIMER.get("reply"),
+                nx=True,
+            )
+        except Exception as e:
+            logger.exception(f"缓存评论错误: {e}")
     return reply

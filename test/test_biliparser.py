@@ -37,3 +37,16 @@ async def test_dynamic_parser():
     for i in urls:
         result = await biliparser(i)
         assert result
+
+
+@pytest.mark.asyncio
+async def test_cache():
+    import orjson
+
+    from biliparser.cache import RedisCache
+    req = ["2"]
+    RedisCache().set("1", orjson.dumps(req))
+    result = RedisCache().get("1")
+    # result = RedisCache().get("2")
+    result = orjson.loads(result)
+    assert result

@@ -1,11 +1,11 @@
 import re
 
 import httpx
-from tortoise import timezone
-from tortoise.expressions import Q
+import orjson
 
-from ..database import (
-    live_cache,
+from ..cache import (
+    CACHES_TIMER,
+    RedisCache,
 )
 from ..model import Live
 from ..utils import (
@@ -18,43 +18,45 @@ from ..utils import (
 
 @retry_catcher
 async def parse_live(client: httpx.AsyncClient, url: str):
+    logger.info(f"处理直播信息: 链接: {url}")
     match = re.search(r"live\.bilibili\.com[\/\w]*\/(\d+)", url)
     if not match:
         raise ParserException("直播链接错误", url)
     f = Live(url)
     f.room_id = int(match.group(1))
-    query = Q(room_id=f.room_id)
-    cache = await live_cache.get_or_none(
-        query,
-        created__gte=timezone.now() - live_cache.timeout,
-    )
+    # 1.获取缓存
+    try:
+        cache = RedisCache().get(f"live:{f.room_id}")
+    except Exception as e:
+        logger.exception(f"拉取直播缓存错误: {e}")
+        cache = None
+    # 2.拉取动态
     if cache:
-        logger.info(f"拉取直播缓存: {cache.created}")
-        f.rawcontent = cache.content
-        detail = f.rawcontent.get("data")
+        logger.info(f"拉取直播缓存: {f.room_id}")
+        f.rawcontent = orjson.loads(cache)  # type: ignore
     else:
         r = await client.get(
             "https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom",
             params={"room_id": f.room_id},
         )
-        f.rawcontent = r.json()
-        detail = f.rawcontent.get("data")
-        if not detail:
-            raise ParserException("直播解析错误", r.url, f.rawcontent)
-    logger.info(f"直播ID: {f.room_id}")
-    if not cache:
-        logger.info(f"直播缓存: {f.room_id}")
-        cache = await live_cache.get_or_none(query)
         try:
-            if cache:
-                cache.content = f.rawcontent
-                await cache.save(update_fields=["content", "created"])
-            else:
-                await live_cache(room_id=f.room_id, content=f.rawcontent).save()
+            f.rawcontent = r.json()
         except Exception as e:
-            logger.exception(f"直播缓存错误: {e}")
-    if not detail:
-        raise ParserException("直播内容获取错误", f.url)
+            raise ParserException(f"直播获取错误:{f.room_id} {e}", r.url)
+        # 3.解析直播
+        if not f.rawcontent or not f.rawcontent.get("data"):
+            raise ParserException("直播解析错误", r.url, f.rawcontent)
+        # 4.缓存直播
+        try:
+            cache = RedisCache().set(
+                f"live:{f.room_id}",
+                orjson.dumps(f.rawcontent),
+                ex=CACHES_TIMER.get("live"),
+                nx=True,
+            )
+        except Exception as e:
+            logger.exception(f"缓存直播错误: {e}")
+    detail = f.rawcontent.get("data")
     f.user = detail["anchor_info"]["base_info"]["uname"]
     roominfo = detail.get("room_info")
     f.uid = roominfo.get("uid")

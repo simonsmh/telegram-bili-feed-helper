@@ -8,70 +8,6 @@ from tortoise.models import Model
 from ..utils import logger
 
 
-class reply_cache(Model):
-    oid = fields.BigIntField(pk=True, unique=True)
-    reply_type = fields.IntField()
-    content: dict = fields.JSONField()
-    created = fields.DatetimeField(auto_now=True)
-    timeout = timedelta(minutes=20)
-
-    class Meta(Model.Meta):
-        table = "reply"
-
-
-class dynamic_cache(Model):
-    dynamic_id = fields.BigIntField(pk=True, unique=True)
-    rid = fields.BigIntField(unique=True)
-    content: dict = fields.JSONField()
-    created = fields.DatetimeField(auto_now=True)
-    timeout = timedelta(days=10)
-
-    class Meta(Model.Meta):
-        table = "dynamic"
-
-
-class audio_cache(Model):
-    audio_id = fields.IntField(pk=True, unique=True)
-    content: dict = fields.JSONField()
-    created = fields.DatetimeField(auto_now=True)
-    timeout = timedelta(days=10)
-
-    class Meta(Model.Meta):
-        table = "audio"
-
-
-class live_cache(Model):
-    room_id = fields.IntField(pk=True, unique=True)
-    content: dict = fields.JSONField()
-    created = fields.DatetimeField(auto_now=True)
-    timeout = timedelta(minutes=5)
-
-    class Meta(Model.Meta):
-        table = "live"
-
-
-class bangumi_cache(Model):
-    epid = fields.IntField(pk=True, unique=True)
-    ssid = fields.IntField()
-    content: dict = fields.JSONField()
-    created = fields.DatetimeField(auto_now=True)
-    timeout = timedelta(days=10)
-
-    class Meta(Model.Meta):
-        table = "bangumi"
-
-
-class video_cache(Model):
-    aid = fields.BigIntField(pk=True, unique=True)
-    bvid = fields.CharField(max_length=12, unique=True)
-    content: dict = fields.JSONField()
-    created = fields.DatetimeField(auto_now=True)
-    timeout = timedelta(days=10)
-
-    class Meta(Model.Meta):
-        table = "video"
-
-
 class read_cache(Model):
     read_id = fields.IntField(pk=True, unique=True)
     graphurl = fields.TextField()
@@ -82,20 +18,24 @@ class read_cache(Model):
         table = "read"
 
 
-CACHES = {
-    "audio": audio_cache,
-    "bangumi": bangumi_cache,
-    "dynamic": dynamic_cache,
-    "live": live_cache,
-    "read": read_cache,
-    "reply": reply_cache,
-    "video": video_cache,
-}
+# class file_cache(Model):
+#     mediafilename = fields.CharField(50, pk=True, unique=True)
+#     file_id = fields.CharField(50, unique=True)
+#     created = fields.DatetimeField(auto_now=True)
+
+#     class Meta(Model.Meta):
+#         table = "file"
+
+
+CACHES_MAP = {"read": read_cache}
 
 
 async def db_init() -> None:
     db_url = os.environ.get("DATABASE_URL", "sqlite://cache.db")
     logger.info(f"db_url: {db_url}")
+    redis_url = os.environ.get("REDIS_URL")
+    if redis_url:
+        logger.info(f"redis_url: {redis_url}")
     await Tortoise.init(
         db_url=db_url,
         modules={"models": ["biliparser.database"]},
@@ -109,26 +49,26 @@ async def db_close() -> None:
 
 
 async def db_status():
-    tasks = [item.all().count() for item in CACHES.values()]
+    tasks = [item.all().count() for item in CACHES_MAP.values()]
     result = await asyncio.gather(*tasks)
     ans = ""
-    for key, item in zip(CACHES.keys(), await asyncio.gather(*tasks)):
+    for key, item in zip(CACHES_MAP.keys(), await asyncio.gather(*tasks)):
         ans += f"{key}: {item}\n"
     ans += f"总计: {sum(result)}"
     return ans
 
 
 async def cache_clear():
-    for item in CACHES.values():
+    for item in CACHES_MAP.values():
         await item.filter(created__lt=datetime.utcnow() - item.timeout).delete()
     return await db_status()
 
 
 async def db_clear(target):
-    if CACHES.get(target):
+    if CACHES_MAP.get(target):
         await (
-            CACHES[target]
-            .filter(created__lt=datetime.utcnow() - CACHES[target].timeout)
+            CACHES_MAP[target]
+            .filter(created__lt=datetime.utcnow() - CACHES_MAP[target].timeout)
             .delete()
         )
     else:

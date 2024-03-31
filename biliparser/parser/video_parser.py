@@ -3,12 +3,11 @@ import re
 
 import httpx
 from telegram.constants import FileSizeLimit
-from tortoise import timezone
-from tortoise.expressions import Q
+import orjson
 
-from ..database import (
-    bangumi_cache,
-    video_cache,
+from ..cache import (
+    CACHES_TIMER,
+    RedisCache,
 )
 from ..model import Video
 from ..utils import (
@@ -25,6 +24,7 @@ from .reply_parser import parse_reply
 
 @retry_catcher
 async def parse_video(client: httpx.AsyncClient, url: str):
+    logger.info(f"处理视频信息: 链接: {url}")
     match = re.search(
         r"(?:bilibili\.com/(?:video|bangumi/play)|b23\.tv|acg\.tv)/(?:(?P<bvid>BV\w{10})|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+))",
         url,
@@ -55,89 +55,108 @@ async def parse_video(client: httpx.AsyncClient, url: str):
     else:
         raise ParserException("视频链接解析错误", url)
     f = Video(url)
-    if "ep_id" in params or "season_id" in params:
-        query = Q(
-            epid=params.get("ep_id"),
-            ssid=params.get("season_id"),
-            join_type="OR",
-        )
-        cache = await bangumi_cache.get_or_none(
-            query,
-            created__gte=timezone.now() - bangumi_cache.timeout,
-        )
+    if epid:
+        f.epid = epid
+    if epid is not None or ssid is not None:
+        # 1.获取缓存
+        try:
+            cache = (
+                RedisCache().get(f"bangumi:ep:{epid}")
+                if epid
+                else RedisCache().get(f"bangumi:ss:{ssid}")
+            )
+        except Exception as e:
+            logger.exception(f"拉取番剧缓存错误: {e}")
+            cache = None
+        # 2.拉取番剧
         if cache:
-            logger.info(f"拉取番剧缓存: {cache.created}")
-            f.infocontent = cache.content
+            logger.info(
+                f"拉取番剧缓存:epid {epid}" if epid else f"拉取番剧缓存:ssid {ssid}"
+            )
+            f.epcontent = orjson.loads(cache) # type: ignore
         else:
             r = await client.get(
                 BILI_API + "/pgc/view/web/season",
                 params=params,
             )
-            f.infocontent = r.json()
-        detail = f.infocontent.get("result")
-        if not detail:
-            # Anime detects non-China IP
-            raise ParserException("番剧解析错误", url, f.infocontent)
-        f.sid = detail.get("season_id")
-        if epid:
-            for episode in detail.get("episodes"):
-                if str(episode.get("id")) == epid:
-                    f.aid = episode.get("aid")
-        if not f.aid:
-            f.aid = detail.get("episodes")[-1].get("aid")
-            epid = detail.get("episodes")[-1].get("id")
-        logger.info(f"番剧ID: {epid}")
-        if not cache:
-            logger.info(f"番剧缓存: {epid}")
-            cache = await bangumi_cache.get_or_none(query)
             try:
-                if cache:
-                    cache.content = f.infocontent
-                    await cache.save(update_fields=["content", "created"])
-                else:
-                    await bangumi_cache(
-                        epid=epid, ssid=f.sid, content=f.infocontent
-                    ).save()
+                f.epcontent = r.json()
             except Exception as e:
-                logger.exception(f"番剧缓存错误: {e}")
+                logger.exception(
+                    f"番剧获取错误:epid {epid} {e}"
+                    if epid
+                    else f"番剧获取错误:ssid {ssid} {e}"
+                )
+            # 3.番剧解析
+            if not f.epcontent or not f.epcontent.get("result"):
+                # Anime detects non-China IP
+                raise ParserException(
+                    f"番剧解析错误:{epid if epid else ssid} {f.epcontent}",
+                    url,
+                    f.epcontent,
+                )
+            if not f.epid or not f.ssid or not f.aid:
+                raise ParserException(
+                    f"番剧解析错误:{f.aid} {f.ssid} {f.aid}", url, f.epcontent
+                )
+            # 4.缓存评论
+            try:
+                for key in [f"bangumi:ep:{f.epid}", f"bangumi:ss:{f.ssid}"]:
+                    cache = RedisCache().set(
+                        key,
+                        orjson.dumps(f.epcontent),
+                        ex=CACHES_TIMER.get("bangumi"),
+                        nx=True,
+                    )
+            except Exception as e:
+                logger.exception(f"缓存番剧错误: {e}")
         params = {"aid": f.aid}
-    # elif "aid" in params or "bvid" in params:
-    query = Q(aid=params.get("aid"), bvid=params.get("bvid"), join_type="OR")
-    cache = await video_cache.get_or_none(
-        query,
-        created__gte=timezone.now() - video_cache.timeout,
-    )
+        aid = f.aid
+    # 1.获取缓存
+    try:
+        cache = (
+            RedisCache().get(f"video:aid:{aid}")
+            if aid
+            else RedisCache().get(f"video:bvid:{bvid}")
+        )
+    except Exception as e:
+        logger.exception(f"拉取视频缓存错误: {e}")
+        cache = None
+    # 2.拉取视频
     if cache:
-        logger.info(f"拉取视频缓存: {cache.created}")
-        f.infocontent = cache.content
-        detail = f.infocontent.get("data")
+        logger.info(f"拉取视频缓存:{aid if aid else bvid}")
+        f.infocontent = orjson.loads(cache) # type: ignore
     else:
         r = await client.get(
             BILI_API + "/x/web-interface/view",
             params=params,
         )
         # Video detects non-China IP
-        f.infocontent = r.json()
-        detail = f.infocontent.get("data")
-        if not detail:
-            raise ParserException("视频解析错误", r.url, f.infocontent)
-    if not detail:
-        raise ParserException("视频内容获取错误", f.url)
-    bvid = detail.get("bvid")
-    f.aid = detail.get("aid")
-    f.cid = detail.get("cid")
-    logger.info(f"视频ID: {f.aid}")
-    if not cache:
-        logger.info(f"视频缓存: {f.aid}")
-        cache = await video_cache.get_or_none(query)
         try:
-            if cache:
-                cache.content = f.infocontent
-                await cache.save(update_fields=["content", "created"])
-            else:
-                await video_cache(aid=f.aid, bvid=bvid, content=f.infocontent).save()
+            f.infocontent = r.json()
         except Exception as e:
-            logger.exception(f"视频缓存错误: {e}")
+            raise ParserException(f"视频获取错误:{aid if aid else bvid} {e}", r.url)
+        # 3.视频解析
+        if not f.infocontent and not f.infocontent.get("data"):
+            raise ParserException(
+                f"视频解析错误{aid if aid else bvid}", r.url, f.infocontent
+            )
+        if not f.aid or not f.bvid or not f.cid:
+            raise ParserException(
+                f"视频解析错误:{f.aid} {f.bvid} {f.cid}", url, f.epcontent
+            )
+        # 4.缓存视频
+        try:
+            for key in [f"video:aid:{f.aid}", f"video:bvid:{f.bvid}"]:
+                cache = RedisCache().set(
+                    key,
+                    orjson.dumps(f.infocontent),
+                    ex=CACHES_TIMER.get("video"),
+                    nx=True,
+                )
+        except Exception as e:
+            logger.exception(f"缓存番剧错误: {e}")
+    detail = f.infocontent.get("data")
     f.user = detail.get("owner").get("name")
     f.uid = detail.get("owner").get("mid")
     f.content = detail.get("tname", "")

@@ -17,14 +17,11 @@ tortoise-orm = {extras = ["accel"], version = "*"}
 telegraph = {extras = ["aio"], version = "*"}
 uvicorn = "*"
 asyncmy = "*"
+redis = "*"
 
 [dev-packages]
-black = "*"
 pytest = "*"
 pytest-asyncio = "*"
 
 [requires]
 python_version = "3.11"
-
-[pipenv]
-allow_prereleases = true
