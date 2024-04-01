@@ -32,34 +32,34 @@ async def parse_audio(client: httpx.AsyncClient, url: str):
     try:
         cache = RedisCache().get(f"audio:{f.audio_id}")
     except Exception as e:
-        logger.exception(f"拉取直播缓存错误: {e}")
+        logger.exception(f"拉取音频缓存错误: {e}")
         cache = None
-    # 2.拉取动态
+    # 2.拉取音频
     if cache:
         logger.info(f"拉取音频缓存: {f.audio_id}")
         f.infocontent = orjson.loads(cache)  # type: ignore
     else:
-        r = await client.get(
-            BILI_API + "/audio/music-service-c/songs/playing",
-            params={"song_id": f.audio_id},
-        )
         try:
+            r = await client.get(
+                BILI_API + "/audio/music-service-c/songs/playing",
+                params={"song_id": f.audio_id},
+            )
             f.infocontent = r.json()
         except Exception as e:
-            raise ParserException(f"音频获取错误:{f.audio_id} {e}", r.url)
+            raise ParserException(f"音频获取错误:{f.audio_id}", url, e)
         # 3.解析音频
         if not f.infocontent or not f.infocontent.get("data"):
-            raise ParserException("直播解析错误", r.url, f.infocontent)
-        # 4.缓存直播
+            raise ParserException("音频解析错误", r.url, f.infocontent)
+        # 4.缓存音频
         try:
-            cache = RedisCache().set(
+            RedisCache().set(
                 f"audio:{f.audio_id}",
                 orjson.dumps(f.infocontent),
                 ex=CACHES_TIMER.get("audio"),
                 nx=True,
             )
         except Exception as e:
-            logger.exception(f"缓存直播错误: {e}")
+            logger.exception(f"缓存音频错误: {e}")
     detail = f.infocontent.get("data")
     f.uid = detail.get("mid")
     r = await client.get(

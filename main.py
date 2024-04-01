@@ -41,7 +41,7 @@ from telegram.ext import (
 
 from biliparser import biliparser
 from biliparser.model import Feed
-from biliparser.database import cache_clear, db_close, db_init, db_status
+from biliparser.database import db_close, db_init
 from biliparser.utils import (
     LOCAL_MODE,
     compress,
@@ -607,19 +607,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.effective_message
-    if message is None:
-        return
-    result = await db_status()
-    await message.reply_text(result)
-
-
-async def clear_cache(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await cache_clear()
-    await status(update, context)
-
-
 async def post_init(application: Application):
     await db_init()
     await application.bot.set_my_commands(
@@ -652,14 +639,6 @@ def add_handler(application: Application):
     application.add_handler(InlineQueryHandler(inlineparse, block=False))
     application.add_handler(CommandHandler("parse", parse, block=False))
     application.add_handler(CommandHandler("file", fetch, block=False))
-    application.add_handler(
-        CommandHandler("status", status, filters=filters.ChatType.PRIVATE, block=False)
-    )
-    application.add_handler(
-        CommandHandler(
-            "clear", clear_cache, filters=filters.ChatType.PRIVATE, block=False
-        )
-    )
     application.add_error_handler(error_handler)
 
 

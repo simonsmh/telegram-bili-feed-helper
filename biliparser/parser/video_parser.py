@@ -21,6 +21,67 @@ from ..utils import (
 )
 from .reply_parser import parse_reply
 
+QN = [64, 32, 16]
+
+
+async def __test_url_status_code(client, url, referer):
+    header = headers.copy()
+    header["Referer"] = referer
+    async with client.stream("GET", url, headers=header) as response:
+        if response.status_code != 200:
+            return False
+        return True
+
+
+async def __get_video_result(client: httpx.AsyncClient, f: Video, detail, qn: int):
+    params = {"avid": f.aid, "cid": f.cid}
+    if qn:
+        params["qn"] = qn
+    r = await client.get(
+        BILI_API + "/x/player/playurl",
+        params=params,
+    )
+    video_result = r.json()
+    logger.debug(f"视频内容: {video_result}")
+    if (
+        video_result.get("code") == 0
+        and video_result.get("data")
+        and video_result.get("data").get("durl")
+        and video_result.get("data").get("durl")[0].get("size")
+        < (
+            int(
+                os.environ.get(
+                    "VIDEO_SIZE_LIMIT", FileSizeLimit.FILESIZE_UPLOAD_LOCAL_MODE
+                )
+            )
+            if LOCAL_MODE
+            else FileSizeLimit.FILESIZE_UPLOAD
+        )
+    ):
+        url = video_result["data"]["durl"][0]["url"]
+        result = await __test_url_status_code(client, url, f.url)
+        if not result and video_result["data"]["durl"][0].get("backup_url", None):
+            url = video_result["data"]["durl"][0]["backup_url"]
+            result = await __test_url_status_code(client, url, f.url)
+        if result:
+            f.mediacontent = video_result
+            f.mediathumb = detail.get("pic")
+            f.mediaduration = round(video_result["data"]["durl"][0]["length"] / 1000)
+            f.mediadimention = detail.get("pages")[0].get("dimension")
+            f.mediaurls = url
+            f.mediatype = "video"
+            f.mediaraws = (
+                False
+                if video_result.get("data").get("durl")[0].get("size")
+                < (
+                    FileSizeLimit.FILESIZE_DOWNLOAD_LOCAL_MODE
+                    if LOCAL_MODE
+                    else FileSizeLimit.FILESIZE_DOWNLOAD
+                )
+                else True
+            )
+            return True
+
 
 @retry_catcher
 async def parse_video(client: httpx.AsyncClient, url: str):
@@ -73,20 +134,16 @@ async def parse_video(client: httpx.AsyncClient, url: str):
             logger.info(
                 f"拉取番剧缓存:epid {epid}" if epid else f"拉取番剧缓存:ssid {ssid}"
             )
-            f.epcontent = orjson.loads(cache) # type: ignore
+            f.epcontent = orjson.loads(cache)  # type: ignore
         else:
-            r = await client.get(
-                BILI_API + "/pgc/view/web/season",
-                params=params,
-            )
             try:
+                r = await client.get(
+                    BILI_API + "/pgc/view/web/season",
+                    params=params,
+                )
                 f.epcontent = r.json()
             except Exception as e:
-                logger.exception(
-                    f"番剧获取错误:epid {epid} {e}"
-                    if epid
-                    else f"番剧获取错误:ssid {ssid} {e}"
-                )
+                raise ParserException(f"番剧获取错误:{epid if epid else ssid}", url, e)
             # 3.番剧解析
             if not f.epcontent or not f.epcontent.get("result"):
                 # Anime detects non-China IP
@@ -102,7 +159,7 @@ async def parse_video(client: httpx.AsyncClient, url: str):
             # 4.缓存评论
             try:
                 for key in [f"bangumi:ep:{f.epid}", f"bangumi:ss:{f.ssid}"]:
-                    cache = RedisCache().set(
+                    RedisCache().set(
                         key,
                         orjson.dumps(f.epcontent),
                         ex=CACHES_TIMER.get("bangumi"),
@@ -125,19 +182,19 @@ async def parse_video(client: httpx.AsyncClient, url: str):
     # 2.拉取视频
     if cache:
         logger.info(f"拉取视频缓存:{aid if aid else bvid}")
-        f.infocontent = orjson.loads(cache) # type: ignore
+        f.infocontent = orjson.loads(cache)  # type: ignore
     else:
-        r = await client.get(
-            BILI_API + "/x/web-interface/view",
-            params=params,
-        )
-        # Video detects non-China IP
         try:
+            r = await client.get(
+                BILI_API + "/x/web-interface/view",
+                params=params,
+            )
             f.infocontent = r.json()
         except Exception as e:
-            raise ParserException(f"视频获取错误:{aid if aid else bvid} {e}", r.url)
+            raise ParserException(f"视频获取错误:{aid if aid else bvid}", url, e)
         # 3.视频解析
         if not f.infocontent and not f.infocontent.get("data"):
+            # Video detects non-China IP
             raise ParserException(
                 f"视频解析错误{aid if aid else bvid}", r.url, f.infocontent
             )
@@ -148,7 +205,7 @@ async def parse_video(client: httpx.AsyncClient, url: str):
         # 4.缓存视频
         try:
             for key in [f"video:aid:{f.aid}", f"video:bvid:{f.bvid}"]:
-                cache = RedisCache().set(
+                RedisCache().set(
                     key,
                     orjson.dumps(f.infocontent),
                     ex=CACHES_TIMER.get("video"),
@@ -168,67 +225,7 @@ async def parse_video(client: httpx.AsyncClient, url: str):
     f.mediatype = "image"
     f.replycontent = await parse_reply(client, f.aid, f.reply_type)
 
-    async def get_video_result(client: httpx.AsyncClient, f: Video, detail, qn: int):
-        params = {"avid": f.aid, "cid": f.cid}
-        if qn:
-            params["qn"] = qn
-        r = await client.get(
-            BILI_API + "/x/player/playurl",
-            params=params,
-        )
-        video_result = r.json()
-        logger.debug(f"视频内容: {video_result}")
-        if (
-            video_result.get("code") == 0
-            and video_result.get("data")
-            and video_result.get("data").get("durl")
-            and video_result.get("data").get("durl")[0].get("size")
-            < (
-                int(
-                    os.environ.get(
-                        "VIDEO_SIZE_LIMIT", FileSizeLimit.FILESIZE_UPLOAD_LOCAL_MODE
-                    )
-                )
-                if LOCAL_MODE
-                else FileSizeLimit.FILESIZE_UPLOAD
-            )
-        ):
-
-            async def test_url_status_code(url):
-                header = headers.copy()
-                header["Referer"] = f.url
-                async with client.stream("GET", url, headers=header) as response:
-                    if response.status_code != 200:
-                        return False
-                    return True
-
-            url = video_result["data"]["durl"][0]["url"]
-            result = await test_url_status_code(url)
-            if not result and video_result["data"]["durl"][0].get("backup_url", None):
-                url = video_result["data"]["durl"][0]["backup_url"]
-                result = await test_url_status_code(url)
-            if result:
-                f.mediacontent = video_result
-                f.mediathumb = detail.get("pic")
-                f.mediaduration = round(
-                    video_result["data"]["durl"][0]["length"] / 1000
-                )
-                f.mediadimention = detail.get("pages")[0].get("dimension")
-                f.mediaurls = url
-                f.mediatype = "video"
-                f.mediaraws = (
-                    False
-                    if video_result.get("data").get("durl")[0].get("size")
-                    < (
-                        FileSizeLimit.FILESIZE_DOWNLOAD_LOCAL_MODE
-                        if LOCAL_MODE
-                        else FileSizeLimit.FILESIZE_DOWNLOAD
-                    )
-                    else True
-                )
-                return True
-
-    for item in [64, 32, 16]:
-        if await get_video_result(client, f, detail, item):
+    for qn in QN:
+        if await __get_video_result(client, f, detail, qn):
             break
     return f

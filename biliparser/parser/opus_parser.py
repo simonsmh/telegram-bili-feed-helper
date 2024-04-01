@@ -84,23 +84,21 @@ async def parse_opus(client: httpx.AsyncClient, url: str):
         logger.info(f"拉取动态缓存: {f.dynamic_id}")
         f.detailcontent = orjson.loads(cache)  # type: ignore
     else:
-        r = await client.get(
-            BILI_API + "/x/polymer/web-dynamic/desktop/v1/detail",
-            params={"id": f.dynamic_id},
-        )
         try:
+            r = await client.get(
+                BILI_API + "/x/polymer/web-dynamic/desktop/v1/detail",
+                params={"id": f.dynamic_id},
+            )
             response = r.json()
         except Exception as e:
-            raise ParserException(
-                f"动态获取错误:{f.dynamic_id} {e}", r.url
-            )
+            raise ParserException(f"动态获取错误:{f.dynamic_id}", url, e)
         # 3.动态解析
         if not response or not response.get("data") or not response["data"].get("item"):
             raise ParserException("动态解析错误", url, response)
         f.detailcontent = response["data"]
         # 4.缓存动态
         try:
-            cache = RedisCache().set(
+            RedisCache().set(
                 f"opus:dynamic_id:{f.dynamic_id}",
                 orjson.dumps(f.detailcontent),
                 ex=CACHES_TIMER.get("opus"),

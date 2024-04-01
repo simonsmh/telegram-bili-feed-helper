@@ -30,25 +30,25 @@ async def parse_live(client: httpx.AsyncClient, url: str):
     except Exception as e:
         logger.exception(f"拉取直播缓存错误: {e}")
         cache = None
-    # 2.拉取动态
+    # 2.拉取直播
     if cache:
         logger.info(f"拉取直播缓存: {f.room_id}")
         f.rawcontent = orjson.loads(cache)  # type: ignore
     else:
-        r = await client.get(
-            "https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom",
-            params={"room_id": f.room_id},
-        )
         try:
+            r = await client.get(
+                "https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom",
+                params={"room_id": f.room_id},
+            )
             f.rawcontent = r.json()
         except Exception as e:
-            raise ParserException(f"直播获取错误:{f.room_id} {e}", r.url)
+            raise ParserException(f"直播获取错误:{f.room_id}", url, e)
         # 3.解析直播
         if not f.rawcontent or not f.rawcontent.get("data"):
             raise ParserException("直播解析错误", r.url, f.rawcontent)
         # 4.缓存直播
         try:
-            cache = RedisCache().set(
+            RedisCache().set(
                 f"live:{f.room_id}",
                 orjson.dumps(f.rawcontent),
                 ex=CACHES_TIMER.get("live"),
