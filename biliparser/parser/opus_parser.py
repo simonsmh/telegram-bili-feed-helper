@@ -113,5 +113,6 @@ async def parse_opus(client: httpx.AsyncClient, url: str):
         f.content = __opus_handle_desc_text(detailcontent["module_desc"])
     if detailcontent.get("module_dynamic"):
         __opus_handle_major(f, detailcontent["module_dynamic"])
+    f.extra_markdown = f"[{escape_markdown(f.user)}的动态]({f.url})"
     f.replycontent = await parse_reply(client, f.rid, f.reply_type)
     return f

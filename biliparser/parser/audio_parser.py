@@ -30,7 +30,7 @@ async def parse_audio(client: httpx.AsyncClient, url: str):
     f.audio_id = int(match.group(1))
     # 1.获取缓存
     try:
-        cache = RedisCache().get(f"audio:{f.audio_id}")
+        cache = RedisCache().get(f"audio:info:{f.audio_id}")
     except Exception as e:
         logger.exception(f"拉取音频缓存错误: {e}")
         cache = None
@@ -53,37 +53,64 @@ async def parse_audio(client: httpx.AsyncClient, url: str):
         # 4.缓存音频
         try:
             RedisCache().set(
-                f"audio:{f.audio_id}",
+                f"audio:info:{f.audio_id}",
                 orjson.dumps(f.infocontent),
                 ex=CACHES_TIMER.get("audio"),
                 nx=True,
             )
         except Exception as e:
             logger.exception(f"缓存音频错误: {e}")
-    detail = f.infocontent.get("data")
-    f.uid = detail.get("mid")
-    r = await client.get(
-        BILI_API + "/audio/music-service-c/url",
-        params={
-            "songid": f.audio_id,
-            "mid": f.uid,
-            "privilege": 2,
-            "quality": 3,
-            "platform": "",
-        },
-    )
-    f.mediacontent = r.json()
+    detail = f.infocontent["data"]
     f.user = detail.get("author")
     f.content = detail.get("intro")
     f.extra_markdown = f"[{escape_markdown(detail.get('title'))}]({f.url})"
     f.mediathumb = detail.get("cover_url")
     f.mediatitle = detail.get("title")
     f.mediaduration = detail.get("duration")
-    f.mediaurls = f.mediacontent.get("data").get("cdns")
+    f.uid = detail.get("mid")
+    # 1.获取缓存
+    try:
+        cache = RedisCache().get(f"audio:media:{f.audio_id}")
+    except Exception as e:
+        logger.exception(f"拉取音频缓存错误: {e}")
+        cache = None
+    # 2.拉取音频
+    if cache:
+        logger.info(f"拉取音频缓存: {f.audio_id}")
+        f.mediacontent = orjson.loads(cache)  # type: ignore
+    else:
+        try:
+            r = await client.get(
+                BILI_API + "/audio/music-service-c/url",
+                params={
+                    "songid": f.audio_id,
+                    "mid": f.uid,
+                    "privilege": 2,
+                    "quality": 3,
+                    "platform": "",
+                },
+            )
+            f.mediacontent = r.json()
+        except Exception as e:
+            raise ParserException(f"音频媒体获取错误:{f.audio_id}", url, e)
+        # 3.解析音频
+        if not f.mediacontent or not f.mediacontent.get("data"):
+            raise ParserException("音频媒体解析错误", r.url, f.mediacontent)
+        # 4.缓存音频
+        try:
+            RedisCache().set(
+                f"audio:media:{f.audio_id}",
+                orjson.dumps(f.mediacontent),
+                ex=CACHES_TIMER.get("audio"),
+                nx=True,
+            )
+        except Exception as e:
+            logger.exception(f"缓存音频媒体错误: {e}")
+    f.mediaurls = f.mediacontent["data"].get("cdns")
     f.mediatype = "audio"
     f.mediaraws = (
         False
-        if f.mediacontent.get("data").get("size")
+        if f.mediacontent["data"].get("size")
         < (
             FileSizeLimit.FILESIZE_DOWNLOAD_LOCAL_MODE
             if LOCAL_MODE
