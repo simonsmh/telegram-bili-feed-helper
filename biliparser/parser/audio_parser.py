@@ -83,7 +83,7 @@ async def parse_audio(client: httpx.AsyncClient, url: str):
     f.mediatype = "audio"
     f.mediaraws = (
         False
-        if detail.get("data").get("size")
+        if f.mediacontent.get("data").get("size")
         < (
             FileSizeLimit.FILESIZE_DOWNLOAD_LOCAL_MODE
             if LOCAL_MODE

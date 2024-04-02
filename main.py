@@ -3,10 +3,7 @@ import os
 import pathlib
 import re
 import sys
-import time
-from functools import lru_cache
 from io import BytesIO
-from typing import Union
 from uuid import uuid4
 
 import httpx
@@ -17,6 +14,10 @@ from telegram import (
     InlineQuery,
     InlineQueryResultArticle,
     InlineQueryResultAudio,
+    InlineQueryResultCachedAudio,
+    InlineQueryResultCachedGif,
+    InlineQueryResultCachedPhoto,
+    InlineQueryResultCachedVideo,
     InlineQueryResultGif,
     InlineQueryResultPhoto,
     InlineQueryResultVideo,
@@ -27,7 +28,7 @@ from telegram import (
     MessageEntity,
     Update,
 )
-from telegram.constants import ChatAction, MessageLimit, ParseMode
+from telegram.constants import ChatAction, ParseMode
 from telegram.error import BadRequest, NetworkError, RetryAfter
 from telegram.ext import (
     Application,
@@ -41,7 +42,6 @@ from telegram.ext import (
 
 from biliparser import biliparser
 from biliparser.model import Feed
-from biliparser.database import db_close, db_init
 from biliparser.utils import (
     LOCAL_MODE,
     compress,
@@ -50,11 +50,12 @@ from biliparser.utils import (
     logger,
     referer_url,
 )
+from database import db_close, db_init, file_cache
 
-regex = r"(?i)(?:https?://)?[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv)\S+|BV\w{10}"
-share_link_regex = r"(?i)【.*】 https://[\w\.]*?(?:bilibili\.com|b23\.tv)\S+"
+BILIBILI_URL_REGEX = r"(?i)(?:https?://)?[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv)\S+|BV\w{10}"
+BILIBILI_SHARE_URL_REGEX = r"(?i)【.*】 https://[\w\.]*?(?:bilibili\.com|b23\.tv)\S+"
 
-sourcecodemarkup = InlineKeyboardMarkup(
+SOURCE_CODE_MARKUP = InlineKeyboardMarkup(
     [
         [
             InlineKeyboardButton(
@@ -78,73 +79,38 @@ def origin_link(content: str) -> InlineKeyboardMarkup:
 
 async def get_description(context: ContextTypes.DEFAULT_TYPE):
     bot_me = await context.bot.get_me()
-    return f"欢迎使用 @{bot_me.username} 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组自动匹配消息。\nInline 模式限制: 只可发单张图，消耗设备流量，安全性低\n群组模式限制: 图片小于10M，视频小于50M，通过 Bot 上传速度较慢"
+    return f"欢迎使用 @{bot_me.username} 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组或频道自动匹配消息。\nInline 模式限制: 只可发单张图，消耗设备流量，安全性低\n群组模式限制: 图片小于10M，视频小于50M，通过 Bot 上传速度较慢"
 
 
-@lru_cache(maxsize=16)
-def captions(
-    f: Union[Feed, Exception], fallback: bool = False, is_caption: bool = False
-) -> str:
-    def parser_helper(content: str, md_flag: bool = True) -> str:
-        if not content:
-            return str()
-        ## Refine cn tag style display: #abc# -> #abc
-        if md_flag:
-            content = re.sub(r"\\#((?:(?!\\#).)+)\\#", r"\\#\1 ", content)
-        else:
-            content = re.sub(r"#((?:(?!#).)+)#", r"#\1 ", content)
-        return content
-
-    if isinstance(f, Exception):
-        return escape_markdown(f.__str__())
-    caption = (
-        f.url
-        if fallback
-        else (escape_markdown(f.url) if not f.extra_markdown else f.extra_markdown)
-    ) + "\n"  # I don't need url twice with extra_markdown
-    if f.user:
-        caption += (f.user if fallback else f.user_markdown) + ":\n"
-    prev_caption = caption
-    if f.content:
-        caption += (
-            parser_helper(f.content, False)
-            if fallback
-            else parser_helper(f.content_markdown)
-        ) + "\n"
-    if is_caption and len(caption) > MessageLimit.CAPTION_LENGTH:
-        return prev_caption
-    prev_caption = caption
-    if isinstance(f.replycontent, dict) and f.replycontent.get("data") and f.comment:
-        caption += "〰〰〰〰〰〰〰〰〰〰\n" + (
-            parser_helper(f.comment, False)
-            if fallback
-            else parser_helper(f.comment_markdown)
-        )
-    if is_caption and len(caption) > MessageLimit.CAPTION_LENGTH:
-        return prev_caption
-    return caption
+async def get_cache_media(filename):
+    file = await file_cache.get_or_none(mediafilename=filename)
+    if file:
+        return file.file_id
 
 
 async def get_media(
     client: httpx.AsyncClient,
-    f: Feed,
+    referer,
     url: str,
+    filename: str,
     compression: bool = True,
     size: int = 320,
     media_check_ignore: bool = False,
-) -> bytes | pathlib.Path:
+) -> bytes | pathlib.Path | str:
+    file_id: str | None = await get_cache_media(filename)
+    if file_id:
+        return file_id
     header = headers.copy()
-    header["Referer"] = f.url
+    header["Referer"] = referer
     async with client.stream("GET", url, headers=header) as response:
         if response.status_code != 200:
             raise NetworkError(
-                f"媒体文件获取错误: {response.status_code} {url}->{f.url}"
+                f"媒体文件获取错误: {response.status_code} {url}->{referer}"
             )
         mediatype = response.headers.get("content-type").split("/")
         if mediatype[0] in ["video", "audio", "application"]:
             if not os.path.exists(".tmp"):
                 os.mkdir(".tmp")
-            filename = f"{time.time()}.{mediatype[1]}"
             media = pathlib.Path(os.path.abspath(f".tmp/{filename}"))
             with open(f".tmp/{filename}", "wb") as file:
                 async for chunk in response.aiter_bytes():
@@ -155,8 +121,19 @@ async def get_media(
                 logger.info(f"压缩: {url} {mediatype[1]}")
                 media = compress(BytesIO(media), size).getvalue()
         else:
-            raise NetworkError(f"媒体文件类型错误: {mediatype} {url}->{f.url}")
+            raise NetworkError(f"媒体文件类型错误: {mediatype} {url}->{referer}")
         return media
+
+
+async def cache_media(
+    mediafilename: str,
+    file,
+):
+    if not file:
+        return
+    return await file_cache.update_or_create(
+        mediafilename=mediafilename, defaults=dict(file_id=file.file_id)
+    )
 
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -166,11 +143,11 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     data = message.text or message.caption
     if data is None:
         return
-    urls = re.findall(regex, data)
+    urls = re.findall(BILIBILI_URL_REGEX, data)
     if message.entities:
         for entity in message.entities:
             if entity.url:
-                urls.extend(re.findall(regex, entity.url))
+                urls.extend(re.findall(BILIBILI_URL_REGEX, entity.url))
     if not urls:
         return
     logger.info(f"Parse: {urls}")
@@ -179,13 +156,9 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     except:
         pass
 
-    async def parse_send(f: Feed, fallback: bool = False) -> None:
+    async def parse_send(f: Feed) -> None:
         if not f.mediaurls:
-            await message.reply_text(
-                captions(f, fallback),
-                parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                reply_markup=origin_link(f.url),
-            )
+            await message.reply_text(f.caption, reply_markup=origin_link(f.url))
         else:
             medias = []
             try:
@@ -194,17 +167,26 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 ) as client:
                     if f.mediaraws:
                         mediathumb = (
-                            await get_media(client, f, f.mediathumb, size=320)
+                            await get_media(
+                                client,
+                                f.url,
+                                f.mediathumb,
+                                f.mediathumbfilename,
+                                size=320,
+                            )
                             if f.mediathumb
                             else None
                         )
                         tasks = [
-                            get_media(client, f, img, size=1280) for img in f.mediaurls
+                            get_media(client, f.url, media, filename, size=1280)
+                            for media, filename in zip(f.mediaurls, f.mediafilename)
                         ]
                         media = await asyncio.gather(*tasks)
                         logger.info(f"上传中: {f.url}")
                     else:
-                        mediathumb = referer_url(f.mediathumb, f.url)
+                        mediathumb = (
+                            referer_url(f.mediathumb, f.url) if f.mediathumb else None
+                        )
                         if f.mediatype == "image":
                             media = [
                                 i if ".gif" in i else i + "@1280w.jpg"
@@ -215,10 +197,9 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         else:
                             media = f.mediaurls
                     if f.mediatype == "video":
-                        await message.reply_video(
+                        result = await message.reply_video(
                             media[0],
-                            caption=captions(f, fallback, True),
-                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                            caption=f.caption,
                             reply_markup=origin_link(f.url),
                             supports_streaming=True,
                             thumbnail=mediathumb,
@@ -237,11 +218,10 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             ),
                         )
                     elif f.mediatype == "audio":
-                        await message.reply_audio(
+                        result = await message.reply_audio(
                             media[0],
-                            caption=captions(f, fallback, True),
+                            caption=f.caption,
                             duration=f.mediaduration,
-                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
                             performer=f.user,
                             reply_markup=origin_link(f.url),
                             thumbnail=mediathumb,
@@ -251,55 +231,73 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         )
                     elif len(f.mediaurls) == 1:
                         if ".gif" in f.mediaurls[0]:
-                            await message.reply_animation(
+                            result = await message.reply_animation(
                                 media[0],
-                                caption=captions(f, fallback, True),
-                                parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                                caption=f.caption,
                                 reply_markup=origin_link(f.url),
                                 write_timeout=60,
                                 filename=f.mediafilename[0],
                             )
                         else:
-                            await message.reply_photo(
+                            result = await message.reply_photo(
                                 media[0],
-                                caption=captions(f, fallback, True),
-                                parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                                caption=f.caption,
                                 reply_markup=origin_link(f.url),
                                 write_timeout=60,
                                 filename=f.mediafilename[0],
                             )
                     else:
-                        await message.reply_media_group(
-                            media=[
+                        result = await message.reply_media_group(
+                            [
                                 (
                                     InputMediaVideo(
                                         img,
-                                        caption=captions(f, fallback, True),
-                                        parse_mode=(
-                                            None if fallback else ParseMode.MARKDOWN_V2
-                                        ),
-                                        filename=f.mediafilename[0],
+                                        caption=f.caption,
+                                        filename=filename,
                                         supports_streaming=True,
                                     )
                                     if ".gif" in mediaurl
                                     else InputMediaPhoto(
-                                        img,
-                                        caption=captions(f, fallback, True),
-                                        parse_mode=(
-                                            None if fallback else ParseMode.MARKDOWN_V2
-                                        ),
-                                        filename=f.mediafilename[0],
+                                        img, caption=f.caption, filename=filename
                                     )
                                 )
-                                for img, mediaurl in zip(media, f.mediaurls)
+                                for img, mediaurl, filename in zip(
+                                    media, f.mediaurls, f.mediafilename
+                                )
                             ],
                             write_timeout=60,
                         )
                         await message.reply_text(
-                            captions(f, fallback),
-                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                            reply_markup=origin_link(f.url),
+                            f.caption, reply_markup=origin_link(f.url)
                         )
+                    # store file caches
+                    if isinstance(result, tuple):  # media group
+                        for filename, item in zip(f.mediafilename, result):
+                            if isinstance(
+                                item.effective_attachment, tuple
+                            ):  # PhotoSize
+                                await cache_media(
+                                    filename, item.effective_attachment[0]
+                                )
+                            else:
+                                await cache_media(filename, item.effective_attachment)
+                    else:
+                        if isinstance(result.effective_attachment, tuple):  # PhotoSize
+                            await cache_media(
+                                f.mediafilename[0], result.effective_attachment[0]
+                            )
+                        else:  # others
+                            if (
+                                hasattr(result.effective_attachment, "thumbnail")
+                                and f.mediathumbfilename
+                            ):  # mediathumb
+                                await cache_media(
+                                    f.mediathumbfilename,
+                                    result.effective_attachment.thumbnail,
+                                )
+                            await cache_media(
+                                f.mediafilename[0], result.effective_attachment
+                            )
                     medias = [mediathumb, *media]
             finally:
                 for item in medias:
@@ -307,27 +305,24 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         os.remove(item)
 
     fs = await biliparser(urls)
-    for num, f in enumerate(fs):
-        markdown_fallback = False
+    for f in fs:
         for i in range(1, 5):
             if isinstance(f, Exception):
                 logger.warning(f"解析错误! {f}")
                 if data.startswith("/parse"):
-                    await message.reply_text(
-                        captions(f),
-                    )
+                    await message.reply_text(str(f))
                 break
             try:
                 # for link sharing privacy
                 if i == 1 and len(urls) == 1:
                     # try to delete only if bot have delete permission and this message is only for sharing
-                    match = re.match(share_link_regex, data)
+                    match = re.match(BILIBILI_SHARE_URL_REGEX, data)
                     if urls[0] == data or (match and match.group(0) == data):
                         await message.delete()
             except:
                 pass
             try:
-                await parse_send(f, markdown_fallback)
+                await parse_send(f)
             except BadRequest as err:
                 if (
                     "Not enough rights to send" in err.message
@@ -338,9 +333,6 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         f"{err} 第{i}次异常->权限不足, 无法发送给{'@'+message.chat.username if message.chat.username else message.chat.id}"
                     )
                     break
-                elif "Can't parse" in err.message:
-                    logger.error(f"{err} 第{i}次异常->去除Markdown: {f.url}")
-                    markdown_fallback = True
                 else:
                     logger.error(f"{err} 第{i}次异常->下载后上传: {f.url}")
                     f.mediaraws = True
@@ -367,21 +359,19 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     data = message.text
     if data is None:
         return
-    urls = re.findall(regex, data)
+    urls = re.findall(BILIBILI_URL_REGEX, data)
     if message.entities:
         for entity in message.entities:
             if entity.url:
-                urls.extend(re.findall(regex, entity.url))
+                urls.extend(re.findall(BILIBILI_URL_REGEX, entity.url))
     if not urls:
         return
     logger.info(f"Fetch: {urls}")
     fs = await biliparser(urls)
-    for num, f in enumerate(fs):
+    for f in fs:
         if isinstance(f, Exception):
             logger.warning(f"解析错误! {f}")
-            await message.reply_text(
-                captions(f),
-            )
+            await message.reply_text(str(f))
             continue
         if f.mediaurls:
             medias = []
@@ -391,52 +381,48 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 ) as client:
                     tasks = [
                         get_media(
-                            client, f, img, compression=False, media_check_ignore=True
+                            client,
+                            f.url,
+                            media,
+                            filename,
+                            compression=False,
+                            media_check_ignore=True,
                         )
-                        for img in f.mediaurls
+                        for media, filename in zip(f.mediaurls, f.mediafilename)
                     ]
                     medias = await asyncio.gather(*tasks)
                     logger.info(f"上传中: {f.url}")
                     if len(medias) > 1:
-                        medias = [
-                            InputMediaDocument(media, filename=filename)
-                            for media, filename in zip(medias, f.mediafilename)
-                        ]
-                        await message.reply_media_group(
-                            medias,
+                        result = await message.reply_media_group(
+                            [
+                                InputMediaDocument(media, filename=filename)
+                                for media, filename in zip(medias, f.mediafilename)
+                            ],
                             write_timeout=60,
                         )
-                        try:
-                            await message.reply_text(
-                                captions(f),
-                                reply_markup=origin_link(f.url),
-                            )
-                        except BadRequest as err:
-                            logger.exception(err)
-                            logger.info(f"{err} -> 去除Markdown: {f.url}")
-                            await message.reply_text(
-                                captions(f, True),
-                                reply_markup=origin_link(f.url),
-                            )
+                        await message.reply_text(
+                            f.caption, reply_markup=origin_link(f.url)
+                        )
+                        for filename, item in zip(f.mediafilename, result):
+                            if isinstance(
+                                item.effective_attachment, tuple
+                            ):  # PhotoSize
+                                await cache_media(
+                                    filename, item.effective_attachment[0]
+                                )
+                            else:
+                                await cache_media(filename, item.effective_attachment)
                     else:
-                        try:
-                            await message.reply_document(
-                                document=medias[0],
-                                caption=captions(f, False, True),
-                                reply_markup=origin_link(f.url),
-                                write_timeout=60,
-                                filename=f.mediafilename[0],
-                            )
-                        except BadRequest as err:
-                            logger.exception(err)
-                            logger.info(f"{err} -> 去除Markdown: {f.url}")
-                            await message.reply_document(
-                                document=medias[0],
-                                caption=captions(f, True, True),
-                                reply_markup=origin_link(f.url),
-                                write_timeout=60,
-                                filename=f.mediafilename[0],
-                            )
+                        result = await message.reply_document(
+                            document=medias[0],
+                            caption=f.caption,
+                            reply_markup=origin_link(f.url),
+                            write_timeout=60,
+                            filename=f.mediafilename[0],
+                        )
+                        await cache_media(
+                            f.mediafilename[0], result.effective_attachment
+                        )
             finally:
                 for item in medias:
                     if isinstance(item, pathlib.Path):
@@ -468,20 +454,18 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         InlineQueryResultArticle(
             id=uuid4().hex,
             title="帮助",
-            description="将 Bot 添加到群组可以自动匹配消息, 请注意 Inline 模式存在限制: 只可发单张图，消耗设备流量。",
-            reply_markup=sourcecodemarkup,
+            description="将 Bot 添加到群组或频道可以自动匹配消息, 请注意 Inline 模式存在限制: 只可发单张图，消耗设备流量。",
+            reply_markup=SOURCE_CODE_MARKUP,
             input_message_content=InputTextMessageContent(
                 await get_description(context)
             ),
         )
     ]
     if not query:
-        await inline_query_answer(inline_query, helpmsg)
-        return
-    url_re = re.search(regex, query)
+        return await inline_query_answer(inline_query, helpmsg)
+    url_re = re.search(BILIBILI_URL_REGEX, query)
     if url_re is None:
-        await inline_query_answer(inline_query, helpmsg)
-        return
+        return await inline_query_answer(inline_query, helpmsg)
     url = url_re.group(0)
     logger.info(f"Inline: {url}")
     [f] = await biliparser(url)
@@ -492,105 +476,125 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 id=uuid4().hex,
                 title="解析错误!",
                 description=escape_markdown(f.__str__()),
-                input_message_content=InputTextMessageContent(
-                    captions(f),
-                ),
+                input_message_content=InputTextMessageContent(str(f)),
             )
         ]
-        await inline_query_answer(inline_query, results)
+        return await inline_query_answer(inline_query, results)
+
+    if not f.mediaurls:
+        results = [
+            InlineQueryResultArticle(
+                id=uuid4().hex,
+                title=f.user,
+                description=f.content,
+                reply_markup=origin_link(f.url),
+                input_message_content=InputTextMessageContent(f.caption),
+            )
+        ]
     else:
-
-        async def answer_results(f: Feed, fallback: bool = False):
-            if not f.mediaurls:
-                results = [
-                    InlineQueryResultArticle(
-                        id=uuid4().hex,
-                        title=f.user,
-                        description=f.content,
-                        reply_markup=origin_link(f.url),
-                        input_message_content=InputTextMessageContent(
-                            captions(f, fallback),
-                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                        ),
-                    )
-                ]
-            else:
-                if f.mediatype == "video":
-                    results = [
-                        InlineQueryResultVideo(
+        if f.mediatype == "video":
+            cache_file_id = await get_cache_media(f.mediafilename[0])
+            results = [
+                InlineQueryResultCachedVideo(
+                    id=uuid4().hex,
+                    video_file_id=cache_file_id,
+                    caption=f.caption,
+                    title=f.mediatitle,
+                    description=f"{f.user}: {f.content}",
+                    reply_markup=origin_link(f.url),
+                )
+                if cache_file_id
+                else InlineQueryResultVideo(
+                    id=uuid4().hex,
+                    caption=f.caption,
+                    title=f.mediatitle,
+                    description=f"{f.user}: {f.content}",
+                    mime_type="video/mp4",
+                    reply_markup=origin_link(f.url),
+                    thumbnail_url=f.mediathumb,
+                    video_url=referer_url(f.mediaurls[0], f.url),
+                    video_duration=f.mediaduration,
+                    video_width=(
+                        f.mediadimention["height"]
+                        if f.mediadimention["rotate"]
+                        else f.mediadimention["width"]
+                    ),
+                    video_height=(
+                        f.mediadimention["width"]
+                        if f.mediadimention["rotate"]
+                        else f.mediadimention["height"]
+                    ),
+                )
+            ]
+        elif f.mediatype == "audio":
+            cache_file_id = await get_cache_media(f.mediafilename[0])
+            results = [
+                InlineQueryResultCachedAudio(
+                    id=uuid4().hex,
+                    audio_file_id=cache_file_id,
+                    caption=f.caption,
+                    reply_markup=origin_link(f.url),
+                )
+                if cache_file_id
+                else InlineQueryResultAudio(
+                    id=uuid4().hex,
+                    caption=f.caption,
+                    title=f.mediatitle,
+                    audio_duration=f.mediaduration,
+                    audio_url=referer_url(f.mediaurls[0], f.url),
+                    performer=f.user,
+                    reply_markup=origin_link(f.url),
+                ),
+            ]
+        else:
+            cache_file_ids = await asyncio.gather(
+                *[get_cache_media(filename) for filename in f.mediafilename]
+            )
+            results = [
+                (
+                    (
+                        InlineQueryResultCachedGif(
                             id=uuid4().hex,
-                            caption=captions(f, fallback, True),
-                            title=f.mediatitle,
-                            description=f"{f.user}: {f.content}",
-                            mime_type="video/mp4",
-                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
+                            gif_file_id=cache_file_id,
+                            caption=f.caption,
+                            title=f"{f.user}: {f.content}",
                             reply_markup=origin_link(f.url),
-                            thumbnail_url=f.mediathumb,
-                            video_url=referer_url(f.mediaurls[0], f.url),
-                            video_duration=f.mediaduration,
-                            video_width=(
-                                f.mediadimention["height"]
-                                if f.mediadimention["rotate"]
-                                else f.mediadimention["width"]
-                            ),
-                            video_height=(
-                                f.mediadimention["width"]
-                                if f.mediadimention["rotate"]
-                                else f.mediadimention["height"]
-                            ),
-                        ),
-                    ]
-                elif f.mediatype == "audio":
-                    results = [
-                        InlineQueryResultAudio(
-                            id=uuid4().hex,
-                            caption=captions(f, fallback, True),
-                            title=f.mediatitle,
-                            audio_duration=f.mediaduration,
-                            audio_url=referer_url(f.mediaurls[0], f.url),
-                            parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                            performer=f.user,
-                            reply_markup=origin_link(f.url),
-                        ),
-                    ]
-                else:
-                    results = [
-                        (
-                            InlineQueryResultGif(
-                                id=uuid4().hex,
-                                caption=captions(f, fallback, True),
-                                title=f"{f.user}: {f.content}",
-                                gif_url=img,
-                                parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                                reply_markup=origin_link(f.url),
-                                thumbnail_url=img,
-                            )
-                            if ".gif" in img
-                            else InlineQueryResultPhoto(
-                                id=uuid4().hex,
-                                caption=captions(f, fallback, True),
-                                title=f.user,
-                                description=f.content,
-                                parse_mode=None if fallback else ParseMode.MARKDOWN_V2,
-                                photo_url=img + "@1280w.jpg",
-                                reply_markup=origin_link(f.url),
-                                thumbnail_url=img + "@512w_512h.jpg",
-                            )
                         )
-                        for img in f.mediaurls
-                    ]
-            await inline_query_answer(inline_query, results)
-
-        try:
-            await answer_results(f)
-        except BadRequest as err:
-            if "Can't parse" in err.message:
-                logger.info(f"{err} -> 去除Markdown: {f.url}")
-                await answer_results(f, True)
-            else:
-                logger.exception(err)
-        except Exception as err:
-            logger.exception(err)
+                        if ".gif" in mediaurl
+                        else InlineQueryResultCachedPhoto(
+                            id=uuid4().hex,
+                            photo_file_id=cache_file_id,
+                            caption=f.caption,
+                            title=f.user,
+                            description=f.content,
+                            reply_markup=origin_link(f.url),
+                        )
+                    )
+                    if cache_file_id
+                    else (
+                        InlineQueryResultGif(
+                            id=uuid4().hex,
+                            caption=f.caption,
+                            title=f"{f.user}: {f.content}",
+                            gif_url=mediaurl,
+                            reply_markup=origin_link(f.url),
+                            thumbnail_url=mediaurl,
+                        )
+                        if ".gif" in mediaurl
+                        else InlineQueryResultPhoto(
+                            id=uuid4().hex,
+                            caption=f.caption,
+                            title=f.user,
+                            description=f.content,
+                            photo_url=mediaurl + "@1280w.jpg",
+                            reply_markup=origin_link(f.url),
+                            thumbnail_url=mediaurl + "@512w_512h.jpg",
+                        )
+                    )
+                )
+                for mediaurl, cache_file_id in zip(f.mediaurls, cache_file_ids)
+            ]
+    return await inline_query_answer(inline_query, results)
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -602,8 +606,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if message is None:
         return
     await message.reply_text(
-        await get_description(context),
-        reply_markup=sourcecodemarkup,
+        await get_description(context), reply_markup=SOURCE_CODE_MARKUP
     )
 
 
@@ -630,8 +633,8 @@ def add_handler(application: Application):
         MessageHandler(
             filters.Entity(MessageEntity.URL)
             | filters.Entity(MessageEntity.TEXT_LINK)
-            | filters.Regex(regex)
-            | filters.CaptionRegex(regex),
+            | filters.Regex(BILIBILI_URL_REGEX)
+            | filters.CaptionRegex(BILIBILI_URL_REGEX),
             parse,
             block=False,
         )

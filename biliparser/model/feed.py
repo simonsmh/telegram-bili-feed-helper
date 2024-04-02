@@ -1,5 +1,6 @@
 import re
 from functools import cached_property, lru_cache
+from telegram.constants import MessageLimit
 
 from ..utils import escape_markdown
 
@@ -20,6 +21,13 @@ class Feed:
 
     def __init__(self, rawurl):
         self.rawurl = rawurl
+
+    @staticmethod
+    def get_filename(url) -> str:
+        target = re.search(r"\/([^\/]*\.\w{3,4})(?:$|\?)", url)
+        if target:
+            return target.group(1)
+        return url
 
     @staticmethod
     def make_user_markdown(user, uid):
@@ -95,16 +103,46 @@ class Feed:
 
     @cached_property
     def mediafilename(self):
-        def get_filename(url) -> str:
-            target = re.search(r"\/([^\/]*\.\w{3,4})(?:$|\?)", url)
-            if target:
-                return target.group(1)
-            return str()
-
         return (
-            [get_filename(i) for i in self.__mediaurls] if self.__mediaurls else list()
+            [self.get_filename(i) for i in self.__mediaurls]
+            if self.__mediaurls
+            else list()
         )
+
+    @cached_property
+    def mediathumbfilename(self):
+        return self.get_filename(self.mediathumb) if self.mediathumb else str()
 
     @cached_property
     def url(self):
         return self.rawurl
+
+    @staticmethod
+    def clean_cn_tag_style(content: str) -> str:
+        if not content:
+            return ""
+        ## Refine cn tag style display: #abc# -> #abc
+        return re.sub(r"\\#((?:(?!\\#).)+)\\#", r"\\#\1 ", content)
+
+    @cached_property
+    def caption(self):
+        caption = (
+            escape_markdown(self.url)
+            if not self.extra_markdown
+            else self.extra_markdown + "\n"
+        )  # I don't need url twice with extra_markdown
+        if self.user:
+            caption += self.user_markdown + ":\n"
+        prev_caption = caption
+        if self.content_markdown:
+            caption += (self.clean_cn_tag_style(self.content_markdown)) + "\n"
+        if len(caption) > MessageLimit.CAPTION_LENGTH:
+            return prev_caption
+        prev_caption = caption
+        if self.comment_markdown:
+            caption += "〰〰〰〰〰〰〰〰〰〰\n" + (
+                self.clean_cn_tag_style(self.comment_markdown)
+            )
+        if len(caption) > MessageLimit.CAPTION_LENGTH:
+            return prev_caption
+        return caption
