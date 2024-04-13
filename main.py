@@ -131,9 +131,13 @@ async def cache_media(
 ):
     if not file:
         return
-    return await file_cache.update_or_create(
-        mediafilename=mediafilename, defaults=dict(file_id=file.file_id)
-    )
+    try:
+        return await file_cache.update_or_create(
+            mediafilename=mediafilename, defaults=dict(file_id=file.file_id)
+        )
+    except Exception as e:
+        logger.exception(e)
+        return
 
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -181,8 +185,9 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             get_media(client, f.url, media, filename, size=1280)
                             for media, filename in zip(f.mediaurls, f.mediafilename)
                         ]
+                        logger.info(f"下载中: {f.url}")
                         media = await asyncio.gather(*tasks)
-                        logger.info(f"上传中: {f.url}")
+                        logger.info(f"下载完成: {f.url}")
                     else:
                         mediathumb = (
                             referer_url(f.mediathumb, f.url) if f.mediathumb else None

@@ -87,7 +87,7 @@ async def __get_video_result(client: httpx.AsyncClient, f: Video, detail, qn: in
 async def parse_video(client: httpx.AsyncClient, url: str):
     logger.info(f"处理视频信息: 链接: {url}")
     match = re.search(
-        r"(?:bilibili\.com/(?:video|bangumi/play)|b23\.tv|acg\.tv)/(?:(?P<bvid>BV\w{10})|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+))",
+        r"(?:bilibili\.com/(?:video|bangumi/play)|b23\.tv|acg\.tv)/(?:(?P<bvid>BV\w{10})|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+)|)/?\??(?:p=(?P<page>\d+))?",
         url,
     )
     match_fes = re.search(
@@ -98,11 +98,17 @@ async def parse_video(client: httpx.AsyncClient, url: str):
         epid = None
         aid = None
         ssid = None
+        page = 1
     elif match:
         bvid = match.group("bvid")
         epid = match.group("epid")
         aid = match.group("aid")
         ssid = match.group("ssid")
+        page = match.group("page")
+        if page and page.isdigit():
+            page = max(1, int(page))
+        else:
+            page = 1
     else:
         raise ParserException("视频链接错误", url)
     if epid:
@@ -116,6 +122,7 @@ async def parse_video(client: httpx.AsyncClient, url: str):
     else:
         raise ParserException("视频链接解析错误", url)
     f = Video(url)
+    f.page = page
     if epid:
         f.epid = epid
     if epid is not None or ssid is not None:
@@ -216,7 +223,9 @@ async def parse_video(client: httpx.AsyncClient, url: str):
     detail = f.infocontent.get("data")
     f.user = detail.get("owner").get("name")
     f.uid = detail.get("owner").get("mid")
-    f.content = detail.get("tname", "")
+    f.content = detail.get("tname", "发布视频")
+    if detail.get("pages") and len(detail["pages"]) > 1:
+        f.content += f" - 第{page}P/共{len(detail['pages'])}P"
     if detail.get("dynamic") or detail.get("desc"):
         f.content += f" - {detail.get('dynamic') or detail.get('desc')}"
     f.extra_markdown = f"[{escape_markdown(detail.get('title'))}]({f.url})"

@@ -8,11 +8,17 @@ class Video(Feed):
     epcontent: dict = {}
     infocontent: dict = {}
     mediacontent: dict = {}
+    page = 1
     reply_type: int = 1
 
     @cached_property
     def cid(self):
         if self.infocontent and self.infocontent.get("data"):
+            if self.page != 1 and self.infocontent["data"].get("pages"):
+                for item in self.infocontent["data"]["pages"]:
+                    if item.get("page") == self.page:
+                        return item.get("cid")
+            self.page = 1
             return self.infocontent["data"].get("cid")
 
     @cached_property
@@ -47,4 +53,4 @@ class Video(Feed):
 
     @cached_property
     def url(self):
-        return f"https://www.bilibili.com/video/av{self.aid}"
+        return f"https://www.bilibili.com/video/av{self.aid}?p={self.page}"

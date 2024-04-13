@@ -1,5 +1,5 @@
 import re
-from functools import cached_property, lru_cache
+from functools import cached_property
 from telegram.constants import MessageLimit
 
 from ..utils import escape_markdown
@@ -38,9 +38,14 @@ class Feed:
         )
 
     @staticmethod
-    def shrink_line(text):
+    def shrink_line(text: str):
         return (
-            re.sub(r"\n*\n", r"\n", re.sub(r"\r\n", r"\n", text.strip()))
+            text.strip()
+            .replace(
+                r"\r\n",
+                r"\n",
+            )
+            .replace(r"\n*\n", r"\n")
             if text
             else str()
         )
@@ -50,7 +55,6 @@ class Feed:
         return self.make_user_markdown(self.user, self.uid)
 
     @property
-    @lru_cache(maxsize=1)
     def content(self):
         return self.shrink_line(self.__content)
 
@@ -90,7 +94,6 @@ class Feed:
         return self.shrink_line(comment_markdown)
 
     @property
-    @lru_cache(maxsize=1)
     def mediaurls(self):
         return self.__mediaurls
 
