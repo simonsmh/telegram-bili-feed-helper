@@ -333,6 +333,15 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         f"{err} 第{i}次异常->权限不足, 无法发送给{'@'+message.chat.username if message.chat.username else message.chat.id}"
                     )
                     break
+                elif (
+                    "Topic_deleted" in err.message
+                    or "Topic_closed" in err.message
+                    or "Message thread not found" in err.message
+                ):
+                    logger.warning(
+                        f"{err} 第{i}次异常->主题/话题已删除、关闭或早于加入时间，无法发送给{'@'+message.chat.username if message.chat.username else message.chat.id}"
+                    )
+                    break
                 else:
                     logger.error(f"{err} 第{i}次异常->下载后上传: {f.url}")
                     f.mediaraws = True

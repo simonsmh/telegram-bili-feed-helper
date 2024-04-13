@@ -62,6 +62,6 @@ async def parse_live(client: httpx.AsyncClient, url: str):
     f.uid = roominfo.get("uid")
     f.content = f"{roominfo.get('title')} - {roominfo.get('area_name')} - {roominfo.get('parent_area_name')}"
     f.extra_markdown = f"[{escape_markdown(f.user)}的直播间]({f.url})"
-    f.mediaurls = roominfo.get("keyframe")
+    f.mediaurls = roominfo.get("keyframe") or roominfo.get("cover")
     f.mediatype = "image"
     return f
