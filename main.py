@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import httpx
 import pytz
+import uvloop
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -41,7 +42,6 @@ from telegram.ext import (
 )
 
 from biliparser import biliparser
-from biliparser.model import Feed
 from biliparser.utils import (
     LOCAL_MODE,
     compress,
@@ -51,6 +51,8 @@ from biliparser.utils import (
     referer_url,
 )
 from database import db_close, db_init, file_cache
+
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 BILIBILI_URL_REGEX = r"(?i)(?:https?://)?[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv)\S+|BV\w{10}"
 BILIBILI_SHARE_URL_REGEX = r"(?i)【.*】 https://[\w\.]*?(?:bilibili\.com|b23\.tv)\S+"
@@ -160,155 +162,6 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     except:
         pass
 
-    async def parse_send(f: Feed) -> None:
-        if not f.mediaurls:
-            await message.reply_text(f.caption, reply_markup=origin_link(f.url))
-        else:
-            medias = []
-            try:
-                async with httpx.AsyncClient(
-                    http2=True, timeout=90, follow_redirects=True
-                ) as client:
-                    if f.mediaraws:
-                        mediathumb = (
-                            await get_media(
-                                client,
-                                f.url,
-                                f.mediathumb,
-                                f.mediathumbfilename,
-                                size=320,
-                            )
-                            if f.mediathumb
-                            else None
-                        )
-                        tasks = [
-                            get_media(client, f.url, media, filename, size=1280)
-                            for media, filename in zip(f.mediaurls, f.mediafilename)
-                        ]
-                        logger.info(f"下载中: {f.url}")
-                        media = await asyncio.gather(*tasks)
-                        logger.info(f"下载完成: {f.url}")
-                    else:
-                        mediathumb = (
-                            referer_url(f.mediathumb, f.url) if f.mediathumb else None
-                        )
-                        if f.mediatype == "image":
-                            media = [
-                                i if ".gif" in i else i + "@1280w.jpg"
-                                for i in f.mediaurls
-                            ]
-                        elif f.mediatype in ["video", "audio"]:
-                            media = [referer_url(f.mediaurls[0], f.url)]
-                        else:
-                            media = f.mediaurls
-                    if f.mediatype == "video":
-                        result = await message.reply_video(
-                            media[0],
-                            caption=f.caption,
-                            reply_markup=origin_link(f.url),
-                            supports_streaming=True,
-                            thumbnail=mediathumb,
-                            duration=f.mediaduration,
-                            write_timeout=60,
-                            filename=f.mediafilename[0],
-                            width=(
-                                f.mediadimention["height"]
-                                if f.mediadimention["rotate"]
-                                else f.mediadimention["width"]
-                            ),
-                            height=(
-                                f.mediadimention["width"]
-                                if f.mediadimention["rotate"]
-                                else f.mediadimention["height"]
-                            ),
-                        )
-                    elif f.mediatype == "audio":
-                        result = await message.reply_audio(
-                            media[0],
-                            caption=f.caption,
-                            duration=f.mediaduration,
-                            performer=f.user,
-                            reply_markup=origin_link(f.url),
-                            thumbnail=mediathumb,
-                            title=f.mediatitle,
-                            write_timeout=60,
-                            filename=f.mediafilename[0],
-                        )
-                    elif len(f.mediaurls) == 1:
-                        if ".gif" in f.mediaurls[0]:
-                            result = await message.reply_animation(
-                                media[0],
-                                caption=f.caption,
-                                reply_markup=origin_link(f.url),
-                                write_timeout=60,
-                                filename=f.mediafilename[0],
-                            )
-                        else:
-                            result = await message.reply_photo(
-                                media[0],
-                                caption=f.caption,
-                                reply_markup=origin_link(f.url),
-                                write_timeout=60,
-                                filename=f.mediafilename[0],
-                            )
-                    else:
-                        result = await message.reply_media_group(
-                            [
-                                (
-                                    InputMediaVideo(
-                                        img,
-                                        caption=f.caption,
-                                        filename=filename,
-                                        supports_streaming=True,
-                                    )
-                                    if ".gif" in mediaurl
-                                    else InputMediaPhoto(
-                                        img, caption=f.caption, filename=filename
-                                    )
-                                )
-                                for img, mediaurl, filename in zip(
-                                    media, f.mediaurls, f.mediafilename
-                                )
-                            ],
-                            write_timeout=60,
-                        )
-                        await message.reply_text(
-                            f.caption, reply_markup=origin_link(f.url)
-                        )
-                    # store file caches
-                    if isinstance(result, tuple):  # media group
-                        for filename, item in zip(f.mediafilename, result):
-                            if isinstance(
-                                item.effective_attachment, tuple
-                            ):  # PhotoSize
-                                await cache_media(
-                                    filename, item.effective_attachment[0]
-                                )
-                            else:
-                                await cache_media(filename, item.effective_attachment)
-                    else:
-                        if isinstance(result.effective_attachment, tuple):  # PhotoSize
-                            await cache_media(
-                                f.mediafilename[0], result.effective_attachment[0]
-                            )
-                        else:  # others
-                            if (
-                                hasattr(result.effective_attachment, "thumbnail")
-                                and f.mediathumbfilename
-                            ):  # mediathumb
-                                await cache_media(
-                                    f.mediathumbfilename,
-                                    result.effective_attachment.thumbnail,
-                                )
-                            await cache_media(
-                                f.mediafilename[0], result.effective_attachment
-                            )
-                    medias = [mediathumb, *media]
-            finally:
-                for item in medias:
-                    if isinstance(item, pathlib.Path):
-                        os.remove(item)
-
     fs = await biliparser(urls)
     for f in fs:
         for i in range(1, 5):
@@ -318,16 +171,166 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     await message.reply_text(str(f))
                 break
             try:
-                # for link sharing privacy
-                if i == 1 and len(urls) == 1:
-                    # try to delete only if bot have delete permission and this message is only for sharing
-                    match = re.match(BILIBILI_SHARE_URL_REGEX, data)
-                    if urls[0] == data or (match and match.group(0) == data):
-                        await message.delete()
-            except:
-                pass
-            try:
-                await parse_send(f)
+                if not f.mediaurls:
+                    await message.reply_text(f.caption, reply_markup=origin_link(f.url))
+                else:
+                    medias = []
+                    try:
+                        async with httpx.AsyncClient(
+                            http2=True, timeout=90, follow_redirects=True
+                        ) as client:
+                            if f.mediaraws:
+                                mediathumb = (
+                                    await get_media(
+                                        client,
+                                        f.url,
+                                        f.mediathumb,
+                                        f.mediathumbfilename,
+                                        size=320,
+                                    )
+                                    if f.mediathumb
+                                    else None
+                                )
+                                tasks = [
+                                    get_media(client, f.url, media, filename, size=1280)
+                                    for media, filename in zip(
+                                        f.mediaurls, f.mediafilename
+                                    )
+                                ]
+                                logger.info(f"下载中: {f.url}")
+                                media = await asyncio.gather(*tasks)
+                                logger.info(f"下载完成: {f.url}")
+                            else:
+                                mediathumb = (
+                                    referer_url(f.mediathumb, f.url)
+                                    if f.mediathumb
+                                    else None
+                                )
+                                if f.mediatype == "image":
+                                    media = [
+                                        i if ".gif" in i else i + "@1280w.jpg"
+                                        for i in f.mediaurls
+                                    ]
+                                elif f.mediatype in ["video", "audio"]:
+                                    media = [referer_url(f.mediaurls[0], f.url)]
+                                else:
+                                    media = f.mediaurls
+                            if f.mediatype == "video":
+                                result = await message.reply_video(
+                                    media[0],
+                                    caption=f.caption,
+                                    reply_markup=origin_link(f.url),
+                                    supports_streaming=True,
+                                    thumbnail=mediathumb,
+                                    duration=f.mediaduration,
+                                    write_timeout=60,
+                                    filename=f.mediafilename[0],
+                                    width=(
+                                        f.mediadimention["height"]
+                                        if f.mediadimention["rotate"]
+                                        else f.mediadimention["width"]
+                                    ),
+                                    height=(
+                                        f.mediadimention["width"]
+                                        if f.mediadimention["rotate"]
+                                        else f.mediadimention["height"]
+                                    ),
+                                )
+                            elif f.mediatype == "audio":
+                                result = await message.reply_audio(
+                                    media[0],
+                                    caption=f.caption,
+                                    duration=f.mediaduration,
+                                    performer=f.user,
+                                    reply_markup=origin_link(f.url),
+                                    thumbnail=mediathumb,
+                                    title=f.mediatitle,
+                                    write_timeout=60,
+                                    filename=f.mediafilename[0],
+                                )
+                            elif len(f.mediaurls) == 1:
+                                if ".gif" in f.mediaurls[0]:
+                                    result = await message.reply_animation(
+                                        media[0],
+                                        caption=f.caption,
+                                        reply_markup=origin_link(f.url),
+                                        write_timeout=60,
+                                        filename=f.mediafilename[0],
+                                    )
+                                else:
+                                    result = await message.reply_photo(
+                                        media[0],
+                                        caption=f.caption,
+                                        reply_markup=origin_link(f.url),
+                                        write_timeout=60,
+                                        filename=f.mediafilename[0],
+                                    )
+                            else:
+                                result = await message.reply_media_group(
+                                    [
+                                        (
+                                            InputMediaVideo(
+                                                img,
+                                                caption=f.caption,
+                                                filename=filename,
+                                                supports_streaming=True,
+                                            )
+                                            if ".gif" in mediaurl
+                                            else InputMediaPhoto(
+                                                img,
+                                                caption=f.caption,
+                                                filename=filename,
+                                            )
+                                        )
+                                        for img, mediaurl, filename in zip(
+                                            media, f.mediaurls, f.mediafilename
+                                        )
+                                    ],
+                                    write_timeout=60,
+                                )
+                                await message.reply_text(
+                                    f.caption, reply_markup=origin_link(f.url)
+                                )
+                            # store file caches
+                            if isinstance(result, tuple):  # media group
+                                for filename, item in zip(f.mediafilename, result):
+                                    if isinstance(
+                                        item.effective_attachment, tuple
+                                    ):  # PhotoSize
+                                        await cache_media(
+                                            filename, item.effective_attachment[0]
+                                        )
+                                    else:
+                                        await cache_media(
+                                            filename, item.effective_attachment
+                                        )
+                            else:
+                                if isinstance(
+                                    result.effective_attachment, tuple
+                                ):  # PhotoSize
+                                    await cache_media(
+                                        f.mediafilename[0],
+                                        result.effective_attachment[0],
+                                    )
+                                else:  # others
+                                    if (
+                                        hasattr(
+                                            result.effective_attachment, "thumbnail"
+                                        )
+                                        and f.mediathumbfilename
+                                    ):  # mediathumb
+                                        await cache_media(
+                                            f.mediathumbfilename,
+                                            result.effective_attachment.thumbnail,
+                                        )
+                                    await cache_media(
+                                        f.mediafilename[0], result.effective_attachment
+                                    )
+                            medias = [mediathumb, *media]
+                    finally:
+                        for item in medias:
+                            if isinstance(item, pathlib.Path):
+                                os.remove(item)
             except BadRequest as err:
                 if (
                     "Not enough rights to send" in err.message
@@ -362,7 +365,15 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             except Exception as err:
                 logger.exception(err)
             else:
-                break
+                try:
+                    # for link sharing privacy under group
+                    if len(urls) == 1 and not update.channel_post:
+                        # try to delete only if bot have delete permission and this message is only for sharing
+                        match = re.match(BILIBILI_SHARE_URL_REGEX, data)
+                        if urls[0] == data or (match and match.group(0) == data):
+                            await message.delete()
+                finally:
+                    break
             f = (await biliparser(f.url))[0]  # 重试获取该条链接信息
 
 
