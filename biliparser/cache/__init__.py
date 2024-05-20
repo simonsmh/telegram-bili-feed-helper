@@ -7,7 +7,7 @@ CACHES_TIMER = {
     # seconds * minutes * hours * days
     "audio": 60 * 60 * 24 * 10,
     "bangumi": 60 * 60 * 24 * 10,
-    "dynamic": 60 * 60 * 24 * 10,
+    "opus": 60 * 60 * 24 * 10,
     "live": 60 * 5,
     "read": 60 * 60 * 24 * 10,
     "reply": 60 * 25,
