@@ -27,6 +27,10 @@ from telegram import (
     InputMediaVideo,
     InputTextMessageContent,
     MessageEntity,
+    MessageOriginChannel,
+    MessageOriginChat,
+    MessageOriginHiddenUser,
+    MessageOriginUser,
     Update,
 )
 from telegram.constants import ChatAction, ParseMode
@@ -142,19 +146,41 @@ async def cache_media(
         return
 
 
-async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+def message_to_urls(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message or update.channel_post
-    if message is None:
-        return
-    data = message.text or message.caption
-    if data is None:
-        return
-    urls = re.findall(BILIBILI_URL_REGEX, data)
+    if (
+        message is None
+        or (
+            type(message.forward_origin) == MessageOriginUser
+            and (
+                message.forward_origin.sender_user.is_bot
+                and message.forward_origin.sender_user.username == context.bot.username
+            )
+        )
+        or (
+            type(message.forward_origin) == MessageOriginHiddenUser
+            and message.forward_origin.sender_user_name == context.bot.first_name
+        )
+        or (
+            (
+                type(message.forward_origin) == MessageOriginChat
+                or type(message.forward_origin) == MessageOriginChannel
+            )
+            and message.forward_origin.author_signature == context.bot.first_name
+        )
+    ):
+        return message, []
+    urls = re.findall(BILIBILI_URL_REGEX, message.text or message.caption or "")
     if message.entities:
         for entity in message.entities:
             if entity.url:
                 urls.extend(re.findall(BILIBILI_URL_REGEX, entity.url))
-    if not urls:
+    return message, urls
+
+
+async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message, urls = message_to_urls(update, context)
+    if message is None or not urls:
         return
     logger.info(f"Parse: {urls}")
     try:
@@ -162,12 +188,11 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     except:
         pass
 
-    fs = await biliparser(urls)
-    for f in fs:
+    for f in await biliparser(urls):
         for i in range(1, 5):
             if isinstance(f, Exception):
                 logger.warning(f"解析错误! {f}")
-                if data.startswith("/parse"):
+                if message.text and message.text.startswith("/parse"):
                     await message.reply_text(str(f))
                 break
             try:
@@ -367,10 +392,17 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             else:
                 try:
                     # for link sharing privacy under group
-                    if len(urls) == 1 and not update.channel_post:
+                    if (
+                        len(urls) == 1
+                        and not update.channel_post
+                        and not message.reply_to_message
+                        and message.text is not None
+                    ):
                         # try to delete only if bot have delete permission and this message is only for sharing
-                        match = re.match(BILIBILI_SHARE_URL_REGEX, data)
-                        if urls[0] == data or (match and match.group(0) == data):
+                        match = re.match(BILIBILI_SHARE_URL_REGEX, message.text)
+                        if urls[0] == message.text or (
+                            match and match.group(0) == message.text
+                        ):
                             await message.delete()
                 finally:
                     break
@@ -378,22 +410,11 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.message or update.channel_post
-    if message is None:
-        return
-    data = message.text
-    if data is None:
-        return
-    urls = re.findall(BILIBILI_URL_REGEX, data)
-    if message.entities:
-        for entity in message.entities:
-            if entity.url:
-                urls.extend(re.findall(BILIBILI_URL_REGEX, entity.url))
-    if not urls:
+    message, urls = message_to_urls(update, context)
+    if message is None or not urls:
         return
     logger.info(f"Fetch: {urls}")
-    fs = await biliparser(urls)
-    for f in fs:
+    for f in await biliparser(urls):
         if isinstance(f, Exception):
             logger.warning(f"解析错误! {f}")
             await message.reply_text(str(f))
