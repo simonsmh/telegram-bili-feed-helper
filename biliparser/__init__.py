@@ -3,8 +3,7 @@ import re
 
 import httpx
 
-from .model import Audio, Live, Opus, Read, Video
-from .parser import parse_audio, parse_live, parse_opus, parse_read, parse_video
+from .strategy import Audio, Live, Opus, Read, Video
 from .utils import ParserException, headers, logger, retry_catcher
 
 
@@ -12,22 +11,22 @@ from .utils import ParserException, headers, logger, retry_catcher
 async def __feed_parser(client: httpx.AsyncClient, url: str):
     # bypass b23 short link
     if re.search(r"BV\w{10}|av\d+|ep\d+|ss\d+", url):
-        return await parse_video(client, url if "/" in url else f"b23.tv/{url}")
+        return await Video(url if "/" in url else f"b23.tv/{url}", client).handle()
     r = await client.get(url)
     url = str(r.url)
     logger.debug(f"URL: {url}")
     # main video
     if re.search(r"video|bangumi/play|festival", url):
-        return await parse_video(client, url)
+        return await Video(url, client).handle()
     # au audio
     elif "read" in url:
-        return await parse_read(client, url)
+        return await Read(url, client).handle()
     # au audio
     elif "audio" in url:
-        return await parse_audio(client, url)
+        return await Audio(url, client).handle()
     # live image
     elif "live" in url:
-        return await parse_live(client, url)
+        return await Live(url, client).handle()
     # API link blackboard link user space link
     elif re.search(
         r"^https?:\/\/(?:api|www\.bilibili\.com\/blackboard|space\.bilibili\.com)", url
@@ -35,7 +34,7 @@ async def __feed_parser(client: httpx.AsyncClient, url: str):
         pass
     # dynamic opus
     elif re.search(r"^https?:\/\/[th]\.|dynamic|opus", url):
-        return await parse_opus(client, url)
+        return await Opus(url, client).handle()
     raise ParserException("URL错误", url)
 
 

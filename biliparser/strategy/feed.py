@@ -1,15 +1,21 @@
 import re
+from abc import ABC, abstractmethod
 from functools import cached_property
+
+import httpx
+import orjson
 from telegram.constants import MessageLimit
 
-from ..utils import escape_markdown
+from ..cache import CACHES_TIMER, RedisCache
+from ..utils import BILI_API, escape_markdown, logger
 
 
-class Feed:
+class Feed(ABC):
     user: str = ""
     uid: str = ""
     __content: str = ""
     __mediaurls: list = []
+    mediacontent: dict = {}
     mediaraws: bool = False
     mediatype: str = ""
     mediathumb: str = ""
@@ -19,8 +25,9 @@ class Feed:
     extra_markdown: str = ""
     replycontent: dict = {}
 
-    def __init__(self, rawurl):
+    def __init__(self, rawurl: str, client: httpx.AsyncClient):
         self.rawurl = rawurl
+        self.client = client
 
     @staticmethod
     def get_filename(url) -> str:
@@ -49,6 +56,13 @@ class Feed:
             if text
             else str()
         )
+
+    @staticmethod
+    def clean_cn_tag_style(content: str) -> str:
+        if not content:
+            return ""
+        ## Refine cn tag style display: #abc# -> #abc
+        return re.sub(r"\\#((?:(?!\\#).)+)\\#", r"\\#\1 ", content)
 
     @cached_property
     def user_markdown(self):
@@ -120,13 +134,6 @@ class Feed:
     def url(self):
         return self.rawurl
 
-    @staticmethod
-    def clean_cn_tag_style(content: str) -> str:
-        if not content:
-            return ""
-        ## Refine cn tag style display: #abc# -> #abc
-        return re.sub(r"\\#((?:(?!\\#).)+)\\#", r"\\#\1 ", content)
-
     @cached_property
     def caption(self):
         caption = (
@@ -149,3 +156,47 @@ class Feed:
         if len(caption) > MessageLimit.CAPTION_LENGTH:
             return prev_caption
         return caption
+
+    async def parse_reply(self, oid, reply_type):
+        logger.info(f"处理评论信息: 评论ID: {oid} 评论类型: {reply_type}")
+        # 1.获取缓存
+        try:
+            cache = RedisCache().get(f"reply:{oid}:{reply_type}")
+        except Exception as e:
+            logger.exception(f"拉取评论缓存错误: {e}")
+            cache = None
+        # 2.拉取评论
+        if cache:
+            logger.info(f"拉取评论缓存: {oid}")
+            reply = orjson.loads(cache)  # type: ignore
+        else:
+            try:
+                r = await self.client.get(
+                    BILI_API + "/x/v2/reply/main",
+                    params={"oid": oid, "type": reply_type},
+                    headers={"Referer": "https://www.bilibili.com/client"},
+                )
+                response = r.json()
+            except Exception as e:
+                logger.exception(f"评论获取错误: {oid}-{reply_type} {e}")
+                return {}
+            # 3.评论解析
+            if not response or not response.get("data"):
+                logger.warning(f"评论解析错误: {oid}-{reply_type} {response}")
+                return {}
+            reply = response["data"]
+            # 4.缓存评论
+            try:
+                RedisCache().set(
+                    f"reply:{oid}:{reply_type}",
+                    orjson.dumps(reply),
+                    ex=CACHES_TIMER.get("reply"),
+                    nx=True,
+                )
+            except Exception as e:
+                logger.exception(f"缓存评论错误: {e}")
+        return reply
+
+    @abstractmethod
+    async def handle(self):
+        return self

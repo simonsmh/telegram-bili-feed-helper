@@ -8,7 +8,6 @@ from uuid import uuid4
 
 import httpx
 import pytz
-import uvloop
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -55,8 +54,6 @@ from biliparser.utils import (
     referer_url,
 )
 from database import db_close, db_init, file_cache
-
-asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 BILIBILI_URL_REGEX = r"(?i)(?:https?://)?[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv)\S+|BV\w{10}"
 BILIBILI_SHARE_URL_REGEX = r"(?i)【.*】 https://[\w\.]*?(?:bilibili\.com|b23\.tv)\S+"

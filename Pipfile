@@ -16,7 +16,6 @@ python-telegram-bot = {version = ">=20", extras = ["all"]}
 tortoise-orm = {extras = ["accel"], version = "*"}
 telegraph = {extras = ["aio"], version = "*"}
 uvicorn = "*"
-asyncmy = "*"
 redis = "*"
 
 [dev-packages]
@@ -24,4 +23,4 @@ pytest = "*"
 pytest-asyncio = "*"
 
 [requires]
-python_version = "3.11"
+python_version = "3.12"
