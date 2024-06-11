@@ -3,7 +3,7 @@ import os
 from tortoise import Tortoise, fields
 from tortoise.models import Model
 
-from biliparser.utils import logger
+from .utils import logger
 
 
 class file_cache(Model):
@@ -23,7 +23,7 @@ async def db_init() -> None:
         logger.info(f"redis_url: {redis_url}")
     await Tortoise.init(
         db_url=db_url,
-        modules={"models": ["database"]},
+        modules={"models": ["biliparser.database"]},
         use_tz=True,
     )
     await Tortoise.generate_schemas()

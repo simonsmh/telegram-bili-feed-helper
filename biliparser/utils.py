@@ -8,7 +8,6 @@ from urllib.parse import urlencode
 
 from loguru import logger
 from PIL import Image
-from tortoise.exceptions import IntegrityError
 
 logger.remove()
 logger.add(sys.stdout, backtrace=True, diagnose=True)

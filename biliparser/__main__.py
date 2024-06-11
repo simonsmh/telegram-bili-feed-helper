@@ -44,8 +44,9 @@ from telegram.ext import (
     filters,
 )
 
-from biliparser import biliparser
-from biliparser.utils import (
+from . import biliparser
+from .database import db_close, db_init, file_cache
+from .utils import (
     LOCAL_MODE,
     compress,
     escape_markdown,
@@ -53,7 +54,6 @@ from biliparser.utils import (
     logger,
     referer_url,
 )
-from database import db_close, db_init, file_cache
 
 BILIBILI_URL_REGEX = r"(?i)(?:https?://)?[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv)\S+|BV\w{10}"
 BILIBILI_SHARE_URL_REGEX = r"(?i)【.*】 https://[\w\.]*?(?:bilibili\.com|b23\.tv)\S+"
@@ -672,6 +672,7 @@ async def post_shutdown(application: Application):
 
 def add_handler(application: Application):
     application.add_handler(CommandHandler("start", start, block=False))
+    application.add_handler(CommandHandler("file", fetch, block=False))
     application.add_handler(
         MessageHandler(
             filters.Entity(MessageEntity.URL)
@@ -683,8 +684,6 @@ def add_handler(application: Application):
         )
     )
     application.add_handler(InlineQueryHandler(inlineparse, block=False))
-    application.add_handler(CommandHandler("parse", parse, block=False))
-    application.add_handler(CommandHandler("file", fetch, block=False))
     application.add_error_handler(error_handler)
 
 

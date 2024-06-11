@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "telegram-bili-feed-helper"
+version = "0.1.0"
+description = ""
+authors = ["simonsmh"]
+license = "GPLv3"
+readme = "README.md"
+packages = [{ include = "biliparser" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+aiomysql = "^0.2.0"
+asyncpg = "^0.29.0"
+beautifulsoup4 = "^4.12.3"
+httpx = {extras = ["http2"], version = "^0.27.0"}
+loguru = "^0.7.2"
+lxml = "^5.2.2"
+pillow = "^10.3.0"
+python-telegram-bot = {extras = ["all"], version = "^21.3"}
+redis = "^5.0.5"
+telegraph = {extras = ["aio"], version = "^2.2.0"}
+tortoise-orm = {extras = ["accel"], version = "^0.21.3"}
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.2"
+pytest-asyncio = "^0.23.7"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
