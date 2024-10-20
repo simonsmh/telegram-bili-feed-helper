@@ -3,6 +3,7 @@ primary_region = "nrt"
 swap_size_mb = 1024
 
 [build]
+  image = "ghcr.io/simonsmh/telegram-bili-feed-helper:master"
 
 [http_service]
   internal_port = 9000
