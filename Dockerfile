@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.13
 
 WORKDIR /usr/src/app
 COPY pyproject.toml poetry.lock ./
