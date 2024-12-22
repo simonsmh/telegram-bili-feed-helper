@@ -18,7 +18,7 @@ CACHES_TIMER = {
 class FakeRedis:
     def __init__(self):
         try:
-            with open("cache.json", "r") as f:
+            with open("cache.json", "r", encoding='utf-8') as f:
                 self.cache = json.load(f)
         except IOError:
             self.cache = {}
@@ -27,7 +27,7 @@ class FakeRedis:
         return self.cache[key].encode("utf-8") if key in self.cache else None
 
     def set(self, key: str, value: str | bytes, *args, **kwargs) -> None:
-        with open("cache.json", "w") as f:
+        with open("cache.json", "w", encoding="utf-8") as f:
             json.dump(self.cache, f, ensure_ascii=False)
         if isinstance(value, bytes):
             value = value.decode("utf-8")

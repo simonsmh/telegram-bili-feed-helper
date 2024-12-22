@@ -89,6 +89,9 @@ class Feed(ABC):
     def comment(self):
         comment = str()
         if isinstance(self.replycontent, dict):
+            target = self.replycontent.get("target")
+            if target:
+                comment += f'💬> @{target["member"]["uname"]}:\n{target["content"]["message"]}\n'
             top = self.replycontent.get("top")
             if top:
                 for item in top.values():
@@ -100,9 +103,12 @@ class Feed(ABC):
     def comment_markdown(self):
         comment_markdown = str()
         if isinstance(self.replycontent, dict):
+            target = self.replycontent.get("target")
+            if target:
+                comment_markdown += f'💬\\> {self.make_user_markdown(target["member"]["uname"], target["member"]["mid"])}:\n{escape_markdown(target["content"]["message"])}\n'
             top = self.replycontent.get("top")
             if top:
-                for item in top.values():
+                for item in top:
                     if item:
                         comment_markdown += f'🔝\\> {self.make_user_markdown(item["member"]["uname"], item["member"]["mid"])}:\n{escape_markdown(item["content"]["message"])}\n'
         return self.shrink_line(comment_markdown)
@@ -157,11 +163,12 @@ class Feed(ABC):
             return prev_caption
         return caption
 
-    async def parse_reply(self, oid, reply_type):
-        logger.info(f"处理评论信息: 评论ID: {oid} 评论类型: {reply_type}")
+    async def parse_reply(self, oid, reply_type, seek_comment_id: None):
+        logger.info(f"处理评论信息: 媒体ID: {oid} 评论类型: {reply_type} 评论ID {seek_comment_id}")
+        cache_key = 'new_reply:' + ':'.join(str(x) for x in [oid, reply_type, seek_comment_id] if x is not None)
         # 1.获取缓存
         try:
-            cache = RedisCache().get(f"reply:{oid}:{reply_type}")
+            cache = RedisCache().get(cache_key)
         except Exception as e:
             logger.exception(f"拉取评论缓存错误: {e}")
             cache = None
@@ -171,24 +178,38 @@ class Feed(ABC):
             reply = orjson.loads(cache)  # type: ignore
         else:
             try:
+                params = {"oid": oid, "type": reply_type}
+                if seek_comment_id is not None:
+                    params["seek_rpid"] = seek_comment_id
                 r = await self.client.get(
                     BILI_API + "/x/v2/reply/main",
-                    params={"oid": oid, "type": reply_type},
+                    params=params,
                     headers={"Referer": "https://www.bilibili.com/client"},
                 )
                 response = r.json()
             except Exception as e:
-                logger.exception(f"评论获取错误: {oid}-{reply_type} {e}")
+                logger.exception(f"评论获取错误: {cache_key} {e}")
                 return {}
             # 3.评论解析
             if not response or not response.get("data"):
-                logger.warning(f"评论解析错误: {oid}-{reply_type} {response}")
+                logger.warning(f"评论解析错误: {cache_key} {response}")
                 return {}
-            reply = response["data"]
+            data = response["data"]
+            # find target comment
+            target = None
+            if seek_comment_id is not None and "replies" in data:
+                for r in data["replies"]:
+                    if str(r["rpid"]) == str(seek_comment_id):
+                        target = r
+                    else:
+                        for sr in r["replies"]:
+                            if str(sr["rpid"]) == str(seek_comment_id):
+                                target = sr
+            reply = {"top": data.get("top_replies"), "target": target}
             # 4.缓存评论
             try:
                 RedisCache().set(
-                    f"reply:{oid}:{reply_type}",
+                    cache_key,
                     orjson.dumps(reply),
                     ex=CACHES_TIMER.get("reply"),
                     nx=True,
