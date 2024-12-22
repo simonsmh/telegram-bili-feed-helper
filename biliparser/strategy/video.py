@@ -17,6 +17,8 @@ from ..utils import (
 )
 from .feed import Feed
 
+from urllib.parse import urlparse, parse_qs
+
 QN = [64, 32, 16]
 
 
@@ -140,6 +142,15 @@ class Video(Feed):
             r"bilibili\.com/festival/(?P<festivalid>\w+)\?(?:bvid=(?P<bvid>BV\w{10}))",
             self.rawurl,
         )
+        pr = urlparse(self.rawurl)
+        qs = parse_qs(pr.query)
+        seek_id = None
+        if "comment_secondary_id" in qs:
+            seek_id = qs["comment_secondary_id"][0]
+        elif "comment_root_id" in qs:
+            seek_id = qs["comment_root_id"][0]
+        elif pr.fragment.startswith("reply"):
+            seek_id = pr.fragment.removeprefix("reply")
         if match_fes:
             bvid = match_fes.group("bvid")
             epid = None
@@ -286,7 +297,7 @@ class Video(Feed):
         self.mediatitle = detail.get("title")
         self.mediaurls = detail.get("pic")
         self.mediatype = "image"
-        self.replycontent = await self.parse_reply(self.aid, self.reply_type)
+        self.replycontent = await self.parse_reply(self.aid, self.reply_type, seek_id)
 
         for qn in QN:
             if await self.__get_video_result(detail, qn):
