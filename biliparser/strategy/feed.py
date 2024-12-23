@@ -163,7 +163,7 @@ class Feed(ABC):
             return prev_caption
         return caption
 
-    async def parse_reply(self, oid, reply_type, seek_comment_id: None):
+    async def parse_reply(self, oid, reply_type, seek_comment_id = None):
         logger.info(f"处理评论信息: 媒体ID: {oid} 评论类型: {reply_type} 评论ID {seek_comment_id}")
         cache_key = 'new_reply:' + ':'.join(str(x) for x in [oid, reply_type, seek_comment_id] if x is not None)
         # 1.获取缓存
