@@ -1,8 +1,9 @@
 name: Deploy to Fly
 on:
-  workflow_run:
-    workflows: [Create and publish a Docker image]
-    types: [completed]
+  workflow_dispatch:
+#  workflow_run:
+#    workflows: [Create and publish a Docker image]
+#    types: [completed]
 
 jobs:
   deploy:

@@ -687,7 +687,7 @@ def add_handler(application: Application):
     application.add_error_handler(error_handler)
 
 
-if __name__ == "__main__":
+def main():
     if os.environ.get("TOKEN"):
         TOKEN = os.environ["TOKEN"]
     elif len(sys.argv) >= 2:
@@ -726,7 +726,7 @@ if __name__ == "__main__":
     add_handler(application)
     if os.environ.get("DOMAIN"):
         application.run_webhook(
-            listen="0.0.0.0",
+            listen=os.environ.get("HOST", "0.0.0.0"),
             port=int(os.environ.get("PORT", 9000)),
             url_path=TOKEN,
             webhook_url=f'{os.environ.get("DOMAIN")}{TOKEN}',
@@ -734,3 +734,7 @@ if __name__ == "__main__":
         )
     else:
         application.run_polling()
+
+
+if __name__ == "__main__":
+    main()

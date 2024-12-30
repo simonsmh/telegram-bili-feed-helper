@@ -25,6 +25,9 @@ tortoise-orm = {extras = ["accel"], version = "^0.21.7"}
 pytest = "^8.3.3"
 pytest-asyncio = "^0.23.8"
 
+[tool.poetry.scripts]
+bilifeedbot = "biliparser.__main__:main"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

@@ -7,4 +7,4 @@ COPY . .
 RUN poetry install --only main
 ENV PORT=9000 \
     TOKEN=""
-ENTRYPOINT ["poetry", "run", "python", "-m", "biliparser"]
+ENTRYPOINT ["poetry", "run", "biliparser"]
