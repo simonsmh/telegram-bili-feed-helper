@@ -55,8 +55,8 @@ from .utils import (
     referer_url,
 )
 
-BILIBILI_URL_REGEX = r"(?i)(?:https?://)?[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv)\S+|BV\w{10}"
-BILIBILI_SHARE_URL_REGEX = r"(?i)【.*】 https://[\w\.]*?(?:bilibili\.com|b23\.tv)\S+"
+BILIBILI_URL_REGEX = r"(?i)(?:https?://)?[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv|bili2233\.cn)\S+|BV\w{10}"
+BILIBILI_SHARE_URL_REGEX = r"(?i)【.*】 https://[\w\.]*?(?:bilibili\.com|b23\.tv|bili2233\.cn)\S+"
 
 SOURCE_CODE_MARKUP = InlineKeyboardMarkup(
     [
