@@ -11,6 +11,25 @@ Telegram bot for Bili Feed Helper.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue)](https://www.gnu.org/licenses/gpl-3.0)
 
+## Env Guide
+
+### Official bot api
+- Required: `TOKEN`: Telegram bot token
+- Recommend: `REDIS_URL`: redis url string like `rediss://usr:pswd@host:port` supported by redis-py
+- Supported: 
+  - Listening on `HOST`:`PORT`
+  - `DATABASE_URL`: file cache db url string supported by tortoise orm
+  - `FILE_TABLE`: file cache db name
+
+### Self hosted bot api
+- See Official bot api
+- Extra:
+  - `LOCAL_MODE`: Set 1 to enable
+  - `API_BASE_URL`: Self hosted bot api endpoint like `http://127.0.0.1:8081/bot`
+  - `API_BASE_FILE_URL`: Self hosted bot api file endpoint like `http://127.0.0.1:8081/file/bot`
+  - `LOCAL_TEMP_FILE_PATH`: Set to docker mounting point like `/var/lib/telegram-bot-api/.tmp/`
+
+
 ## Credit
 
 [Bilibili API](https://github.com/Nemo2011/bilibili-api): 

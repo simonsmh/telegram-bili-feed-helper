@@ -1,9 +1,9 @@
 import asyncio
 import os
-import pathlib
 import re
 import sys
 from io import BytesIO
+from pathlib import Path
 from uuid import uuid4
 
 import httpx
@@ -99,32 +99,41 @@ async def get_media(
     compression: bool = True,
     size: int = 320,
     media_check_ignore: bool = False,
-) -> bytes | pathlib.Path | str:
+) -> Path | str:
     file_id: str | None = await get_cache_media(filename)
     if file_id:
         return file_id
     header = headers.copy()
     header["Referer"] = referer
     async with client.stream("GET", url, headers=header) as response:
+        logger.info(f"下载开始: {url}")
         if response.status_code != 200:
             raise NetworkError(
                 f"媒体文件获取错误: {response.status_code} {url}->{referer}"
             )
-        mediatype = response.headers.get("content-type").split("/")
+        content_type = response.headers.get("content-type")
+        if content_type is None:
+            raise NetworkError(f"媒体文件获取错误: 无法获取 content-type {url}->{referer}")
+        mediatype = content_type.split("/")
+        filepath = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", ".tmp"))
+        filepath.mkdir(parents=True, exist_ok=True)
+        media = filepath / filename
         if mediatype[0] in ["video", "audio", "application"]:
-            if not os.path.exists(".tmp"):
-                os.mkdir(".tmp")
-            media = pathlib.Path(os.path.abspath(f".tmp/{filename}"))
-            with open(f".tmp/{filename}", "wb") as file:
+            with open(media, "wb") as file:
                 async for chunk in response.aiter_bytes():
                     file.write(chunk)
         elif media_check_ignore or mediatype[0] == "image":
-            media = await response.aread()
+            img = await response.aread()
             if compression and mediatype[1] in ["jpeg", "png"]:
                 logger.info(f"压缩: {url} {mediatype[1]}")
-                media = compress(BytesIO(media), size).getvalue()
+                img = compress(BytesIO(img), size).getvalue()
+            with open(media, "wb") as file:
+                file.write(img)
         else:
             raise NetworkError(f"媒体文件类型错误: {mediatype} {url}->{referer}")
+        logger.info(f"完成下载: {media}")
+        if LOCAL_MODE:
+            return media.as_uri()
         return media
 
 
@@ -184,7 +193,6 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await message.reply_chat_action(ChatAction.TYPING)
     except:
         pass
-
     for f in await biliparser(urls):
         for i in range(1, 5):
             if isinstance(f, Exception):
@@ -197,11 +205,12 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     await message.reply_text(f.caption, reply_markup=origin_link(f.url))
                 else:
                     medias = []
+                    mediathumb = None
                     try:
                         async with httpx.AsyncClient(
                             http2=True, timeout=90, follow_redirects=True
                         ) as client:
-                            if f.mediaraws:
+                            if f.mediaraws or LOCAL_MODE:
                                 mediathumb = (
                                     await get_media(
                                         client,
@@ -350,8 +359,10 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                     )
                             medias = [mediathumb, *media]
                     finally:
+                        if isinstance(mediathumb, Path):
+                            os.remove(mediathumb)
                         for item in medias:
-                            if isinstance(item, pathlib.Path):
+                            if isinstance(item, Path):
                                 os.remove(item)
             except BadRequest as err:
                 if (
@@ -468,7 +479,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         )
             finally:
                 for item in medias:
-                    if isinstance(item, pathlib.Path):
+                    if isinstance(item, Path):
                         os.remove(item)
 
 

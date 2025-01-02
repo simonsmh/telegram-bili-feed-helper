@@ -7,7 +7,7 @@ import orjson
 from telegram.constants import MessageLimit
 
 from ..cache import CACHES_TIMER, RedisCache
-from ..utils import BILI_API, escape_markdown, logger
+from ..utils import BILI_API, escape_markdown, get_filename, logger
 
 
 class Feed(ABC):
@@ -28,13 +28,6 @@ class Feed(ABC):
     def __init__(self, rawurl: str, client: httpx.AsyncClient):
         self.rawurl = rawurl
         self.client = client
-
-    @staticmethod
-    def get_filename(url) -> str:
-        target = re.search(r"\/([^\/]*\.\w{3,4})(?:$|\?)", url)
-        if target:
-            return target.group(1)
-        return url
 
     @staticmethod
     def make_user_markdown(user, uid):
@@ -127,14 +120,14 @@ class Feed(ABC):
     @cached_property
     def mediafilename(self):
         return (
-            [self.get_filename(i) for i in self.__mediaurls]
+            [get_filename(i) for i in self.__mediaurls]
             if self.__mediaurls
             else list()
         )
 
     @cached_property
     def mediathumbfilename(self):
-        return self.get_filename(self.mediathumb) if self.mediathumb else str()
+        return get_filename(self.mediathumb) if self.mediathumb else str()
 
     @cached_property
     def url(self):

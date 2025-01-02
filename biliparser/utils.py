@@ -77,8 +77,15 @@ def escape_markdown(text: str):
     return re.sub(r"([_*\[\]()~`>\#\+\-=|{}\.!\\])", r"\\\1", html.unescape(text))
 
 
+def get_filename(url) -> str:
+    target = re.search(r"\/([^\/]*\.\w{3,4})(?:$|\?)", url)
+    if target:
+        return target.group(1)
+    return url
+
+
 def referer_url(url: str, referer: str):
     if not referer:
         return url
     params = {"url": url, "referer": referer}
-    return f"https://referer.simonsmh.workers.dev/?{urlencode(params)}"
+    return f"https://referer.simonsmh.workers.dev/?{urlencode(params)}#{get_filename(url)}"

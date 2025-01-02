@@ -12,7 +12,7 @@ class file_cache(Model):
     created = fields.DatetimeField(auto_now=True)
 
     class Meta(Model.Meta):
-        table = "file"
+        table = os.environ.get("FILE_TABLE", "file")
 
 
 async def db_init() -> None:
