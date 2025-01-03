@@ -359,11 +359,9 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                     )
                             medias = [mediathumb, *media]
                     finally:
-                        if isinstance(mediathumb, Path):
-                            os.remove(mediathumb)
                         for item in medias:
                             if isinstance(item, Path):
-                                os.remove(item)
+                                item.unlink(missing_ok=True)
             except BadRequest as err:
                 if (
                     "Not enough rights to send" in err.message
@@ -480,7 +478,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             finally:
                 for item in medias:
                     if isinstance(item, Path):
-                        os.remove(item)
+                        item.unlink(missing_ok=True)
 
 
 async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
