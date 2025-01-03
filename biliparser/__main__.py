@@ -132,8 +132,6 @@ async def get_media(
         else:
             raise NetworkError(f"媒体文件类型错误: {mediatype} {url}->{referer}")
         logger.info(f"完成下载: {media}")
-        if LOCAL_MODE:
-            return media.as_uri()
         return media
 
 
