@@ -71,6 +71,7 @@ def compress(inpil, size=1280, fix_ratio=False) -> BytesIO:
             new_w = math.ceil(h / 20)
             padded = Image.new("RGBA", (new_w, h))
             padded.paste(pil, (int((new_w - h) / 2), 0))
+            pil = padded
     if size > 0:
         pil.thumbnail((size, size), Image.Resampling.LANCZOS)
     outpil = BytesIO()

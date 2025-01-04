@@ -1,9 +1,10 @@
-from math import log
 import os
 import re
 from functools import cached_property
+from urllib.parse import parse_qs, urlparse
 
 import orjson
+from bilibili_api import video
 from telegram.constants import FileSizeLimit
 
 from ..cache import CACHES_TIMER, RedisCache
@@ -11,15 +12,13 @@ from ..utils import (
     BILI_API,
     LOCAL_MODE,
     ParserException,
+    credential,
     escape_markdown,
     get_filename,
     headers,
     logger,
-    credential,
 )
 from .feed import Feed
-from bilibili_api import video
-from urllib.parse import urlparse, parse_qs
 
 QN = [64, 32, 16]
 
@@ -144,7 +143,8 @@ class Video(Feed):
             self.dashurls = [streams[0].url, streams[1].url]
             self.dashtype = "dash"
             self.mediaraws = True
-        return True
+            return True
+        return False
 
     async def handle(self):
         logger.info(f"处理视频信息: 链接: {self.rawurl}")
