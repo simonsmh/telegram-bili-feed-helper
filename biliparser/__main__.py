@@ -86,7 +86,7 @@ def origin_link(content: str) -> InlineKeyboardMarkup:
 
 async def get_description(context: ContextTypes.DEFAULT_TYPE):
     bot_me = await context.bot.get_me()
-    return f"欢迎使用 @{bot_me.username} 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组或频道自动匹配消息。\nInline 模式限制: 只可发单张图，消耗设备流量，安全性低\n群组模式限制: 图片小于10M，视频小于50M，通过 Bot 上传速度较慢"
+    return f"欢迎使用 @{bot_me.username} 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组或频道自动匹配消息。\nInline 模式限制: 只可发单张图，消耗设备流量，安全性低\n群组模式限制: {'' if LOCAL_MODE else '图片小于10M，视频小于50M，'}通过 Bot 上传速度较慢"
 
 
 async def get_cache_media(filename):
