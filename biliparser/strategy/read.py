@@ -2,7 +2,6 @@ import asyncio
 import os
 import re
 from functools import cached_property
-from io import BytesIO
 
 import orjson
 from bs4 import BeautifulSoup
@@ -10,7 +9,7 @@ from bs4.element import Tag
 from telegraph.aio import Telegraph
 
 from ..cache import CACHES_TIMER, RedisCache
-from ..utils import ParserException, compress, escape_markdown, logger, referer_url
+from ..utils import ParserException, escape_markdown, logger, referer_url
 from .feed import Feed
 
 telegraph = Telegraph(access_token=os.environ.get("TELEGRAPH_ACCESS_TOKEN", None))
@@ -29,26 +28,6 @@ class Read(Feed):
     async def __relink(self, img):
         src = img.attrs.pop("data-src")
         img.attrs = {"src": src if "hdslb" not in src else referer_url(src, self.url)}
-        # logger.info(f"下载图片: {src}")
-        # async with self.client.stream("GET", f"https:{src}") as response:
-        #     if response.status_code != 200:
-        #         logger.error(f"图片获取错误: {src}")
-        #         return
-        #     media = BytesIO(await response.aread())
-        #     mediatype = response.headers.get("content-type")
-        #     if mediatype in ["image/jpeg", "image/png"]:
-        #         content_length = int(response.headers.get("content-length"))
-        #         logger.info(f"图片大小: {content_length} 压缩: {src} {mediatype}")
-        #         if content_length > 1024 * 1024 * 5:
-        #             media = compress(media, fix_ratio=True)
-        #         else:
-        #             media = compress(media, size=0, fix_ratio=True)
-        #     try:
-        #         resp = await telegraph.upload_file(media)
-        #         logger.info(f"图片上传: {resp}")
-        #         img.attrs["src"] = f"https://telegra.ph{resp[0].get('src')}"
-        #     except Exception as e:
-        #         logger.exception(f"图片上传错误: {e}")
 
     async def handle(self):
         logger.info(f"处理文章信息: 链接: {self.rawurl}")

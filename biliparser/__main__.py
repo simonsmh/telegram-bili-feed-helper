@@ -1,13 +1,13 @@
 import asyncio
+from io import BytesIO
 import os
 import re
+import subprocess
 import sys
-from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
 
 import httpx
-import pytz
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -43,6 +43,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from tqdm import tqdm
 
 from . import biliparser
 from .database import db_close, db_init, file_cache
@@ -56,7 +57,9 @@ from .utils import (
 )
 
 BILIBILI_URL_REGEX = r"(?i)(?:https?://)?[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv|bili2?2?3?3?\.cn)\S+|BV\w{10}"
-BILIBILI_SHARE_URL_REGEX = r"(?i)【.*】 https://[\w\.]*?(?:bilibili\.com|b23\.tv|bili2?2?3?3?\.cn)\S+"
+BILIBILI_SHARE_URL_REGEX = (
+    r"(?i)【.*】 https://[\w\.]*?(?:bilibili\.com|b23\.tv|bili2?2?3?3?\.cn)\S+"
+)
 
 SOURCE_CODE_MARKUP = InlineKeyboardMarkup(
     [
@@ -68,6 +71,7 @@ SOURCE_CODE_MARKUP = InlineKeyboardMarkup(
         ]
     ]
 )
+LOCAL_FILE_PATH = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", ".tmp"))
 
 
 def origin_link(content: str) -> InlineKeyboardMarkup:
@@ -94,45 +98,61 @@ async def get_cache_media(filename):
 async def get_media(
     client: httpx.AsyncClient,
     referer,
-    url: str,
+    url: Path | str,
     filename: str,
     compression: bool = True,
     size: int = 320,
     media_check_ignore: bool = False,
-) -> Path | str:
+) -> Path | str | None:
+    if isinstance(url, Path):
+        return url
     file_id: str | None = await get_cache_media(filename)
     if file_id:
         return file_id
-    header = headers.copy()
-    header["Referer"] = referer
-    async with client.stream("GET", url, headers=header) as response:
-        logger.info(f"下载开始: {url}")
-        if response.status_code != 200:
-            raise NetworkError(
-                f"媒体文件获取错误: {response.status_code} {url}->{referer}"
-            )
-        content_type = response.headers.get("content-type")
-        if content_type is None:
-            raise NetworkError(f"媒体文件获取错误: 无法获取 content-type {url}->{referer}")
-        mediatype = content_type.split("/")
-        filepath = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", ".tmp"))
-        filepath.mkdir(parents=True, exist_ok=True)
-        media = filepath / filename
-        if mediatype[0] in ["video", "audio", "application"]:
-            with open(media, "wb") as file:
-                async for chunk in response.aiter_bytes():
-                    file.write(chunk)
-        elif media_check_ignore or mediatype[0] == "image":
-            img = await response.aread()
-            if compression and mediatype[1] in ["jpeg", "png"]:
-                logger.info(f"压缩: {url} {mediatype[1]}")
-                img = compress(BytesIO(img), size).getvalue()
-            with open(media, "wb") as file:
-                file.write(img)
-        else:
-            raise NetworkError(f"媒体文件类型错误: {mediatype} {url}->{referer}")
-        logger.info(f"完成下载: {media}")
-        return media
+    try:
+        header = headers.copy()
+        header["Referer"] = referer
+        async with client.stream("GET", url, headers=header) as response:
+            logger.info(f"下载开始: {url}")
+            if response.status_code != 200:
+                raise NetworkError(
+                    f"媒体文件获取错误: {response.status_code} {url}->{referer}"
+                )
+            content_type = response.headers.get("content-type")
+            if content_type is None:
+                raise NetworkError(
+                    f"媒体文件获取错误: 无法获取 content-type {url}->{referer}"
+                )
+            mediatype = content_type.split("/")
+            LOCAL_FILE_PATH.mkdir(parents=True, exist_ok=True)
+            media = LOCAL_FILE_PATH / filename
+            total = int(response.headers.get("content-length", 0))
+            if mediatype[0] in ["video", "audio", "application"]:
+                with open(media, "wb") as file:
+                    with tqdm(
+                        total=total,
+                        unit_scale=True,
+                        unit_divisor=1024,
+                        unit="B",
+                        desc=filename,
+                    ) as pbar:
+                        async for chunk in response.aiter_bytes(chunk_size=8192):
+                            file.write(chunk)
+                            pbar.update(len(chunk))
+            elif media_check_ignore or mediatype[0] == "image":
+                img = await response.aread()
+                if compression and mediatype[1] in ["jpeg", "png"]:
+                    logger.info(f"压缩: {url} {mediatype[1]}")
+                    img = compress(BytesIO(img), size).getvalue()
+                with open(media, "wb") as file:
+                    file.write(img)
+            else:
+                raise NetworkError(f"媒体文件类型错误: {mediatype} {url}->{referer}")
+            logger.info(f"完成下载: {media}")
+            return media
+    except Exception as e:
+        logger.error(f"下载错误: {url}->{referer}")
+        logger.exception(e)
 
 
 async def cache_media(
@@ -182,6 +202,87 @@ def message_to_urls(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return message, urls
 
 
+async def get_media_mediathumb(f, client):
+    # Handle thumbnail
+    mediathumb = None
+    if f.mediathumb:
+        if f.mediaraws or LOCAL_MODE:
+            mediathumb = await get_media(
+                client, f.url, f.mediathumb, f.mediathumbfilename, size=320
+            )
+        else:
+            mediathumb = referer_url(f.mediathumb, f.url)
+
+    # Handle main media
+    media = []
+
+    # Local mode or raw media requested
+    if f.mediaraws or LOCAL_MODE:
+        if hasattr(f, "dashtype") and f.dashtype == "dash":
+            media = await handle_dash_media(f, client)
+            if media:
+                return media, mediathumb
+        tasks = [
+            get_media(client, f.url, m, fn, size=1280)
+            for m, fn in zip(f.mediaurls, f.mediafilename)
+        ]
+        media = [m for m in await asyncio.gather(*tasks) if m]
+
+    # Remote mode
+    else:
+        if hasattr(f, "dashtype") and f.dashtype == "dash":
+            cache_dash = await get_cache_media(f.mediafilename[0])
+            if cache_dash:
+                media = [cache_dash]
+                return media, mediathumb
+        if f.mediatype == "image":
+            media = [i if ".gif" in i else i + "@1280w.jpg" for i in f.mediaurls]
+        elif f.mediatype in ["video", "audio"]:
+            media = [referer_url(f.mediaurls[0], f.url)]
+        else:
+            media = f.mediaurls
+
+    return media, mediathumb
+
+
+async def handle_dash_media(f, client):
+    media = []
+    try:
+        cache_dash_file = LOCAL_FILE_PATH / f.mediafilename[0]
+        cache_dash = await get_cache_media(cache_dash_file.name)
+        if cache_dash:
+            return [cache_dash]
+
+        # Download dash segments
+        tasks = [
+            get_media(client, f.url, m, fn, size=1280)
+            for m, fn in zip(f.dashurls, f.dashfilename)
+        ]
+        media = [m for m in await asyncio.gather(*tasks) if m]
+
+        # Merge segments
+        cmd = [os.environ.get("FFMPEG_PATH", "ffmpeg"), "-y"]
+        for item in media:
+            cmd.extend(["-i", str(item)])
+        cmd.extend(
+            ["-vcodec", "copy", "-acodec", "copy", str(cache_dash_file.absolute())]
+        )
+        subprocess.run(cmd, check=True)
+
+        f.mediaurls = [str(cache_dash_file.absolute())]
+        f.mediafilename = [cache_dash_file.name]
+        logger.debug(f"合并完成: {f.url} , 文件名: {f.mediafilename}")
+
+        return [cache_dash_file]
+    except subprocess.CalledProcessError as e:
+        logger.error(f"DASH媒体处理失败: {f.url} - {str(e)}")
+        return []
+    finally:
+        for item in media:
+            if isinstance(item, Path):
+                item.unlink(missing_ok=True)
+
+
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message, urls = message_to_urls(update, context)
     if message is None or not urls:
@@ -198,168 +299,132 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 if message.text and message.text.startswith("/parse"):
                     await message.reply_text(str(f))
                 break
+            medias = []
+            mediathumb = None
             try:
                 if not f.mediaurls:
                     await message.reply_text(f.caption, reply_markup=origin_link(f.url))
+                    break
                 else:
-                    medias = []
-                    mediathumb = None
-                    try:
-                        async with httpx.AsyncClient(
-                            http2=True, timeout=90, follow_redirects=True
-                        ) as client:
-                            if f.mediaraws or LOCAL_MODE:
-                                mediathumb = (
-                                    await get_media(
-                                        client,
-                                        f.url,
-                                        f.mediathumb,
-                                        f.mediathumbfilename,
-                                        size=320,
-                                    )
-                                    if f.mediathumb
-                                    else None
-                                )
-                                tasks = [
-                                    get_media(client, f.url, media, filename, size=1280)
-                                    for media, filename in zip(
-                                        f.mediaurls, f.mediafilename
-                                    )
-                                ]
-                                logger.info(f"下载中: {f.url}")
-                                media = await asyncio.gather(*tasks)
-                                logger.info(f"下载完成: {f.url}")
+                    async with httpx.AsyncClient(
+                        http2=True, follow_redirects=True
+                    ) as client:
+                        media, mediathumb = await get_media_mediathumb(f, client)
+                        if not media:
+                            if mediathumb:
+                                media = [mediathumb]
+                                f.mediaurls = f.mediathumb
+                                f.mediatype = "image"
                             else:
-                                mediathumb = (
-                                    referer_url(f.mediathumb, f.url)
-                                    if f.mediathumb
-                                    else None
-                                )
-                                if f.mediatype == "image":
-                                    media = [
-                                        i if ".gif" in i else i + "@1280w.jpg"
-                                        for i in f.mediaurls
-                                    ]
-                                elif f.mediatype in ["video", "audio"]:
-                                    media = [referer_url(f.mediaurls[0], f.url)]
-                                else:
-                                    media = f.mediaurls
-                            if f.mediatype == "video":
-                                result = await message.reply_video(
-                                    media[0],
-                                    caption=f.caption,
-                                    reply_markup=origin_link(f.url),
-                                    supports_streaming=True,
-                                    thumbnail=mediathumb,
-                                    duration=f.mediaduration,
-                                    write_timeout=60,
-                                    filename=f.mediafilename[0],
-                                    width=(
-                                        f.mediadimention["height"]
-                                        if f.mediadimention["rotate"]
-                                        else f.mediadimention["width"]
-                                    ),
-                                    height=(
-                                        f.mediadimention["width"]
-                                        if f.mediadimention["rotate"]
-                                        else f.mediadimention["height"]
-                                    ),
-                                )
-                            elif f.mediatype == "audio":
-                                result = await message.reply_audio(
-                                    media[0],
-                                    caption=f.caption,
-                                    duration=f.mediaduration,
-                                    performer=f.user,
-                                    reply_markup=origin_link(f.url),
-                                    thumbnail=mediathumb,
-                                    title=f.mediatitle,
-                                    write_timeout=60,
-                                    filename=f.mediafilename[0],
-                                )
-                            elif len(f.mediaurls) == 1:
-                                if ".gif" in f.mediaurls[0]:
-                                    result = await message.reply_animation(
-                                        media[0],
-                                        caption=f.caption,
-                                        reply_markup=origin_link(f.url),
-                                        write_timeout=60,
-                                        filename=f.mediafilename[0],
-                                    )
-                                else:
-                                    result = await message.reply_photo(
-                                        media[0],
-                                        caption=f.caption,
-                                        reply_markup=origin_link(f.url),
-                                        write_timeout=60,
-                                        filename=f.mediafilename[0],
-                                    )
-                            else:
-                                result = await message.reply_media_group(
-                                    [
-                                        (
-                                            InputMediaVideo(
-                                                img,
-                                                caption=f.caption,
-                                                filename=filename,
-                                                supports_streaming=True,
-                                            )
-                                            if ".gif" in mediaurl
-                                            else InputMediaPhoto(
-                                                img,
-                                                caption=f.caption,
-                                                filename=filename,
-                                            )
-                                        )
-                                        for img, mediaurl, filename in zip(
-                                            media, f.mediaurls, f.mediafilename
-                                        )
-                                    ],
-                                    write_timeout=60,
-                                )
                                 await message.reply_text(
                                     f.caption, reply_markup=origin_link(f.url)
                                 )
-                            # store file caches
-                            if isinstance(result, tuple):  # media group
-                                for filename, item in zip(f.mediafilename, result):
-                                    if isinstance(
-                                        item.effective_attachment, tuple
-                                    ):  # PhotoSize
-                                        await cache_media(
-                                            filename, item.effective_attachment[0]
-                                        )
-                                    else:
-                                        await cache_media(
-                                            filename, item.effective_attachment
-                                        )
+                                break
+                        if f.mediatype == "video":
+                            result = await message.reply_video(
+                                media[0],
+                                caption=f.caption,
+                                reply_markup=origin_link(f.url),
+                                supports_streaming=True,
+                                thumbnail=mediathumb,
+                                duration=f.mediaduration,
+                                filename=f.mediafilename[0],
+                                width=(
+                                    f.mediadimention["height"]
+                                    if f.mediadimention["rotate"]
+                                    else f.mediadimention["width"]
+                                ),
+                                height=(
+                                    f.mediadimention["width"]
+                                    if f.mediadimention["rotate"]
+                                    else f.mediadimention["height"]
+                                ),
+                            )
+                        elif f.mediatype == "audio":
+                            result = await message.reply_audio(
+                                media[0],
+                                caption=f.caption,
+                                duration=f.mediaduration,
+                                performer=f.user,
+                                reply_markup=origin_link(f.url),
+                                thumbnail=mediathumb,
+                                title=f.mediatitle,
+                                filename=f.mediafilename[0],
+                            )
+                        elif len(f.mediaurls) == 1:
+                            if ".gif" in f.mediaurls[0]:
+                                result = await message.reply_animation(
+                                    media[0],
+                                    caption=f.caption,
+                                    reply_markup=origin_link(f.url),
+                                    filename=f.mediafilename[0],
+                                )
                             else:
+                                result = await message.reply_photo(
+                                    media[0],
+                                    caption=f.caption,
+                                    reply_markup=origin_link(f.url),
+                                    filename=f.mediafilename[0],
+                                )
+                        else:
+                            result = await message.reply_media_group(
+                                [
+                                    (
+                                        InputMediaVideo(
+                                            img,
+                                            caption=f.caption,
+                                            filename=filename,
+                                            supports_streaming=True,
+                                        )
+                                        if ".gif" in mediaurl
+                                        else InputMediaPhoto(
+                                            img,
+                                            caption=f.caption,
+                                            filename=filename,
+                                        )
+                                    )
+                                    for img, mediaurl, filename in zip(
+                                        media, f.mediaurls, f.mediafilename
+                                    )
+                                ],
+                            )
+                            await message.reply_text(
+                                f.caption, reply_markup=origin_link(f.url)
+                            )
+                        # store file caches
+                        if isinstance(result, tuple):  # media group
+                            for filename, item in zip(f.mediafilename, result):
                                 if isinstance(
-                                    result.effective_attachment, tuple
+                                    item.effective_attachment, tuple
                                 ):  # PhotoSize
                                     await cache_media(
-                                        f.mediafilename[0],
-                                        result.effective_attachment[0],
+                                        filename, item.effective_attachment[0]
                                     )
-                                else:  # others
-                                    if (
-                                        hasattr(
-                                            result.effective_attachment, "thumbnail"
-                                        )
-                                        and f.mediathumbfilename
-                                    ):  # mediathumb
-                                        await cache_media(
-                                            f.mediathumbfilename,
-                                            result.effective_attachment.thumbnail,
-                                        )
+                                else:
                                     await cache_media(
-                                        f.mediafilename[0], result.effective_attachment
+                                        filename, item.effective_attachment
                                     )
-                            medias = [mediathumb, *media]
-                    finally:
-                        for item in medias:
-                            if isinstance(item, Path):
-                                item.unlink(missing_ok=True)
+                        else:
+                            if isinstance(
+                                result.effective_attachment, tuple
+                            ):  # PhotoSize
+                                await cache_media(
+                                    f.mediafilename[0],
+                                    result.effective_attachment[0],
+                                )
+                            else:  # others
+                                if (
+                                    hasattr(result.effective_attachment, "thumbnail")
+                                    and f.mediathumbfilename
+                                ):  # mediathumb
+                                    await cache_media(
+                                        f.mediathumbfilename,
+                                        result.effective_attachment.thumbnail,
+                                    )
+                                await cache_media(
+                                    f.mediafilename[0], result.effective_attachment
+                                )
+                        medias = [mediathumb, *media]
             except BadRequest as err:
                 if (
                     "Not enough rights to send" in err.message
@@ -410,6 +475,10 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             await message.delete()
                 finally:
                     break
+            finally:
+                for item in medias:
+                    if isinstance(item, Path):
+                        item.unlink(missing_ok=True)
             f = (await biliparser(f.url))[0]  # 重试获取该条链接信息
 
 
@@ -427,7 +496,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             medias = []
             try:
                 async with httpx.AsyncClient(
-                    http2=True, timeout=90, follow_redirects=True
+                    http2=True, follow_redirects=True
                 ) as client:
                     tasks = [
                         get_media(
@@ -440,7 +509,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         )
                         for media, filename in zip(f.mediaurls, f.mediafilename)
                     ]
-                    medias = await asyncio.gather(*tasks)
+                    medias = [tr for tr in await asyncio.gather(*tasks) if tr]
                     logger.info(f"上传中: {f.url}")
                     if len(medias) > 1:
                         result = await message.reply_media_group(
@@ -448,7 +517,6 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 InputMediaDocument(media, filename=filename)
                                 for media, filename in zip(medias, f.mediafilename)
                             ],
-                            write_timeout=60,
                         )
                         await message.reply_text(
                             f.caption, reply_markup=origin_link(f.url)
@@ -467,7 +535,6 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             document=medias[0],
                             caption=f.caption,
                             reply_markup=origin_link(f.url),
-                            write_timeout=60,
                             filename=f.mediafilename[0],
                         )
                         await cache_media(
@@ -710,12 +777,12 @@ def main():
                 disable_notification=True,
                 allow_sending_without_reply=True,
                 block=False,
-                tzinfo=pytz.timezone("Asia/Shanghai"),
             )
         )
         .token(TOKEN)
         .post_init(post_init)
         .post_shutdown(post_shutdown)
+        .media_write_timeout(300)
         .read_timeout(60)
         .write_timeout(60)
         .base_url(os.environ.get("API_BASE_URL", "https://api.telegram.org/bot"))

@@ -44,7 +44,7 @@ async def biliparser(urls) -> list[Video | Read | Audio | Live | Opus]:
     elif isinstance(urls, tuple):
         urls = list(urls)
     async with httpx.AsyncClient(
-        headers=headers, http2=True, timeout=90, follow_redirects=True
+        headers=headers, http2=True, follow_redirects=True
     ) as client:
         tasks = list(
             __feed_parser(

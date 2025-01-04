@@ -8,6 +8,7 @@ from urllib.parse import urlencode
 
 from loguru import logger
 from PIL import Image
+from bilibili_api import Credential
 
 logger.remove()
 logger.add(sys.stdout, backtrace=True, diagnose=True)
@@ -23,6 +24,13 @@ BILI_API = os.environ.get("BILI_API", "https://api.bilibili.com")
 
 LOCAL_MODE = os.environ.get("LOCAL_MODE", False)
 
+credential = Credential(
+    sessdata=os.environ.get("SESSDATA"),
+    bili_jct=os.environ.get("BILI_JCT"),
+    buvid3=os.environ.get("BUVID3"),
+    dedeuserid=os.environ.get("DEDEUSERID"),
+    ac_time_value=os.environ.get("AC_TIME_VALUE"),
+)
 
 class ParserException(Exception):
     def __init__(self, msg, url, res=None):
@@ -63,9 +71,8 @@ def compress(inpil, size=1280, fix_ratio=False) -> BytesIO:
             new_w = math.ceil(h / 20)
             padded = Image.new("RGBA", (new_w, h))
             padded.paste(pil, (int((new_w - h) / 2), 0))
-            pil = padded
     if size > 0:
-        pil.thumbnail((size, size), Image.LANCZOS)
+        pil.thumbnail((size, size), Image.Resampling.LANCZOS)
     outpil = BytesIO()
     pil.save(outpil, "PNG", optimize=True)
     return outpil
@@ -88,4 +95,6 @@ def referer_url(url: str, referer: str):
     if not referer:
         return url
     params = {"url": url, "referer": referer}
-    return f"https://referer.simonsmh.workers.dev/?{urlencode(params)}#{get_filename(url)}"
+    return (
+        f"https://referer.simonsmh.workers.dev/?{urlencode(params)}#{get_filename(url)}"
+    )

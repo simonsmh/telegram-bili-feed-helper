@@ -194,10 +194,12 @@ class Feed(ABC):
                 for r in data["replies"]:
                     if str(r["rpid"]) == str(seek_comment_id):
                         target = r
+                        break
                     else:
                         for sr in r["replies"]:
                             if str(sr["rpid"]) == str(seek_comment_id):
                                 target = sr
+                                break
             reply = {"top": data.get("top_replies"), "target": target}
             # 4.缓存评论
             try:

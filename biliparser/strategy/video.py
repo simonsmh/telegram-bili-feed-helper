@@ -1,8 +1,8 @@
+from math import log
 import os
 import re
 from functools import cached_property
 
-import httpx
 import orjson
 from telegram.constants import FileSizeLimit
 
@@ -12,11 +12,13 @@ from ..utils import (
     LOCAL_MODE,
     ParserException,
     escape_markdown,
+    get_filename,
     headers,
     logger,
+    credential,
 )
 from .feed import Feed
-
+from bilibili_api import video
 from urllib.parse import urlparse, parse_qs
 
 QN = [64, 32, 16]
@@ -28,6 +30,12 @@ class Video(Feed):
     infocontent: dict = {}
     page = 1
     reply_type: int = 1
+    dashurls: list[str] = []
+    dashtype: str = ""
+
+    @cached_property
+    def dashfilename(self):
+        return [get_filename(i) for i in self.dashurls] if self.dashurls else list()
 
     @cached_property
     def cid(self):
@@ -90,7 +98,6 @@ class Video(Feed):
             params=params,
         )
         video_result = r.json()
-        logger.debug(f"视频内容: {video_result}")
         if (
             video_result.get("code") == 0
             and video_result.get("data")
@@ -120,17 +127,24 @@ class Video(Feed):
                 self.mediadimention = detail.get("pages")[0].get("dimension")
                 self.mediaurls = url
                 self.mediatype = "video"
-                self.mediaraws = (
-                    False
-                    if video_result.get("data").get("durl")[0].get("size")
-                    < (
-                        FileSizeLimit.FILESIZE_DOWNLOAD_LOCAL_MODE
-                        if LOCAL_MODE
-                        else FileSizeLimit.FILESIZE_DOWNLOAD
-                    )
-                    else True
-                )
+                self.mediaraws = False
+                await self.__get_dash_video()
                 return True
+
+    async def __get_dash_video(self):
+        download_url_data = await video.Video(
+            aid=self.aid, credential=credential
+        ).get_download_url(cid=self.cid)
+        detecter = video.VideoDownloadURLDataDetecter(data=download_url_data)
+        streams = detecter.detect_best_streams()
+        if not streams or len(streams) != 2 or not streams[0] or not streams[1]:
+            logger.error(f"获取Dash视频流错误: {streams}")
+            return False
+        if not detecter.check_flv_stream():
+            self.dashurls = [streams[0].url, streams[1].url]
+            self.dashtype = "dash"
+            self.mediaraws = True
+        return True
 
     async def handle(self):
         logger.info(f"处理视频信息: 链接: {self.rawurl}")
