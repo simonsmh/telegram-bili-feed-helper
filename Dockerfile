@@ -5,6 +5,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && apt-g
 COPY pyproject.toml poetry.lock ./
 RUN pip install poetry && poetry install --only main --no-root --no-directory --no-cache
 COPY . .
-RUN poetry install --only main
-ENV TOKEN=""
-ENTRYPOINT ["poetry", "run", "bilifeedbot"]
+ENTRYPOINT ["poetry", "run", "python", "-m", "biliparser"]
