@@ -60,6 +60,10 @@ class Video(Feed):
             for episode in self.epcontent["result"].get("episodes"):
                 if str(episode.get("id")) == self.epid:
                     return episode.get("aid")
+            for subsection in self.epcontent["result"].get("section"):
+                for episode in subsection.get("episodes"):
+                    if str(episode.get("id")) == self.epid:
+                        return episode.get("aid")
 
     @cached_property
     def epid(self):
@@ -331,7 +335,7 @@ class Video(Feed):
                         nx=True,
                     )
             except Exception as e:
-                logger.exception(f"缓存番剧错误: {e}")
+                logger.exception(f"缓存视频错误: {e}")
         detail = self.infocontent["data"]
         self.user = detail.get("owner").get("name")
         self.uid = detail.get("owner").get("mid")
