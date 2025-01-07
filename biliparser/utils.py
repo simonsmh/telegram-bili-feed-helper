@@ -32,6 +32,7 @@ credential = Credential(
     ac_time_value=os.environ.get("AC_TIME_VALUE"),
 )
 
+
 class ParserException(Exception):
     def __init__(self, msg, url, res=None):
         self.msg = msg
@@ -99,3 +100,12 @@ def referer_url(url: str, referer: str):
     return (
         f"https://referer.simonsmh.workers.dev/?{urlencode(params)}#{get_filename(url)}"
     )
+
+
+async def get_credential():
+    try:
+        if os.environ.get("AC_TIME_VALUE") and await credential.check_refresh():
+            await credential.refresh()
+    except Exception as e:
+        logger.exception(e)
+    return credential

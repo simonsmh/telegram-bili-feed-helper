@@ -12,7 +12,7 @@ from ..utils import (
     BILI_API,
     LOCAL_MODE,
     ParserException,
-    credential,
+    get_credential,
     escape_markdown,
     get_filename,
     headers,
@@ -29,6 +29,7 @@ class Video(Feed):
     infocontent: dict = {}
     page = 1
     reply_type: int = 1
+    dashsize: int = 0
     dashurls: list[str] = []
     dashtype: str = ""
 
@@ -85,8 +86,8 @@ class Video(Feed):
         header["Referer"] = referer
         async with self.client.stream("GET", url, headers=header) as response:
             if response.status_code != 200:
-                return False
-            return True
+                return 0
+            return int(response.headers.get("Content-Length", 0))
 
     async def __get_video_result(self, detail, qn: int):
         params = {"avid": self.aid, "cid": self.cid}
@@ -132,19 +133,51 @@ class Video(Feed):
 
     async def __get_dash_video(self):
         download_url_data = await video.Video(
-            aid=self.aid, credential=credential
+            aid=self.aid, credential=await get_credential()
         ).get_download_url(cid=self.cid)
         detecter = video.VideoDownloadURLDataDetecter(data=download_url_data)
-        streams = detecter.detect_best_streams()
-        if not streams or len(streams) != 2 or not streams[0] or not streams[1]:
+        streams = detecter.detect(
+            codecs=[video.VideoCodecs(os.environ.get("VIDEO_CODEC", "avc"))],
+        )  # 可以设置成hev/av01减少文件体积，但是tg不二压会造成部分老设备直接解码指定codec时不展示，需要指定成avc
+        video_streams = [
+            video_stream
+            for video_stream in streams
+            if type(video_stream) is video.VideoStreamDownloadURL
+        ]
+        audio_streams = [
+            audio_stream
+            for audio_stream in streams
+            if type(audio_stream) is video.AudioStreamDownloadURL
+        ]
+        if not video_streams or not audio_streams:
             logger.error(f"获取Dash视频流错误: {streams}")
             return False
-        if not detecter.check_flv_stream():
-            self.dashurls = [streams[0].url, streams[1].url]
-            self.dashtype = "dash"
-            self.mediaraws = True
-            return True
-        return False
+        video_streams.sort(key=lambda x: x.video_quality.value, reverse=True)
+        audio_streams.sort(key=lambda x: x.audio_quality.value, reverse=True)
+        audio_size = await self.__test_url_status_code(audio_streams[0].url, self.url)
+        self.dashurls.append(audio_streams[0].url)
+        for video_stream in video_streams:
+            result = await self.__test_url_status_code(video_stream.url, self.url)
+            self.dashsize = audio_size + result
+            if self.dashsize < (
+                int(
+                    os.environ.get(
+                        "VIDEO_SIZE_LIMIT", FileSizeLimit.FILESIZE_UPLOAD_LOCAL_MODE
+                    )
+                )
+                if LOCAL_MODE
+                else FileSizeLimit.FILESIZE_UPLOAD
+            ):
+                logger.info(
+                    f"选择Dash视频清晰度: {video_stream.video_quality.name} 大小：{result}"
+                )
+                self.dashurls.insert(0, video_stream.url)
+                self.dashtype = "dash"
+                self.mediaraws = True
+                return True
+        if len(self.dashurls) < 2:
+            logger.error(f"无可用Dash视频流清晰度: {streams}")
+            return False
 
     async def handle(self):
         logger.info(f"处理视频信息: 链接: {self.rawurl}")

@@ -20,6 +20,7 @@ Telegram bot for Bili Feed Helper.
   - Listening on `HOST`:`PORT`
   - `DATABASE_URL`: file cache db url string supported by tortoise orm
   - `FILE_TABLE`: file cache db name
+  - `VIDEO_CODEC`: Video codec in `avc`/`hev`/`av01`
 
 ### Self hosted bot api
 - See Official bot api
@@ -28,6 +29,7 @@ Telegram bot for Bili Feed Helper.
   - `API_BASE_URL`: Self hosted bot api endpoint like `http://127.0.0.1:8081/bot`
   - `API_BASE_FILE_URL`: Self hosted bot api file endpoint like `http://127.0.0.1:8081/file/bot`
   - `LOCAL_TEMP_FILE_PATH`: Set to docker mounting point like `/var/lib/telegram-bot-api/.tmp/`
+  - `VIDEO_SIZE_LIMIT`: Max video file size in bytes `2e9` by default under local mode
 
 
 ## Credit
