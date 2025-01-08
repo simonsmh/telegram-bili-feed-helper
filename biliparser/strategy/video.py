@@ -132,7 +132,6 @@ class Video(Feed):
                 self.mediaurls = url
                 self.mediatype = "video"
                 self.mediaraws = False
-                await self.__get_dash_video()
                 return True
 
     async def __get_dash_video(self):
@@ -159,7 +158,9 @@ class Video(Feed):
         video_streams.sort(key=lambda x: x.video_quality.value, reverse=True)
         audio_streams.sort(key=lambda x: x.audio_quality.value, reverse=True)
         audio_size = await self.__test_url_status_code(audio_streams[0].url, self.url)
+        self.dashtype = ""
         self.dashurls.append(audio_streams[0].url)
+        self.dashurls = [audio_streams[0].url]
         for video_stream in video_streams:
             result = await self.__test_url_status_code(video_stream.url, self.url)
             self.dashsize = audio_size + result
@@ -353,4 +354,5 @@ class Video(Feed):
         for qn in QN:
             if await self.__get_video_result(detail, qn):
                 break
+        await self.__get_dash_video()
         return self
