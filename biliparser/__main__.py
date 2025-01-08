@@ -246,7 +246,7 @@ async def get_media_mediathumb(f, client):
 
 
 async def handle_dash_media(f, client):
-    media = []
+    res = []
     try:
         cache_dash_file = LOCAL_FILE_PATH / f.mediafilename[0]
         cache_dash = await get_cache_media(cache_dash_file.name)
@@ -258,15 +258,18 @@ async def handle_dash_media(f, client):
             get_media(client, f.url, m, fn, size=1280)
             for m, fn in zip(f.dashurls, f.dashfilename)
         ]
-        media = [m for m in await asyncio.gather(*tasks) if m]
-
+        res = [m for m in await asyncio.gather(*tasks) if m]
+        if len(res) < 2:
+            logger.error(f"DASH媒体下载失败: {f.url}")
+            return []
         # Merge segments
         cmd = [os.environ.get("FFMPEG_PATH", "ffmpeg"), "-y"]
-        for item in media:
+        for item in res:
             cmd.extend(["-i", str(item)])
         cmd.extend(
             ["-vcodec", "copy", "-acodec", "copy", str(cache_dash_file.absolute())]
         )
+        logger.info(f"开始合并，执行命令：{' '.join(cmd)}")
         subprocess.run(cmd, check=True)
 
         f.mediaurls = [str(cache_dash_file.absolute())]
@@ -278,7 +281,7 @@ async def handle_dash_media(f, client):
         logger.error(f"DASH媒体处理失败: {f.url} - {str(e)}")
         return []
     finally:
-        for item in media:
+        for item in res:
             if isinstance(item, Path):
                 item.unlink(missing_ok=True)
 
