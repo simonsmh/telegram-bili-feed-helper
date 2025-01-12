@@ -120,8 +120,12 @@ class Video(Feed):
             url = video_result["data"]["durl"][0]["url"]
             result = await self.__test_url_status_code(url, self.url)
             if not result and video_result["data"]["durl"][0].get("backup_url", None):
-                url = video_result["data"]["durl"][0]["backup_url"]
-                result = await self.__test_url_status_code(url, self.url)
+                backup_urls = video_result["data"]["durl"][0]["backup_url"]
+                for item in backup_urls:
+                    url = item
+                    result = await self.__test_url_status_code(item, self.url)
+                    if result:
+                        break
             if result:
                 self.mediacontent = video_result
                 self.mediathumb = detail.get("pic")
@@ -160,7 +164,6 @@ class Video(Feed):
         audio_streams.sort(key=lambda x: x.audio_quality.value, reverse=True)
         audio_size = await self.__test_url_status_code(audio_streams[0].url, self.url)
         self.dashtype = ""
-        self.dashurls.append(audio_streams[0].url)
         self.dashurls = [audio_streams[0].url]
         for video_stream in video_streams:
             result = await self.__test_url_status_code(video_stream.url, self.url)
@@ -351,9 +354,11 @@ class Video(Feed):
         self.mediaurls = detail.get("pic")
         self.mediatype = "image"
         self.replycontent = await self.parse_reply(self.aid, self.reply_type, seek_id)
-
-        for qn in QN:
-            if await self.__get_video_result(detail, qn):
-                break
-        await self.__get_dash_video()
+        try:
+            for qn in QN:
+                if await self.__get_video_result(detail, qn):
+                    break
+            await self.__get_dash_video()
+        except Exception as e:
+            logger.exception(f"视频下载解析错误: {e}")
         return self
