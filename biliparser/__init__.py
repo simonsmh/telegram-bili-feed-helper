@@ -48,7 +48,7 @@ async def biliparser(urls) -> list[Video | Read | Audio | Live | Opus]:
         headers=headers,
         http2=True,
         follow_redirects=True,
-        proxy=os.environ.get("FILE_PROXY", "HTTP_PROXY"),
+        proxy=os.environ.get("FILE_PROXY", os.environ.get("HTTP_PROXY")),
     ) as client:
         tasks = list(
             __feed_parser(
