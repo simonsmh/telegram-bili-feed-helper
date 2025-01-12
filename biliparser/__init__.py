@@ -1,4 +1,5 @@
 import asyncio
+import os
 import re
 
 import httpx
@@ -44,7 +45,10 @@ async def biliparser(urls) -> list[Video | Read | Audio | Live | Opus]:
     elif isinstance(urls, tuple):
         urls = list(urls)
     async with httpx.AsyncClient(
-        headers=headers, http2=True, follow_redirects=True
+        headers=headers,
+        http2=True,
+        follow_redirects=True,
+        proxy=os.environ.get("HTTP_PROXY"),
     ) as client:
         tasks = list(
             __feed_parser(

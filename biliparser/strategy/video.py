@@ -144,7 +144,7 @@ class Video(Feed):
         ).get_download_url(cid=self.cid)
         detecter = video.VideoDownloadURLDataDetecter(data=download_url_data)
         streams = detecter.detect(
-            video_min_quality=video.VideoQuality._720P,  # 再低的画质就没必要从dash拼了
+            video_min_quality=video.VideoQuality._360P,
             codecs=[video.VideoCodecs(os.environ.get("VIDEO_CODEC", "avc"))],
         )  # 可以设置成hev/av01减少文件体积，但是tg不二压会造成部分老设备直接解码指定codec时不展示，需要指定成avc
         video_streams = [

@@ -204,7 +204,9 @@ def message_to_urls(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def get_media_mediathumb_by_parser(f):
-    async with httpx.AsyncClient(http2=True, follow_redirects=True) as client:
+    async with httpx.AsyncClient(
+        http2=True, follow_redirects=True, proxy=os.environ.get("HTTP_PROXY")
+    ) as client:
         # Handle thumbnail
         mediathumb = None
         if f.mediathumb:
@@ -503,7 +505,9 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 medias = []
                 try:
                     async with httpx.AsyncClient(
-                        http2=True, follow_redirects=True
+                        http2=True,
+                        follow_redirects=True,
+                        proxy=os.environ.get("HTTP_PROXY"),
                     ) as client:
                         tasks = [
                             get_media(
