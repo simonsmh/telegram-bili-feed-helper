@@ -24,7 +24,6 @@ class Read(Feed):
     def url(self):
         return f"https://www.bilibili.com/read/cv{self.read_id}"
 
-
     async def __relink(self, img):
         src = img.attrs.pop("data-src")
         img.attrs = {"src": src if "hdslb" not in src else referer_url(src, self.url)}
@@ -40,7 +39,7 @@ class Read(Feed):
         # 获取文章
         # 1.获取缓存
         try:
-            cache_base = RedisCache().get(f"read:page:{self.read_id}")
+            cache_base = await RedisCache().get(f"read:page:{self.read_id}")
         except Exception as e:
             logger.exception(f"拉取文章页面缓存错误: {e}")
             cache_base = None
@@ -52,9 +51,13 @@ class Read(Feed):
             try:
                 r = await self.client.get(self.rawurl)
             except Exception as e:
-                raise ParserException(f"文章页面获取错误:{self.read_id}", self.rawurl, e)
+                raise ParserException(
+                    f"文章页面获取错误:{self.read_id}", self.rawurl, e
+                )
                 # 3.解析文章
-            cv_init = re.search(r"window\.__INITIAL_STATE__=(.*?);\(function\(\)", r.text)
+            cv_init = re.search(
+                r"window\.__INITIAL_STATE__=(.*?);\(function\(\)", r.text
+            )
             if not cv_init:
                 raise ParserException(
                     f"文章页面内容获取错误:{self.read_id}", self.rawurl, cv_init
@@ -76,7 +79,7 @@ class Read(Feed):
         if not cache_base:
             # 4.缓存文章
             try:
-                cache_base = RedisCache().set(
+                cache_base = await RedisCache().set(
                     f"read:page:{self.read_id}",
                     orjson.dumps(cv_content),
                     ex=CACHES_TIMER.get("read"),
@@ -87,7 +90,7 @@ class Read(Feed):
         # 转存文章
         # 1.获取缓存
         try:
-            cache_graphurl = RedisCache().get(f"read:graphurl:{self.read_id}")
+            cache_graphurl = await RedisCache().get(f"read:graphurl:{self.read_id}")
         except Exception as e:
             logger.exception(f"拉取文章链接缓存错误: {e}")
             cache_graphurl = None
@@ -147,7 +150,7 @@ class Read(Feed):
             logger.info(f"生成页面: {graphurl}")
             # 4.缓存文章
             try:
-                RedisCache().set(
+                await RedisCache().set(
                     f"read:graphurl:{self.read_id}",
                     orjson.dumps(graphurl),
                     ex=CACHES_TIMER.get("read"),

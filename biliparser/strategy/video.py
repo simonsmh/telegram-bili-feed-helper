@@ -144,7 +144,7 @@ class Video(Feed):
         ).get_download_url(cid=self.cid)
         detecter = video.VideoDownloadURLDataDetecter(data=download_url_data)
         streams = detecter.detect(
-            video_min_quality=video.VideoQuality._720P, # 再低的画质就没必要从dash拼了
+            video_min_quality=video.VideoQuality._720P,  # 再低的画质就没必要从dash拼了
             codecs=[video.VideoCodecs(os.environ.get("VIDEO_CODEC", "avc"))],
         )  # 可以设置成hev/av01减少文件体积，但是tg不二压会造成部分老设备直接解码指定codec时不展示，需要指定成avc
         video_streams = [
@@ -242,9 +242,9 @@ class Video(Feed):
             # 1.获取缓存
             try:
                 cache = (
-                    RedisCache().get(f"bangumi:ep:{epid}")
+                    await RedisCache().get(f"bangumi:ep:{epid}")
                     if epid
-                    else RedisCache().get(f"bangumi:ss:{ssid}")
+                    else await RedisCache().get(f"bangumi:ss:{ssid}")
                 )
             except Exception as e:
                 logger.exception(f"拉取番剧缓存错误: {e}")
@@ -283,7 +283,7 @@ class Video(Feed):
                 # 4.缓存评论
                 try:
                     for key in [f"bangumi:ep:{self.epid}", f"bangumi:ss:{self.ssid}"]:
-                        RedisCache().set(
+                        await RedisCache().set(
                             key,
                             orjson.dumps(self.epcontent),
                             ex=CACHES_TIMER.get("bangumi"),
@@ -296,9 +296,9 @@ class Video(Feed):
         # 1.获取缓存
         try:
             cache = (
-                RedisCache().get(f"video:aid:{aid}")
+                await RedisCache().get(f"video:aid:{aid}")
                 if aid
-                else RedisCache().get(f"video:bvid:{bvid}")
+                else await RedisCache().get(f"video:bvid:{bvid}")
             )
         except Exception as e:
             logger.exception(f"拉取视频缓存错误: {e}")
@@ -333,7 +333,7 @@ class Video(Feed):
             # 4.缓存视频
             try:
                 for key in [f"video:aid:{self.aid}", f"video:bvid:{self.bvid}"]:
-                    RedisCache().set(
+                    await RedisCache().set(
                         key,
                         orjson.dumps(self.infocontent),
                         ex=CACHES_TIMER.get("video"),

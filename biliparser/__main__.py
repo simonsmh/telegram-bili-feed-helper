@@ -1,9 +1,9 @@
 import asyncio
-from io import BytesIO
 import os
 import re
 import subprocess
 import sys
+from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
 
@@ -46,6 +46,7 @@ from telegram.ext import (
 from tqdm import tqdm
 
 from . import biliparser
+from .cache import CACHES_TIMER, RedisCache
 from .database import db_close, db_init, file_cache
 from .utils import (
     LOCAL_MODE,
@@ -202,47 +203,48 @@ def message_to_urls(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return message, urls
 
 
-async def get_media_mediathumb(f, client):
-    # Handle thumbnail
-    mediathumb = None
-    if f.mediathumb:
+async def get_media_mediathumb_by_parser(f):
+    async with httpx.AsyncClient(http2=True, follow_redirects=True) as client:
+        # Handle thumbnail
+        mediathumb = None
+        if f.mediathumb:
+            if f.mediaraws or LOCAL_MODE:
+                mediathumb = await get_media(
+                    client, f.url, f.mediathumb, f.mediathumbfilename, size=320
+                )
+            else:
+                mediathumb = referer_url(f.mediathumb, f.url)
+
+        # Handle main media
+        media = []
+
+        # Local mode or raw media requested
         if f.mediaraws or LOCAL_MODE:
-            mediathumb = await get_media(
-                client, f.url, f.mediathumb, f.mediathumbfilename, size=320
-            )
+            if hasattr(f, "dashtype") and f.dashtype == "dash":
+                media = await handle_dash_media(f, client)
+                if media:
+                    return media, mediathumb
+            tasks = [
+                get_media(client, f.url, m, fn, size=1280)
+                for m, fn in zip(f.mediaurls, f.mediafilename)
+            ]
+            media = [m for m in await asyncio.gather(*tasks) if m]
+
+        # Remote mode
         else:
-            mediathumb = referer_url(f.mediathumb, f.url)
+            if hasattr(f, "dashtype") and f.dashtype == "dash":
+                cache_dash = await get_cache_media(f.mediafilename[0])
+                if cache_dash:
+                    media = [cache_dash]
+                    return media, mediathumb
+            if f.mediatype == "image":
+                media = [i if ".gif" in i else i + "@1280w.jpg" for i in f.mediaurls]
+            elif f.mediatype in ["video", "audio"]:
+                media = [referer_url(f.mediaurls[0], f.url)]
+            else:
+                media = f.mediaurls
 
-    # Handle main media
-    media = []
-
-    # Local mode or raw media requested
-    if f.mediaraws or LOCAL_MODE:
-        if hasattr(f, "dashtype") and f.dashtype == "dash":
-            media = await handle_dash_media(f, client)
-            if media:
-                return media, mediathumb
-        tasks = [
-            get_media(client, f.url, m, fn, size=1280)
-            for m, fn in zip(f.mediaurls, f.mediafilename)
-        ]
-        media = [m for m in await asyncio.gather(*tasks) if m]
-
-    # Remote mode
-    else:
-        if hasattr(f, "dashtype") and f.dashtype == "dash":
-            cache_dash = await get_cache_media(f.mediafilename[0])
-            if cache_dash:
-                media = [cache_dash]
-                return media, mediathumb
-        if f.mediatype == "image":
-            media = [i if ".gif" in i else i + "@1280w.jpg" for i in f.mediaurls]
-        elif f.mediatype in ["video", "audio"]:
-            media = [referer_url(f.mediaurls[0], f.url)]
-        else:
-            media = f.mediaurls
-
-    return media, mediathumb
+        return media, mediathumb
 
 
 async def handle_dash_media(f, client):
@@ -302,17 +304,17 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 if message.text and message.text.startswith("/parse"):
                     await message.reply_text(str(f))
                 break
-            medias = []
-            mediathumb = None
-            try:
-                if not f.mediaurls:
-                    await message.reply_text(f.caption, reply_markup=origin_link(f.url))
-                    break
-                else:
-                    async with httpx.AsyncClient(
-                        http2=True, follow_redirects=True
-                    ) as client:
-                        media, mediathumb = await get_media_mediathumb(f, client)
+            async with RedisCache().lock(f.url, timeout=CACHES_TIMER["lock"]):
+                medias = []
+                mediathumb = None
+                try:
+                    if not f.mediaurls:
+                        await message.reply_text(
+                            f.caption, reply_markup=origin_link(f.url)
+                        )
+                        break
+                    else:
+                        media, mediathumb = await get_media_mediathumb_by_parser(f)
                         if not media:
                             if mediathumb:
                                 media = [mediathumb]
@@ -428,60 +430,61 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                     f.mediafilename[0], result.effective_attachment
                                 )
                         medias = [mediathumb, *media]
-            except BadRequest as err:
-                if (
-                    "Not enough rights to send" in err.message
-                    or "Need administrator rights in the channel chat" in err.message
-                ):
-                    await message.chat.leave()
-                    logger.warning(
-                        f"{err} 第{i}次异常->权限不足, 无法发送给{'@'+message.chat.username if message.chat.username else message.chat.id}"
-                    )
-                    break
-                elif (
-                    "Topic_deleted" in err.message
-                    or "Topic_closed" in err.message
-                    or "Message thread not found" in err.message
-                ):
-                    logger.warning(
-                        f"{err} 第{i}次异常->主题/话题已删除、关闭或早于加入时间，无法发送给{'@'+message.chat.username if message.chat.username else message.chat.id}"
-                    )
-                    break
-                else:
-                    logger.error(f"{err} 第{i}次异常->下载后上传: {f.url}")
-                    f.mediaraws = True
-                continue
-            except RetryAfter as err:
-                await asyncio.sleep(err.retry_after)
-                logger.error(f"{err} 第{i}次异常->限流: {f.url}")
-                continue
-            except NetworkError as err:
-                logger.error(f"{err} 第{i}次异常->服务错误: {f.url}")
-            except httpx.HTTPError as err:
-                logger.error(f"{err} 第{i}次异常->请求异常: {f.url}")
-            except Exception as err:
-                logger.exception(err)
-            else:
-                try:
-                    # for link sharing privacy under group
+                except BadRequest as err:
                     if (
-                        len(urls) == 1
-                        and not update.channel_post
-                        and not message.reply_to_message
-                        and message.text is not None
+                        "Not enough rights to send" in err.message
+                        or "Need administrator rights in the channel chat"
+                        in err.message
                     ):
-                        # try to delete only if bot have delete permission and this message is only for sharing
-                        match = re.match(BILIBILI_SHARE_URL_REGEX, message.text)
-                        if urls[0] == message.text or (
-                            match and match.group(0) == message.text
+                        await message.chat.leave()
+                        logger.warning(
+                            f"{err} 第{i}次异常->权限不足, 无法发送给{'@' + message.chat.username if message.chat.username else message.chat.id}"
+                        )
+                        break
+                    elif (
+                        "Topic_deleted" in err.message
+                        or "Topic_closed" in err.message
+                        or "Message thread not found" in err.message
+                    ):
+                        logger.warning(
+                            f"{err} 第{i}次异常->主题/话题已删除、关闭或早于加入时间，无法发送给{'@' + message.chat.username if message.chat.username else message.chat.id}"
+                        )
+                        break
+                    else:
+                        logger.error(f"{err} 第{i}次异常->下载后上传: {f.url}")
+                        f.mediaraws = True
+                    continue
+                except RetryAfter as err:
+                    await asyncio.sleep(err.retry_after)
+                    logger.error(f"{err} 第{i}次异常->限流: {f.url}")
+                    continue
+                except NetworkError as err:
+                    logger.error(f"{err} 第{i}次异常->服务错误: {f.url}")
+                except httpx.HTTPError as err:
+                    logger.error(f"{err} 第{i}次异常->请求异常: {f.url}")
+                except Exception as err:
+                    logger.exception(err)
+                else:
+                    try:
+                        # for link sharing privacy under group
+                        if (
+                            len(urls) == 1
+                            and not update.channel_post
+                            and not message.reply_to_message
+                            and message.text is not None
                         ):
-                            await message.delete()
+                            # try to delete only if bot have delete permission and this message is only for sharing
+                            match = re.match(BILIBILI_SHARE_URL_REGEX, message.text)
+                            if urls[0] == message.text or (
+                                match and match.group(0) == message.text
+                            ):
+                                await message.delete()
+                    finally:
+                        break
                 finally:
-                    break
-            finally:
-                for item in medias:
-                    if isinstance(item, Path):
-                        item.unlink(missing_ok=True)
+                    for item in medias:
+                        if isinstance(item, Path):
+                            item.unlink(missing_ok=True)
             f = (await biliparser(f.url))[0]  # 重试获取该条链接信息
 
 
@@ -495,58 +498,61 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.warning(f"解析错误! {f}")
             await message.reply_text(str(f))
             continue
-        if f.mediaurls:
-            medias = []
-            try:
-                async with httpx.AsyncClient(
-                    http2=True, follow_redirects=True
-                ) as client:
-                    tasks = [
-                        get_media(
-                            client,
-                            f.url,
-                            media,
-                            filename,
-                            compression=False,
-                            media_check_ignore=True,
-                        )
-                        for media, filename in zip(f.mediaurls, f.mediafilename)
-                    ]
-                    medias = [tr for tr in await asyncio.gather(*tasks) if tr]
-                    logger.info(f"上传中: {f.url}")
-                    if len(medias) > 1:
-                        result = await message.reply_media_group(
-                            [
-                                InputMediaDocument(media, filename=filename)
-                                for media, filename in zip(medias, f.mediafilename)
-                            ],
-                        )
-                        await message.reply_text(
-                            f.caption, reply_markup=origin_link(f.url)
-                        )
-                        for filename, item in zip(f.mediafilename, result):
-                            if isinstance(
-                                item.effective_attachment, tuple
-                            ):  # PhotoSize
-                                await cache_media(
-                                    filename, item.effective_attachment[0]
-                                )
-                            else:
-                                await cache_media(filename, item.effective_attachment)
-                    else:
-                        result = await message.reply_document(
-                            document=medias[0],
-                            caption=f.caption,
-                            reply_markup=origin_link(f.url),
-                            filename=f.mediafilename[0],
-                        )
-                        await cache_media(
-                            f.mediafilename[0], result.effective_attachment
-                        )
-            finally:
-                for item in medias:
-                    if isinstance(item, Path):
-                        item.unlink(missing_ok=True)
+        async with RedisCache().lock(f.url, timeout=CACHES_TIMER["lock"]):
+            if f.mediaurls:
+                medias = []
+                try:
+                    async with httpx.AsyncClient(
+                        http2=True, follow_redirects=True
+                    ) as client:
+                        tasks = [
+                            get_media(
+                                client,
+                                f.url,
+                                media,
+                                filename,
+                                compression=False,
+                                media_check_ignore=True,
+                            )
+                            for media, filename in zip(f.mediaurls, f.mediafilename)
+                        ]
+                        medias = [tr for tr in await asyncio.gather(*tasks) if tr]
+                        logger.info(f"上传中: {f.url}")
+                        if len(medias) > 1:
+                            result = await message.reply_media_group(
+                                [
+                                    InputMediaDocument(media, filename=filename)
+                                    for media, filename in zip(medias, f.mediafilename)
+                                ],
+                            )
+                            await message.reply_text(
+                                f.caption, reply_markup=origin_link(f.url)
+                            )
+                            for filename, item in zip(f.mediafilename, result):
+                                if isinstance(
+                                    item.effective_attachment, tuple
+                                ):  # PhotoSize
+                                    await cache_media(
+                                        filename, item.effective_attachment[0]
+                                    )
+                                else:
+                                    await cache_media(
+                                        filename, item.effective_attachment
+                                    )
+                        else:
+                            result = await message.reply_document(
+                                document=medias[0],
+                                caption=f.caption,
+                                reply_markup=origin_link(f.url),
+                                filename=f.mediafilename[0],
+                            )
+                            await cache_media(
+                                f.mediafilename[0], result.effective_attachment
+                            )
+                finally:
+                    for item in medias:
+                        if isinstance(item, Path):
+                            item.unlink(missing_ok=True)
 
 
 async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -806,7 +812,7 @@ def main():
             listen=os.environ.get("HOST", "0.0.0.0"),
             port=int(os.environ.get("PORT", 9000)),
             url_path=TOKEN,
-            webhook_url=f'{os.environ.get("DOMAIN")}{TOKEN}',
+            webhook_url=f"{os.environ.get('DOMAIN')}{TOKEN}",
             max_connections=100,
         )
     else:

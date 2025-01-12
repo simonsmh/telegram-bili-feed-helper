@@ -84,12 +84,12 @@ class Feed(ABC):
         if isinstance(self.replycontent, dict):
             target = self.replycontent.get("target")
             if target:
-                comment += f'💬> @{target["member"]["uname"]}:\n{target["content"]["message"]}\n'
+                comment += f"💬> @{target['member']['uname']}:\n{target['content']['message']}\n"
             top = self.replycontent.get("top")
             if top:
                 for item in top.values():
                     if item:
-                        comment += f'🔝> @{item["member"]["uname"]}:\n{item["content"]["message"]}\n'
+                        comment += f"🔝> @{item['member']['uname']}:\n{item['content']['message']}\n"
         return self.shrink_line(comment)
 
     @cached_property
@@ -98,12 +98,12 @@ class Feed(ABC):
         if isinstance(self.replycontent, dict):
             target = self.replycontent.get("target")
             if target:
-                comment_markdown += f'💬\\> {self.make_user_markdown(target["member"]["uname"], target["member"]["mid"])}:\n{escape_markdown(target["content"]["message"])}\n'
+                comment_markdown += f"💬\\> {self.make_user_markdown(target['member']['uname'], target['member']['mid'])}:\n{escape_markdown(target['content']['message'])}\n"
             top = self.replycontent.get("top")
             if top:
                 for item in top:
                     if item:
-                        comment_markdown += f'🔝\\> {self.make_user_markdown(item["member"]["uname"], item["member"]["mid"])}:\n{escape_markdown(item["content"]["message"])}\n'
+                        comment_markdown += f"🔝\\> {self.make_user_markdown(item['member']['uname'], item['member']['mid'])}:\n{escape_markdown(item['content']['message'])}\n"
         return self.shrink_line(comment_markdown)
 
     @property
@@ -120,9 +120,7 @@ class Feed(ABC):
     @cached_property
     def mediafilename(self):
         return (
-            [get_filename(i) for i in self.__mediaurls]
-            if self.__mediaurls
-            else list()
+            [get_filename(i) for i in self.__mediaurls] if self.__mediaurls else list()
         )
 
     @cached_property
@@ -156,12 +154,16 @@ class Feed(ABC):
             return prev_caption
         return caption
 
-    async def parse_reply(self, oid, reply_type, seek_comment_id = None):
-        logger.info(f"处理评论信息: 媒体ID: {oid} 评论类型: {reply_type} 评论ID {seek_comment_id}")
-        cache_key = 'new_reply:' + ':'.join(str(x) for x in [oid, reply_type, seek_comment_id] if x is not None)
+    async def parse_reply(self, oid, reply_type, seek_comment_id=None):
+        logger.info(
+            f"处理评论信息: 媒体ID: {oid} 评论类型: {reply_type} 评论ID {seek_comment_id}"
+        )
+        cache_key = "new_reply:" + ":".join(
+            str(x) for x in [oid, reply_type, seek_comment_id] if x is not None
+        )
         # 1.获取缓存
         try:
-            cache = RedisCache().get(cache_key)
+            cache = await RedisCache().get(cache_key)
         except Exception as e:
             logger.exception(f"拉取评论缓存错误: {e}")
             cache = None
@@ -203,7 +205,7 @@ class Feed(ABC):
             reply = {"top": data.get("top_replies"), "target": target}
             # 4.缓存评论
             try:
-                RedisCache().set(
+                await RedisCache().set(
                     cache_key,
                     orjson.dumps(reply),
                     ex=CACHES_TIMER.get("reply"),

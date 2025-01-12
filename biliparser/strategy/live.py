@@ -24,7 +24,7 @@ class Live(Feed):
         self.room_id = int(match.group(1))
         # 1.获取缓存
         try:
-            cache = RedisCache().get(f"live:{self.room_id}")
+            cache = await RedisCache().get(f"live:{self.room_id}")
         except Exception as e:
             logger.exception(f"拉取直播缓存错误: {e}")
             cache = None
@@ -46,7 +46,7 @@ class Live(Feed):
                 raise ParserException("直播解析错误", r.url, self.rawcontent)
             # 4.缓存直播
             try:
-                RedisCache().set(
+                await RedisCache().set(
                     f"live:{self.room_id}",
                     orjson.dumps(self.rawcontent),
                     ex=CACHES_TIMER.get("live"),

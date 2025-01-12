@@ -26,7 +26,7 @@ class Audio(Feed):
         self.audio_id = int(match.group(1))
         # 1.获取缓存
         try:
-            cache = RedisCache().get(f"audio:info:{self.audio_id}")
+            cache = await RedisCache().get(f"audio:info:{self.audio_id}")
         except Exception as e:
             logger.exception(f"拉取音频缓存错误: {e}")
             cache = None
@@ -48,7 +48,7 @@ class Audio(Feed):
                 raise ParserException("音频解析错误", r.url, self.infocontent)
             # 4.缓存音频
             try:
-                RedisCache().set(
+                await RedisCache().set(
                     f"audio:info:{self.audio_id}",
                     orjson.dumps(self.infocontent),
                     ex=CACHES_TIMER.get("audio"),
@@ -66,7 +66,7 @@ class Audio(Feed):
         self.uid = detail.get("mid")
         # 1.获取缓存
         try:
-            cache = RedisCache().get(f"audio:media:{self.audio_id}")
+            cache = await RedisCache().get(f"audio:media:{self.audio_id}")
         except Exception as e:
             logger.exception(f"拉取音频缓存错误: {e}")
             cache = None
@@ -88,13 +88,15 @@ class Audio(Feed):
                 )
                 self.mediacontent = r.json()
             except Exception as e:
-                raise ParserException(f"音频媒体获取错误:{self.audio_id}", self.rawurl, e)
+                raise ParserException(
+                    f"音频媒体获取错误:{self.audio_id}", self.rawurl, e
+                )
             # 3.解析音频
             if not self.mediacontent or not self.mediacontent.get("data"):
                 raise ParserException("音频媒体解析错误", r.url, self.mediacontent)
             # 4.缓存音频
             try:
-                RedisCache().set(
+                await RedisCache().set(
                     f"audio:media:{self.audio_id}",
                     orjson.dumps(self.mediacontent),
                     ex=CACHES_TIMER.get("audio"),

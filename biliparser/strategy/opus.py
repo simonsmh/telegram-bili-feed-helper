@@ -125,7 +125,7 @@ class Opus(Feed):
         self.dynamic_id = int(match.group(1))
         # 1.获取缓存
         try:
-            cache = RedisCache().get(f"opus:dynamic_id:{self.dynamic_id}")
+            cache = await RedisCache().get(f"opus:dynamic_id:{self.dynamic_id}")
         except Exception as e:
             logger.exception(f"拉取动态缓存错误: {e}")
             cache = None
@@ -152,7 +152,7 @@ class Opus(Feed):
             self.detailcontent = response["data"]
             # 4.缓存动态
             try:
-                RedisCache().set(
+                await RedisCache().set(
                     f"opus:dynamic_id:{self.dynamic_id}",
                     orjson.dumps(self.detailcontent),
                     ex=CACHES_TIMER.get("opus"),
