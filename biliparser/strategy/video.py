@@ -29,7 +29,6 @@ class Video(Feed):
     infocontent: dict = {}
     page = 1
     reply_type: int = 1
-    dashsize: int = 0
     dashurls: list[str] = []
     dashtype: str = ""
 
@@ -160,25 +159,35 @@ class Video(Feed):
         if not video_streams or not audio_streams:
             logger.error(f"获取Dash视频流错误: {streams}")
             return False
+        self.dashtype = ""
+        self.dashurls = []
         video_streams.sort(key=lambda x: x.video_quality.value, reverse=True)
         audio_streams.sort(key=lambda x: x.audio_quality.value, reverse=True)
-        audio_size = await self.__test_url_status_code(audio_streams[0].url, self.url)
-        self.dashtype = ""
-        self.dashurls = [audio_streams[0].url]
+        audio_size = 0
+        for audio_stream in audio_streams:
+            audio_size = await self.__test_url_status_code(audio_stream.url, self.url)
+            if audio_size:
+                self.dashurls = [audio_stream.url]
+                break
+        if len(self.dashurls) < 1:
+            logger.error(f"无可用Dash视频音频流清晰度: {streams}")
+            return False
         for video_stream in video_streams:
-            result = await self.__test_url_status_code(video_stream.url, self.url)
-            self.dashsize = audio_size + result
-            if self.dashsize < (
-                int(
-                    os.environ.get(
-                        "VIDEO_SIZE_LIMIT", FileSizeLimit.FILESIZE_UPLOAD_LOCAL_MODE
+            video_size = await self.__test_url_status_code(video_stream.url, self.url)
+            if audio_size and video_size and (
+                audio_size + video_size
+                < (
+                    int(
+                        os.environ.get(
+                            "VIDEO_SIZE_LIMIT", FileSizeLimit.FILESIZE_UPLOAD_LOCAL_MODE
+                        )
                     )
+                    if LOCAL_MODE
+                    else FileSizeLimit.FILESIZE_UPLOAD
                 )
-                if LOCAL_MODE
-                else FileSizeLimit.FILESIZE_UPLOAD
             ):
                 logger.info(
-                    f"选择Dash视频清晰度: {video_stream.video_quality.name} 大小：{result}"
+                    f"选择Dash视频清晰度: {video_stream.video_quality.name} 大小：{video_size}"
                 )
                 self.dashurls.insert(0, video_stream.url)
                 self.dashtype = "dash"
