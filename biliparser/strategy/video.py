@@ -12,7 +12,7 @@ from ..utils import (
     BILI_API,
     LOCAL_MODE,
     ParserException,
-    get_credential,
+    credentialFactory,
     escape_markdown,
     get_filename,
     headers,
@@ -140,7 +140,7 @@ class Video(Feed):
 
     async def __get_dash_video(self):
         download_url_data = await video.Video(
-            aid=self.aid, credential=await get_credential()
+            aid=self.aid, credential=await credentialFactory.get()
         ).get_download_url(cid=self.cid)
         detecter = video.VideoDownloadURLDataDetecter(data=download_url_data)
         streams = detecter.detect(

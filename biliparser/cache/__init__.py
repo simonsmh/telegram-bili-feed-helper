@@ -3,6 +3,9 @@ import os
 import time
 import json
 import redis.asyncio as redis
+from pathlib import Path
+
+LOCAL_FILE_PATH = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", os.getcwd()))
 
 CACHES_TIMER = {
     # seconds * minutes * hours * days
@@ -59,7 +62,7 @@ class FakeLock:
 
 class FakeRedis:
     def __init__(self):
-        self.cache_file = "cache.json"
+        self.cache_file = LOCAL_FILE_PATH / "cache.json"
         self.cache = self._load_cache()
 
     def _load_cache(self):

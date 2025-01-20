@@ -49,6 +49,7 @@ from . import biliparser
 from .cache import CACHES_TIMER, RedisCache
 from .database import db_close, db_init, file_cache
 from .utils import (
+    LOCAL_MEDIA_FILE_PATH,
     LOCAL_MODE,
     compress,
     escape_markdown,
@@ -72,7 +73,6 @@ SOURCE_CODE_MARKUP = InlineKeyboardMarkup(
         ]
     ]
 )
-LOCAL_FILE_PATH = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", ".tmp"))
 
 
 def origin_link(content: str) -> InlineKeyboardMarkup:
@@ -125,8 +125,8 @@ async def get_media(
                     f"媒体文件获取错误: 无法获取 content-type {url}->{referer}"
                 )
             mediatype = content_type.split("/")
-            LOCAL_FILE_PATH.mkdir(parents=True, exist_ok=True)
-            media = LOCAL_FILE_PATH / filename
+            LOCAL_MEDIA_FILE_PATH.mkdir(parents=True, exist_ok=True)
+            media = LOCAL_MEDIA_FILE_PATH / filename
             total = int(response.headers.get("content-length", 0))
             if mediatype[0] in ["video", "audio", "application"]:
                 with open(media, "wb") as file:
@@ -205,7 +205,9 @@ def message_to_urls(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_media_mediathumb_by_parser(f):
     async with httpx.AsyncClient(
-        http2=True, follow_redirects=True, proxy=os.environ.get("FILE_PROXY", os.environ.get("HTTP_PROXY"))
+        http2=True,
+        follow_redirects=True,
+        proxy=os.environ.get("FILE_PROXY", os.environ.get("HTTP_PROXY")),
     ) as client:
         # Handle thumbnail
         mediathumb = None
@@ -252,7 +254,7 @@ async def get_media_mediathumb_by_parser(f):
 async def handle_dash_media(f, client):
     res = []
     try:
-        cache_dash_file = LOCAL_FILE_PATH / f.mediafilename[0]
+        cache_dash_file = LOCAL_MEDIA_FILE_PATH / f.mediafilename[0]
         cache_dash = await get_cache_media(cache_dash_file.name)
         if cache_dash:
             return [cache_dash]
@@ -507,7 +509,9 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     async with httpx.AsyncClient(
                         http2=True,
                         follow_redirects=True,
-                        proxy=os.environ.get("FILE_PROXY", os.environ.get("HTTP_PROXY")),
+                        proxy=os.environ.get(
+                            "FILE_PROXY", os.environ.get("HTTP_PROXY")
+                        ),
                     ) as client:
                         tasks = [
                             get_media(

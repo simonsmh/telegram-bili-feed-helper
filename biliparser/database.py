@@ -3,7 +3,7 @@ import os
 from tortoise import Tortoise, fields
 from tortoise.models import Model
 
-from .utils import logger
+from .utils import LOCAL_FILE_PATH, logger
 
 
 class file_cache(Model):
@@ -16,7 +16,9 @@ class file_cache(Model):
 
 
 async def db_init() -> None:
-    db_url = os.environ.get("DATABASE_URL", "sqlite://cache.db")
+    db_url = os.environ.get(
+        "DATABASE_URL", "sqlite://" + str(LOCAL_FILE_PATH / "cache.db")
+    )
     logger.info(f"db_url: {db_url}")
     redis_url = os.environ.get("REDIS_URL")
     if redis_url:

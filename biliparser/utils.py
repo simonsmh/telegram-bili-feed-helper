@@ -8,29 +8,24 @@ from urllib.parse import urlencode
 
 from loguru import logger
 from PIL import Image
-from bilibili_api import Credential
+
+from .cache import LOCAL_FILE_PATH
+from .credentialFactory import CredentialFactory
+
 
 logger.remove()
 logger.add(sys.stdout, backtrace=True, diagnose=True)
 if os.environ.get("LOG_TO_FILE"):
     logger.add("bili_feed.log", backtrace=True, diagnose=True, rotation="1 MB")
 
-
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) bilibili_pc/1.12.1 Chrome/106.0.5249.199 Electron/21.3.3 Safari/537.36"
 }
 
 BILI_API = os.environ.get("BILI_API", "https://api.bilibili.com")
-
 LOCAL_MODE = os.environ.get("LOCAL_MODE", False)
-
-credential = Credential(
-    sessdata=os.environ.get("SESSDATA"),
-    bili_jct=os.environ.get("BILI_JCT"),
-    buvid3=os.environ.get("BUVID3"),
-    dedeuserid=os.environ.get("DEDEUSERID"),
-    ac_time_value=os.environ.get("AC_TIME_VALUE"),
-)
+LOCAL_MEDIA_FILE_PATH = LOCAL_FILE_PATH / ".tmp"
+credentialFactory = CredentialFactory()
 
 
 class ParserException(Exception):
@@ -100,12 +95,3 @@ def referer_url(url: str, referer: str):
     return (
         f"https://referer.simonsmh.workers.dev/?{urlencode(params)}#{get_filename(url)}"
     )
-
-
-async def get_credential():
-    try:
-        if os.environ.get("AC_TIME_VALUE") and await credential.check_refresh():
-            await credential.refresh()
-    except Exception as e:
-        logger.exception(e)
-    return credential
