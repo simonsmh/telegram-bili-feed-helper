@@ -422,14 +422,14 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                     result.effective_attachment[0],
                                 )
                             else:  # others
-                                if (
-                                    hasattr(result.effective_attachment, "thumbnail")
-                                    and f.mediathumbfilename
-                                ):  # mediathumb
-                                    await cache_media(
-                                        f.mediathumbfilename,
-                                        result.effective_attachment.thumbnail,
-                                    )
+                                # if (
+                                #     hasattr(result.effective_attachment, "thumbnail")
+                                #     and f.mediathumbfilename
+                                # ):  # mediathumb
+                                #     await cache_media(
+                                #         f.mediathumbfilename,
+                                #         result.effective_attachment.thumbnail,
+                                #     )
                                 await cache_media(
                                     f.mediafilename[0], result.effective_attachment
                                 )
