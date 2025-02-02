@@ -99,6 +99,7 @@ class Video(Feed):
         r = await self.client.get(
             BILI_API + "/x/player/playurl",
             params=params,
+            cookies=(await credentialFactory.get()).get_cookies(),
         )
         video_result = r.json()
         if (
@@ -138,10 +139,26 @@ class Video(Feed):
                 return True
 
     async def __get_dash_video(self):
-        download_url_data = await video.Video(
-            aid=self.aid, credential=await credentialFactory.get()
-        ).get_download_url(cid=self.cid)
-        detecter = video.VideoDownloadURLDataDetecter(data=download_url_data)
+        params = {
+            "avid": self.aid,
+            "cid": self.cid,
+            "qn": 125,
+            "fnver": 0,
+            "fnval": 4048,
+            "fourk": 1,
+            "voice_balance": 1,
+        }
+        r = await self.client.get(
+            BILI_API + "/x/player/playurl",
+            params=params,
+            cookies=(await credentialFactory.get()).get_cookies(),
+        )
+        video_result = r.json()
+        if not video_result.get("code") == 0 or not video_result.get("data"):
+            logger.error(f"获取Dash视频流错误: {video_result}")
+            return False
+        ## TODO: rewrite self VideoDownloadURLDataDetecter with built-in __test_url_status_code
+        detecter = video.VideoDownloadURLDataDetecter(data=video_result.get("data"))
         streams = detecter.detect(
             video_min_quality=video.VideoQuality._360P,
             codecs=[video.VideoCodecs(os.environ.get("VIDEO_CODEC", "avc"))],
@@ -174,16 +191,21 @@ class Video(Feed):
             return False
         for video_stream in video_streams:
             video_size = await self.__test_url_status_code(video_stream.url, self.url)
-            if audio_size and video_size and (
-                audio_size + video_size
-                < (
-                    int(
-                        os.environ.get(
-                            "VIDEO_SIZE_LIMIT", FileSizeLimit.FILESIZE_UPLOAD_LOCAL_MODE
+            if (
+                audio_size
+                and video_size
+                and (
+                    audio_size + video_size
+                    < (
+                        int(
+                            os.environ.get(
+                                "VIDEO_SIZE_LIMIT",
+                                FileSizeLimit.FILESIZE_UPLOAD_LOCAL_MODE,
+                            )
                         )
+                        if LOCAL_MODE
+                        else FileSizeLimit.FILESIZE_UPLOAD
                     )
-                    if LOCAL_MODE
-                    else FileSizeLimit.FILESIZE_UPLOAD
                 )
             ):
                 logger.info(
