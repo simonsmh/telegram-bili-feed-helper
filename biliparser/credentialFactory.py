@@ -47,7 +47,7 @@ class CredentialFactory:
                         await RedisCache().set(
                             "credential",
                             orjson.dumps(self._credential.get_cookies()),
-                            86400,
+                            60 * 60 * 24 * 7 * 4,
                         )
                     except Exception:
                         logger.exception("Failed to save credential.")
