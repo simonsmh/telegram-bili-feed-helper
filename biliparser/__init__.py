@@ -11,7 +11,7 @@ from .utils import ParserException, headers, logger, retry_catcher
 @retry_catcher
 async def __feed_parser(client: httpx.AsyncClient, url: str):
     # bypass b23 short link
-    if re.search(r"BV\w{10}|av\d+|ep\d+|ss\d+", url):
+    if re.search(r"(?:^|/)(?:BV\w{10}|av\d+|ep\d+|ss\d+)", url):
         return await Video(url if "/" in url else f"b23.tv/{url}", client).handle()
     r = await client.get(url)
     url = str(r.url)
