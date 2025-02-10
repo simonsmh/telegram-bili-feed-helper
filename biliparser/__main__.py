@@ -315,7 +315,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 ):
                     await message.reply_text(str(f))
                 break
-            if message.text.startswith("/parse") or message.chat.type == ChatType.PRIVATE:
+            if f.mediafilesize and (message.text.startswith("/parse") or message.chat.type == ChatType.PRIVATE):
                 temp_msgs.append(await message.reply_text(f"上传中，大约需要{round(f.mediafilesize / 1000000)}秒"))
             async with RedisCache().lock(f.url, timeout=CACHES_TIMER["LOCK"]):
                 medias = []
