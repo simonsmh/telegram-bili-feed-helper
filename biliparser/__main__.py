@@ -32,7 +32,7 @@ from telegram import (
     MessageOriginUser,
     Update,
 )
-from telegram.constants import ChatAction, ParseMode
+from telegram.constants import ChatAction, ChatType, ParseMode
 from telegram.error import BadRequest, NetworkError, RetryAfter
 from telegram.ext import (
     Application,
@@ -176,20 +176,20 @@ def message_to_urls(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if (
         message is None
         or (
-            type(message.forward_origin) == MessageOriginUser
+            isinstance(message.forward_origin, MessageOriginUser)
             and (
                 message.forward_origin.sender_user.is_bot
                 and message.forward_origin.sender_user.username == context.bot.username
             )
         )
         or (
-            type(message.forward_origin) == MessageOriginHiddenUser
+            isinstance(message.forward_origin, MessageOriginHiddenUser)
             and message.forward_origin.sender_user_name == context.bot.first_name
         )
         or (
             (
-                type(message.forward_origin) == MessageOriginChat
-                or type(message.forward_origin) == MessageOriginChannel
+                isinstance(message.forward_origin, MessageOriginChat)
+                or isinstance(message.forward_origin, MessageOriginChannel)
             )
             and message.forward_origin.author_signature == context.bot.first_name
         )
@@ -294,21 +294,30 @@ async def handle_dash_media(f, client):
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message, urls = message_to_urls(update, context)
-    if message is None or not urls:
+    if message is None or message.text is None:
+        return
+    if not urls:
+        if message.text.startswith("/parse") or message.chat.type == ChatType.PRIVATE:
+            await message.reply_text("链接不正确")
         return
     logger.info(f"Parse: {urls}")
     try:
         await message.reply_chat_action(ChatAction.TYPING)
-    except:
+    except Exception:
         pass
+    temp_msgs = []
     for f in await biliparser(urls):
         for i in range(1, 5):
             if isinstance(f, Exception):
                 logger.warning(f"解析错误! {f}")
-                if message.text and message.text.startswith("/parse"):
+                if (
+                    message.text.startswith("/parse")
+                ):
                     await message.reply_text(str(f))
                 break
-            async with RedisCache().lock(f.url, timeout=CACHES_TIMER["lock"]):
+            if message.text.startswith("/parse") or message.chat.type == ChatType.PRIVATE:
+                temp_msgs.append(await message.reply_text(f"上传中，大约需要{round(f.mediafilesize / 1000000)}秒"))
+            async with RedisCache().lock(f.url, timeout=CACHES_TIMER["LOCK"]):
                 medias = []
                 mediathumb = None
                 try:
@@ -421,15 +430,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                     f.mediafilename[0],
                                     result.effective_attachment[0],
                                 )
-                            else:  # others
-                                # if (
-                                #     hasattr(result.effective_attachment, "thumbnail")
-                                #     and f.mediathumbfilename
-                                # ):  # mediathumb
-                                #     await cache_media(
-                                #         f.mediathumbfilename,
-                                #         result.effective_attachment.thumbnail,
-                                #     )
+                            else:
                                 await cache_media(
                                     f.mediafilename[0], result.effective_attachment
                                 )
@@ -490,11 +491,15 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         if isinstance(item, Path):
                             item.unlink(missing_ok=True)
             f = (await biliparser(f.url))[0]  # 重试获取该条链接信息
-
+    for temp_msg in temp_msgs:
+        await temp_msg.delete()
 
 async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message, urls = message_to_urls(update, context)
-    if message is None or not urls:
+    if message is None:
+        return
+    if not urls:
+        await message.reply_text("链接不正确")
         return
     logger.info(f"Fetch: {urls}")
     for f in await biliparser(urls):
@@ -502,7 +507,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.warning(f"解析错误! {f}")
             await message.reply_text(str(f))
             continue
-        async with RedisCache().lock(f.url, timeout=CACHES_TIMER["lock"]):
+        async with RedisCache().lock(f.url, timeout=CACHES_TIMER["LOCK"]):
             if f.mediaurls:
                 medias = []
                 try:
@@ -731,6 +736,20 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     return await inline_query_answer(inline_query, results)
 
 
+async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message, urls = message_to_urls(update, context)
+    if message is None:
+        return
+    if not urls:
+        await message.reply_text("链接不正确")
+        return
+    logger.info(f"Clear: {urls}")
+    for f in await biliparser(urls):
+        for key, value in f.cache_key.items():
+            if value:
+                await RedisCache().delete(value)
+        await message.reply_text(f"清除缓存成功: {escape_markdown(f.url)}\n请重新获取")
+
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.exception(context.error)
 
@@ -750,6 +769,7 @@ async def post_init(application: Application):
         [
             ["start", "关于本 Bot"],
             ["file", "获取匹配内容原始文件"],
+            ["clear", "清除匹配内容缓存"],
             ["parse", "获取匹配内容"],
         ]
     )
@@ -764,6 +784,7 @@ async def post_shutdown(application: Application):
 def add_handler(application: Application):
     application.add_handler(CommandHandler("start", start, block=False))
     application.add_handler(CommandHandler("file", fetch, block=False))
+    application.add_handler(CommandHandler("clear", clear, block=False))
     application.add_handler(
         MessageHandler(
             filters.Entity(MessageEntity.URL)

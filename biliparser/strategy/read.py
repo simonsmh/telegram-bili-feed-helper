@@ -23,6 +23,13 @@ class Read(Feed):
     @cached_property
     def url(self):
         return f"https://www.bilibili.com/read/cv{self.read_id}"
+    
+    @cached_property
+    def cache_key(self):
+        return {
+            "read:page": f"read:page:{self.read_id}",
+            "read:graphurl": f"read:graphurl:{self.read_id}",
+        }
 
     async def __relink(self, img):
         src = img.attrs.pop("data-src")
@@ -39,7 +46,7 @@ class Read(Feed):
         # 获取文章
         # 1.获取缓存
         try:
-            cache_base = await RedisCache().get(f"read:page:{self.read_id}")
+            cache_base = await RedisCache().get(self.cache_key["read:page"])
         except Exception as e:
             logger.exception(f"拉取文章页面缓存错误: {e}")
             cache_base = None
@@ -80,9 +87,9 @@ class Read(Feed):
             # 4.缓存文章
             try:
                 cache_base = await RedisCache().set(
-                    f"read:page:{self.read_id}",
+                    self.cache_key["read:page"],
                     orjson.dumps(cv_content),
-                    ex=CACHES_TIMER.get("read"),
+                    ex=CACHES_TIMER["READ"],
                     nx=True,
                 )
             except Exception as e:
@@ -90,7 +97,7 @@ class Read(Feed):
         # 转存文章
         # 1.获取缓存
         try:
-            cache_graphurl = await RedisCache().get(f"read:graphurl:{self.read_id}")
+            cache_graphurl = await RedisCache().get(self.cache_key["read:graphurl"])
         except Exception as e:
             logger.exception(f"拉取文章链接缓存错误: {e}")
             cache_graphurl = None
@@ -151,9 +158,9 @@ class Read(Feed):
             # 4.缓存文章
             try:
                 await RedisCache().set(
-                    f"read:graphurl:{self.read_id}",
+                    self.cache_key["read:graphurl"],
                     orjson.dumps(graphurl),
-                    ex=CACHES_TIMER.get("read"),
+                    ex=CACHES_TIMER["READ"],
                     nx=True,
                 )
             except Exception as e:

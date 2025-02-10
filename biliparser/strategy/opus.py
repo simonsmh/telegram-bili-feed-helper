@@ -72,6 +72,10 @@ class Opus(Feed):
     def url(self):
         return f"https://t.bilibili.com/{self.dynamic_id}"
 
+    @cached_property
+    def cache_key(self):
+        return {"opus:dynamic_id": f"opus:dynamic_id:{self.dynamic_id}"}
+
     def __list_dicts_to_dict(self, lists: list[dict]):
         return reduce(lambda old, new: old.update(new) or old, lists, {})
 
@@ -125,14 +129,14 @@ class Opus(Feed):
         self.dynamic_id = int(match.group(1))
         # 1.获取缓存
         try:
-            cache = await RedisCache().get(f"opus:dynamic_id:{self.dynamic_id}")
+            cache = await RedisCache().get(self.cache_key["opus:dynamic_id"])
         except Exception as e:
             logger.exception(f"拉取动态缓存错误: {e}")
             cache = None
         # 2.拉取动态
         if cache:
-            logger.info(f"拉取动态缓存: {self.dynamic_id}")
             self.detailcontent = orjson.loads(cache)  # type: ignore
+            logger.info(f"拉取动态缓存: {self.dynamic_id}")
         else:
             try:
                 r = await self.client.get(
@@ -153,9 +157,9 @@ class Opus(Feed):
             # 4.缓存动态
             try:
                 await RedisCache().set(
-                    f"opus:dynamic_id:{self.dynamic_id}",
+                    self.cache_key["opus:dynamic_id"],
                     orjson.dumps(self.detailcontent),
-                    ex=CACHES_TIMER.get("opus"),
+                    ex=CACHES_TIMER["OPUS"],
                     nx=True,
                 )
             except Exception as e:

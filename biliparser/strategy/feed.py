@@ -18,10 +18,11 @@ class Feed(ABC):
     mediacontent: dict = {}
     mediaraws: bool = False
     mediatype: str = ""
-    mediathumb: str = ""
+    __mediathumb: str = ""
     mediaduration: int = 0
     mediadimention: dict = {"width": 0, "height": 0, "rotate": 0}
     mediatitle: str = ""
+    mediafilesize: int = 0
     extra_markdown: str = ""
     replycontent: dict = {}
 
@@ -116,12 +117,24 @@ class Feed(ABC):
             self.__mediaurls = content
         else:
             self.__mediaurls = [content]
+        if hasattr(self, "mediafilename"):
+            delattr(self, "mediafilename")
 
     @cached_property
     def mediafilename(self):
         return (
             [get_filename(i) for i in self.__mediaurls] if self.__mediaurls else list()
         )
+
+    @property
+    def mediathumb(self):
+        return self.__mediathumb
+
+    @mediathumb.setter
+    def mediathumb(self, content):
+        self.__mediathumb = content
+        if hasattr(self, "mediathumbfilename"):
+            delattr(self, "mediathumbfilename")
 
     @cached_property
     def mediathumbfilename(self):
@@ -130,6 +143,10 @@ class Feed(ABC):
     @cached_property
     def url(self):
         return self.rawurl
+
+    @cached_property
+    def cache_key(self):
+        return {}
 
     @cached_property
     def caption(self):
@@ -169,8 +186,8 @@ class Feed(ABC):
             cache = None
         # 2.拉取评论
         if cache:
-            logger.info(f"拉取评论缓存: {oid}")
             reply = orjson.loads(cache)  # type: ignore
+            logger.info(f"拉取评论缓存: {oid}")
         else:
             try:
                 params = {"oid": oid, "type": reply_type}
@@ -208,7 +225,7 @@ class Feed(ABC):
                 await RedisCache().set(
                     cache_key,
                     orjson.dumps(reply),
-                    ex=CACHES_TIMER.get("reply"),
+                    ex=CACHES_TIMER["REPLY"],
                     nx=True,
                 )
             except Exception as e:

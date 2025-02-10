@@ -7,16 +7,21 @@ from pathlib import Path
 
 LOCAL_FILE_PATH = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", os.getcwd()))
 
+CACHE_TIMER_DEFAULTS = {
+    # seconds * minutes * hours
+    "LOCK": 60 * 5,
+    "AUDIO": 60 * 60,
+    "BANGUMI": 60 * 60,
+    "OPUS": 60 * 60,
+    "LIVE": 60 * 5,
+    "READ": 60 * 60,
+    "REPLY": 60 * 60,
+    "VIDEO": 60 * 60,
+}
+
 CACHES_TIMER = {
-    # seconds * minutes * hours * days
-    "lock": 60 * 5,
-    "audio": 60 * 60 * 24 * 10,
-    "bangumi": 60 * 60 * 24 * 10,
-    "opus": 60 * 60 * 24 * 10,
-    "live": 60 * 5,
-    "read": 60 * 60 * 24 * 10,
-    "reply": 60 * 25,
-    "video": 60 * 60 * 24 * 10,
+    k: int(os.environ.get(f"{k}_CACHE_TIME", v))
+    for k, v in CACHE_TIMER_DEFAULTS.items()
 }
 
 
@@ -90,7 +95,7 @@ class FakeRedis:
             del self.cache[key]
             self._save_cache()
 
-    def lock(self, key: str, timeout: int = CACHES_TIMER["lock"]):
+    def lock(self, key: str, timeout: int = CACHES_TIMER["LOCK"]):
         return FakeLock(self, key, timeout)
 
 

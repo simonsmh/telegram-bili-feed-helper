@@ -16,6 +16,9 @@ class Live(Feed):
     def url(self):
         return f"https://live.bilibili.com/{self.room_id}"
 
+    @cached_property
+    def cache_key(self):
+        return {"live": f"live:{self.room_id}"}
     async def handle(self):
         logger.info(f"处理直播信息: 链接: {self.rawurl}")
         match = re.search(r"live\.bilibili\.com[\/\w]*\/(\d+)", self.rawurl)
@@ -30,8 +33,8 @@ class Live(Feed):
             cache = None
         # 2.拉取直播
         if cache:
-            logger.info(f"拉取直播缓存: {self.room_id}")
             self.rawcontent = orjson.loads(cache)  # type: ignore
+            logger.info(f"拉取直播缓存: {self.room_id}")
         else:
             try:
                 r = await self.client.get(
@@ -47,9 +50,9 @@ class Live(Feed):
             # 4.缓存直播
             try:
                 await RedisCache().set(
-                    f"live:{self.room_id}",
+                    self.cache_key["live"],
                     orjson.dumps(self.rawcontent),
-                    ex=CACHES_TIMER.get("live"),
+                    ex=CACHES_TIMER["LIVE"],
                     nx=True,
                 )
             except Exception as e:

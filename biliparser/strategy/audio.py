@@ -18,6 +18,13 @@ class Audio(Feed):
     def url(self):
         return f"https://www.bilibili.com/audio/au{self.audio_id}"
 
+    @cached_property
+    def cache_key(self):
+        return {
+            "audio:info": f"audio:info:{self.audio_id}",
+            "audio:media": f"audio:media:{self.audio_id}",
+        }
+
     async def handle(self):
         logger.info(f"处理音频信息: 链接: {self.rawurl}")
         match = re.search(r"bilibili\.com\/audio\/au(\d+)", self.rawurl)
@@ -26,14 +33,14 @@ class Audio(Feed):
         self.audio_id = int(match.group(1))
         # 1.获取缓存
         try:
-            cache = await RedisCache().get(f"audio:info:{self.audio_id}")
+            cache = await RedisCache().get(self.cache_key["audio:info"])
         except Exception as e:
             logger.exception(f"拉取音频缓存错误: {e}")
             cache = None
         # 2.拉取音频
         if cache:
-            logger.info(f"拉取音频缓存: {self.audio_id}")
             self.infocontent = orjson.loads(cache)  # type: ignore
+            logger.info(f"拉取音频缓存: {self.audio_id}")
         else:
             try:
                 r = await self.client.get(
@@ -49,9 +56,9 @@ class Audio(Feed):
             # 4.缓存音频
             try:
                 await RedisCache().set(
-                    f"audio:info:{self.audio_id}",
+                    self.cache_key["audio:info"],
                     orjson.dumps(self.infocontent),
-                    ex=CACHES_TIMER.get("audio"),
+                    ex=CACHES_TIMER["AUDIO"],
                     nx=True,
                 )
             except Exception as e:
@@ -66,14 +73,14 @@ class Audio(Feed):
         self.uid = detail.get("mid")
         # 1.获取缓存
         try:
-            cache = await RedisCache().get(f"audio:media:{self.audio_id}")
+            cache = await RedisCache().get(self.cache_key["audio:media"])
         except Exception as e:
             logger.exception(f"拉取音频缓存错误: {e}")
             cache = None
         # 2.拉取音频
         if cache:
-            logger.info(f"拉取音频缓存: {self.audio_id}")
             self.mediacontent = orjson.loads(cache)  # type: ignore
+            logger.info(f"拉取音频缓存: {self.audio_id}")
         else:
             try:
                 r = await self.client.get(
@@ -97,9 +104,9 @@ class Audio(Feed):
             # 4.缓存音频
             try:
                 await RedisCache().set(
-                    f"audio:media:{self.audio_id}",
+                    self.cache_key["audio:media"],
                     orjson.dumps(self.mediacontent),
-                    ex=CACHES_TIMER.get("audio"),
+                    ex=CACHES_TIMER["AUDIO"],
                     nx=True,
                 )
             except Exception as e:

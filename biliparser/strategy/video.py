@@ -29,8 +29,18 @@ class Video(Feed):
     infocontent: dict = {}
     page = 1
     reply_type: int = 1
-    dashurls: list[str] = []
+    __dashurls: list[str] = []
     dashtype: str = ""
+
+    @property
+    def dashurls(self):
+        return self.__dashurls
+
+    @dashurls.setter
+    def dashurls(self, content):
+        self.__dashurls = content
+        if hasattr(self, "dashfilename"):
+            delattr(self, "dashfilename")
 
     @cached_property
     def dashfilename(self):
@@ -45,11 +55,27 @@ class Video(Feed):
                         return item.get("cid")
             self.page = 1
             return self.infocontent["data"].get("cid")
+        elif self.epid and self.epcontent and self.epcontent.get("result"):
+            for episode in self.epcontent["result"].get("episodes"):
+                if str(episode.get("id")) == self.epid:
+                    return episode.get("cid")
+            for subsection in self.epcontent["result"].get("section"):
+                for episode in subsection.get("episodes"):
+                    if str(episode.get("id")) == self.epid:
+                        return episode.get("cid")
 
     @cached_property
     def bvid(self):
         if self.infocontent and self.infocontent.get("data"):
             return self.infocontent["data"].get("bvid")
+        elif self.epid and self.epcontent and self.epcontent.get("result"):
+            for episode in self.epcontent["result"].get("episodes"):
+                if str(episode.get("id")) == self.epid:
+                    return episode.get("bvid")
+            for subsection in self.epcontent["result"].get("section"):
+                for episode in subsection.get("episodes"):
+                    if str(episode.get("id")) == self.epid:
+                        return episode.get("bvid")
 
     @cached_property
     def aid(self):
@@ -83,6 +109,20 @@ class Video(Feed):
     @cached_property
     def url(self):
         return f"https://www.bilibili.com/video/av{self.aid}?p={self.page}"
+
+    @cached_property
+    def cache_key(self):
+        return {
+            "bangumi:ep": f"bangumi:ep:{self.epid}",
+            "bangumi:ss": f"bangumi:ss:{self.ssid}",
+            "video:aid": f"video:aid:{self.aid}",
+            "video:bvid": f"video:bvid:{self.bvid}",
+        }
+    
+    def clear_cached_properties(self):
+        for key in ["epid", "ssid", "aid", "bvid", "cid", "cache_key"]:
+            if hasattr(self, key):
+                delattr(self, key)
 
     async def __test_url_status_code(self, url, referer):
         header = headers.copy()
@@ -136,6 +176,7 @@ class Video(Feed):
                 self.mediaurls = url
                 self.mediatype = "video"
                 self.mediaraws = False
+                self.mediafilesize = video_result.get("data").get("durl")[0].get("size")
                 return True
 
     async def __get_dash_video(self):
@@ -214,6 +255,7 @@ class Video(Feed):
                 self.dashurls.insert(0, video_stream.url)
                 self.dashtype = "dash"
                 self.mediaraws = True
+                self.mediafilesize = audio_size + video_size
                 return True
         if len(self.dashurls) < 2:
             logger.error(f"无可用Dash视频流清晰度: {streams}")
@@ -239,105 +281,110 @@ class Video(Feed):
         elif pr.fragment.startswith("reply"):
             seek_id = pr.fragment.removeprefix("reply")
         if match_fes:
-            bvid = match_fes.group("bvid")
-            epid = None
-            aid = None
-            ssid = None
-            page = 1
-        elif match:
-            bvid = match.group("bvid")
-            epid = match.group("epid")
-            aid = match.group("aid")
-            ssid = match.group("ssid")
-            page = match.group("page")
-            if page and page.isdigit():
-                page = max(1, int(page))
+            __bvid = match_fes.group("bvid")
+            if __bvid:
+                params = {"bvid": __bvid}
+                self.bvid = __bvid
             else:
-                page = 1
-        else:
-            raise ParserException("视频链接错误", self.rawurl)
-        if epid:
-            params = {"ep_id": epid}
-        elif bvid:
-            params = {"bvid": bvid}
-        elif aid:
-            params = {"aid": aid}
-        elif ssid:
-            params = {"season_id": ssid}
+                raise ParserException("视频链接解析错误", self.rawurl)
+        elif match:
+            __bvid = match.group("bvid")
+            __epid = match.group("epid")
+            __aid = match.group("aid")
+            __ssid = match.group("ssid")
+            __page = match.group("page")
+            if __page and __page.isdigit():
+                self.page = max(1, int(__page))
+            if __epid:
+                params = {"ep_id": __epid}
+                self.epid = __epid
+            elif __bvid:
+                params = {"bvid": __bvid}
+                self.bvid = __bvid
+            elif __aid:
+                params = {"aid": __aid}
+                self.aid = __aid
+            elif __ssid:
+                params = {"season_id": __ssid}
+                self.ssid = __ssid
+            else:
+                raise ParserException("视频链接解析错误", self.rawurl)
+            if self.epid is not None or self.ssid is not None:
+                # 1.获取缓存
+                try:
+                    cache = (
+                        await RedisCache().get(self.cache_key["bangumi:ep"])
+                        if self.epid
+                        else await RedisCache().get(self.cache_key["bangumi:ss"])
+                    )
+                    self.clear_cached_properties()
+                except Exception as e:
+                    logger.exception(f"拉取番剧缓存错误: {e}")
+                    cache = None
+                # 2.拉取番剧
+                if cache:
+                    self.epcontent = orjson.loads(cache)  # type: ignore
+                    logger.info(
+                        f"拉取番剧缓存:epid {self.epid}"
+                        if self.epid
+                        else f"拉取番剧缓存:ssid {self.ssid}"
+                    )
+                else:
+                    try:
+                        r = await self.client.get(
+                            BILI_API + "/pgc/view/web/season",
+                            params=params,
+                        )
+                        self.epcontent = r.json()
+                    except Exception as e:
+                        raise ParserException(
+                            f"番剧获取错误:{self.epid if self.epid else self.ssid}",
+                            self.rawurl,
+                            e,
+                        )
+                    # 3.番剧解析
+                    if not self.epcontent or not self.epcontent.get("result"):
+                        # Anime detects non-China IP
+                        raise ParserException(
+                            f"番剧解析错误:{self.epid if self.epid else self.ssid} {self.epcontent}",
+                            self.rawurl,
+                            self.epcontent,
+                        )
+                    if not self.epid or not self.ssid or not self.aid:
+                        raise ParserException(
+                            f"番剧解析错误:{self.epid} {self.ssid} {self.aid}",
+                            self.rawurl,
+                            self.epcontent,
+                        )
+                    # 4.缓存评论
+                    try:
+                        for key in [self.cache_key["bangumi:ep"], self.cache_key["bangumi:ss"]]:
+                            await RedisCache().set(
+                                key,
+                                orjson.dumps(self.epcontent),
+                                ex=CACHES_TIMER["BANGUMI"],
+                                nx=True,
+                            )
+                    except Exception as e:
+                        logger.exception(f"缓存番剧错误: {e}")
+                params = {"aid": self.aid}
         else:
             raise ParserException("视频链接解析错误", self.rawurl)
-        self.page = page
-        if epid:
-            self.epid = epid
-        if epid is not None or ssid is not None:
-            # 1.获取缓存
-            try:
-                cache = (
-                    await RedisCache().get(f"bangumi:ep:{epid}")
-                    if epid
-                    else await RedisCache().get(f"bangumi:ss:{ssid}")
-                )
-            except Exception as e:
-                logger.exception(f"拉取番剧缓存错误: {e}")
-                cache = None
-            # 2.拉取番剧
-            if cache:
-                logger.info(
-                    f"拉取番剧缓存:epid {epid}" if epid else f"拉取番剧缓存:ssid {ssid}"
-                )
-                self.epcontent = orjson.loads(cache)  # type: ignore
-            else:
-                try:
-                    r = await self.client.get(
-                        BILI_API + "/pgc/view/web/season",
-                        params=params,
-                    )
-                    self.epcontent = r.json()
-                except Exception as e:
-                    raise ParserException(
-                        f"番剧获取错误:{epid if epid else ssid}", self.rawurl, e
-                    )
-                # 3.番剧解析
-                if not self.epcontent or not self.epcontent.get("result"):
-                    # Anime detects non-China IP
-                    raise ParserException(
-                        f"番剧解析错误:{epid if epid else ssid} {self.epcontent}",
-                        self.rawurl,
-                        self.epcontent,
-                    )
-                if not self.epid or not self.ssid or not self.aid:
-                    raise ParserException(
-                        f"番剧解析错误:{self.aid} {self.ssid} {self.aid}",
-                        self.rawurl,
-                        self.epcontent,
-                    )
-                # 4.缓存评论
-                try:
-                    for key in [f"bangumi:ep:{self.epid}", f"bangumi:ss:{self.ssid}"]:
-                        await RedisCache().set(
-                            key,
-                            orjson.dumps(self.epcontent),
-                            ex=CACHES_TIMER.get("bangumi"),
-                            nx=True,
-                        )
-                except Exception as e:
-                    logger.exception(f"缓存番剧错误: {e}")
-            params = {"aid": self.aid}
-            aid = self.aid
         # 1.获取缓存
         try:
             cache = (
-                await RedisCache().get(f"video:aid:{aid}")
-                if aid
-                else await RedisCache().get(f"video:bvid:{bvid}")
+                await RedisCache().get(self.cache_key["video:aid"])
+                if self.aid
+                else await RedisCache().get(self.cache_key["video:bvid"])
             )
+            self.clear_cached_properties()
         except Exception as e:
             logger.exception(f"拉取视频缓存错误: {e}")
             cache = None
         # 2.拉取视频
         if cache:
-            logger.info(f"拉取视频缓存:{aid if aid else bvid}")
             self.infocontent = orjson.loads(cache)  # type: ignore
+            logger.info(f"拉取视频缓存:{self.aid if self.aid else self.bvid}")
         else:
             try:
                 r = await self.client.get(
@@ -347,13 +394,15 @@ class Video(Feed):
                 self.infocontent = r.json()
             except Exception as e:
                 raise ParserException(
-                    f"视频获取错误:{aid if aid else bvid}", self.rawurl, e
+                    f"视频获取错误:{self.aid if self.aid else self.bvid}", self.rawurl, e
                 )
             # 3.视频解析
             if not self.infocontent and not self.infocontent.get("data"):
                 # Video detects non-China IP
                 raise ParserException(
-                    f"视频解析错误{aid if aid else bvid}", r.url, self.infocontent
+                    f"视频解析错误{self.aid if self.aid else self.bvid}",
+                    r.url,
+                    self.infocontent,
                 )
             if not self.aid or not self.bvid or not self.cid:
                 raise ParserException(
@@ -363,11 +412,11 @@ class Video(Feed):
                 )
             # 4.缓存视频
             try:
-                for key in [f"video:aid:{self.aid}", f"video:bvid:{self.bvid}"]:
+                for key in [self.cache_key["video:aid"], self.cache_key["video:bvid"]]:
                     await RedisCache().set(
                         key,
                         orjson.dumps(self.infocontent),
-                        ex=CACHES_TIMER.get("video"),
+                        ex=CACHES_TIMER["VIDEO"],
                         nx=True,
                     )
             except Exception as e:
@@ -377,7 +426,7 @@ class Video(Feed):
         self.uid = detail.get("owner").get("mid")
         self.content = detail.get("tname", "发布视频")
         if detail.get("pages") and len(detail["pages"]) > 1:
-            self.content += f" - 第{page}P/共{len(detail['pages'])}P"
+            self.content += f" - 第{self.page}P/共{len(detail['pages'])}P"
         if detail.get("dynamic") or detail.get("desc"):
             self.content += f" - {detail.get('dynamic') or detail.get('desc')}"
         self.extra_markdown = f"[{escape_markdown(detail.get('title'))}]({self.url})"
