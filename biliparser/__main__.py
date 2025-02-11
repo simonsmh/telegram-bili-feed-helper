@@ -110,6 +110,9 @@ async def get_media(
     file_id: str | None = await get_cache_media(filename)
     if file_id:
         return file_id
+    LOCAL_MEDIA_FILE_PATH.mkdir(parents=True, exist_ok=True)
+    media = LOCAL_MEDIA_FILE_PATH / filename
+    temp_media = LOCAL_MEDIA_FILE_PATH / uuid4().hex
     try:
         header = headers.copy()
         header["Referer"] = referer
@@ -125,11 +128,9 @@ async def get_media(
                     f"媒体文件获取错误: 无法获取 content-type {url}->{referer}"
                 )
             mediatype = content_type.split("/")
-            LOCAL_MEDIA_FILE_PATH.mkdir(parents=True, exist_ok=True)
-            media = LOCAL_MEDIA_FILE_PATH / filename
             total = int(response.headers.get("content-length", 0))
             if mediatype[0] in ["video", "audio", "application"]:
-                with open(media, "wb") as file:
+                with open(temp_media, "wb") as file:
                     with tqdm(
                         total=total,
                         unit_scale=True,
@@ -145,15 +146,18 @@ async def get_media(
                 if compression and mediatype[1] in ["jpeg", "png"]:
                     logger.info(f"压缩: {url} {mediatype[1]}")
                     img = compress(BytesIO(img), size).getvalue()
-                with open(media, "wb") as file:
+                with open(temp_media, "wb") as file:
                     file.write(img)
             else:
                 raise NetworkError(f"媒体文件类型错误: {mediatype} {url}->{referer}")
+            temp_media.rename(media)
             logger.info(f"完成下载: {media}")
             return media
     except Exception as e:
         logger.error(f"下载错误: {url}->{referer}")
         logger.exception(e)
+    finally:
+        temp_media.unlink(missing_ok=True)
 
 
 async def cache_media(
@@ -310,13 +314,18 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         for i in range(1, 5):
             if isinstance(f, Exception):
                 logger.warning(f"解析错误! {f}")
-                if (
-                    message.text.startswith("/parse")
-                ):
+                if message.text.startswith("/parse"):
                     await message.reply_text(str(f))
                 break
-            if f.mediafilesize and (message.text.startswith("/parse") or message.chat.type == ChatType.PRIVATE):
-                temp_msgs.append(await message.reply_text(f"上传中，大约需要{round(f.mediafilesize / 1000000)}秒"))
+            if f.mediafilesize and (
+                message.text.startswith("/parse")
+                or message.chat.type == ChatType.PRIVATE
+            ):
+                temp_msgs.append(
+                    await message.reply_text(
+                        f"上传中，大约需要{round(f.mediafilesize / 1000000)}秒"
+                    )
+                )
             async with RedisCache().lock(f.url, timeout=CACHES_TIMER["LOCK"]):
                 medias = []
                 mediathumb = None
@@ -493,6 +502,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             f = (await biliparser(f.url))[0]  # 重试获取该条链接信息
     for temp_msg in temp_msgs:
         await temp_msg.delete()
+
 
 async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message, urls = message_to_urls(update, context)
@@ -749,6 +759,7 @@ async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             if value:
                 await RedisCache().delete(value)
         await message.reply_text(f"清除缓存成功: {escape_markdown(f.url)}\n请重新获取")
+
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.exception(context.error)
