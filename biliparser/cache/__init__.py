@@ -1,14 +1,17 @@
 import asyncio
+import json
 import os
 import time
-import json
-import redis.asyncio as redis
 from pathlib import Path
+from typing import Any
+
+import redis.asyncio as redis
 
 LOCAL_FILE_PATH = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", os.getcwd()))
 
 CACHE_TIMER_DEFAULTS = {
     # seconds * minutes * hours
+    "CREDENTIAL": 60 * 60 * 24 * 7 * 4,
     "LOCK": 60 * 5,
     "AUDIO": 60 * 60,
     "BANGUMI": 60 * 60,
@@ -33,7 +36,7 @@ class FakeLock:
         self._acquired = False
 
     async def acquire(self):
-        current_time = time.time()
+        current_time = int(time.time())
         lock_value = await self.store.get(self.lock_key)
 
         if lock_value:
@@ -70,24 +73,49 @@ class FakeRedis:
         self.cache_file = LOCAL_FILE_PATH / "cache.json"
         self.cache = self._load_cache()
 
-    def _load_cache(self):
+    def _load_cache(self) -> dict[Any, Any]:
         try:
             with open(self.cache_file, "r", encoding="utf-8") as f:
-                return json.load(f)
+                result = json.load(f)
+                if isinstance(result, dict):
+                    if result.get("__version") == 2:
+                        return result
         except (IOError, json.JSONDecodeError):
-            return {}
+            pass
+        return {"__version": 2}
 
     def _save_cache(self):
         with open(self.cache_file, "w", encoding="utf-8") as f:
             json.dump(self.cache, f, ensure_ascii=False)
 
     async def get(self, key: str):
-        return self.cache.get(key)
+        if key == "__version":
+            return None
+        target = self.cache.get(key)
+        if target and isinstance(target, dict):
+            if target.get("timeout") and target["timeout"] < int(time.time()):
+                del self.cache[key]
+                self._save_cache()
+                return None
+            return target.get("value")
+        return None
 
-    async def set(self, key: str, value: str | bytes, *args, **kwargs) -> None:
+    async def set(
+        self,
+        key: str,
+        value: str | bytes,
+        ex: int | None = None,
+        nx: bool | None = None,
+        *args,
+        **kwargs,
+    ) -> None:
         if isinstance(value, bytes):
             value = value.decode("utf-8")
-        self.cache[key] = value
+        if nx and key in self.cache:
+            return
+        self.cache[key] = {"value": value}
+        if isinstance(ex, int):
+            self.cache[key]["timeout"] = int(time.time()) + ex
         self._save_cache()
 
     async def delete(self, key: str) -> None:

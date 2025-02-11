@@ -5,7 +5,7 @@ import orjson
 from bilibili_api import Credential
 from loguru import logger
 
-from .cache import RedisCache
+from .cache import CACHES_TIMER, RedisCache
 
 
 class CredentialFactory:
@@ -47,7 +47,7 @@ class CredentialFactory:
                         await RedisCache().set(
                             "credential",
                             orjson.dumps(self._credential.get_cookies()),
-                            60 * 60 * 24 * 7 * 4,
+                            ex=CACHES_TIMER["CREDENTIAL"],
                         )
                     except Exception:
                         logger.exception("Failed to save credential.")
