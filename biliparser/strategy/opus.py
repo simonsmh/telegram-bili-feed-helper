@@ -72,7 +72,7 @@ class Opus(Feed):
     def url(self):
         return f"https://t.bilibili.com/{self.dynamic_id}"
 
-    @cached_property
+    @property
     def cache_key(self):
         return {"opus:dynamic_id": f"opus:dynamic_id:{self.dynamic_id}"}
 

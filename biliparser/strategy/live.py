@@ -16,7 +16,7 @@ class Live(Feed):
     def url(self):
         return f"https://live.bilibili.com/{self.room_id}"
 
-    @cached_property
+    @property
     def cache_key(self):
         return {"live": f"live:{self.room_id}"}
     async def handle(self):

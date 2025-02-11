@@ -18,7 +18,7 @@ class Audio(Feed):
     def url(self):
         return f"https://www.bilibili.com/audio/au{self.audio_id}"
 
-    @cached_property
+    @property
     def cache_key(self):
         return {
             "audio:info": f"audio:info:{self.audio_id}",

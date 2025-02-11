@@ -97,8 +97,6 @@ class Video(Feed):
             and self.epcontent.get("result")
             and self.epcontent["result"].get("episodes")
         ):
-            if not self.aid:
-                self.aid = self.epcontent["result"]["episodes"][-1].get("aid")
             return self.epcontent["result"]["episodes"][-1].get("id")
 
     @cached_property
@@ -110,7 +108,7 @@ class Video(Feed):
     def url(self):
         return f"https://www.bilibili.com/video/av{self.aid}?p={self.page}"
 
-    @cached_property
+    @property
     def cache_key(self):
         return {
             "bangumi:ep": f"bangumi:ep:{self.epid}",
@@ -120,8 +118,8 @@ class Video(Feed):
         }
     
     def clear_cached_properties(self):
-        for key in ["epid", "ssid", "aid", "bvid", "cid", "cache_key"]:
-            if hasattr(self, key):
+        for key in ["epid", "ssid", "aid", "bvid", "cid"]:
+            if hasattr(self, key) and getattr(self, key) is None:
                 delattr(self, key)
 
     async def __test_url_status_code(self, url, referer):
@@ -317,11 +315,11 @@ class Video(Feed):
                         if self.epid
                         else await RedisCache().get(self.cache_key["bangumi:ss"])
                     )
-                    self.clear_cached_properties()
                 except Exception as e:
                     logger.exception(f"拉取番剧缓存错误: {e}")
                     cache = None
                 # 2.拉取番剧
+                self.clear_cached_properties()
                 if cache:
                     self.epcontent = orjson.loads(cache)  # type: ignore
                     logger.info(
@@ -377,11 +375,11 @@ class Video(Feed):
                 if self.aid
                 else await RedisCache().get(self.cache_key["video:bvid"])
             )
-            self.clear_cached_properties()
         except Exception as e:
             logger.exception(f"拉取视频缓存错误: {e}")
             cache = None
         # 2.拉取视频
+        self.clear_cached_properties()
         if cache:
             self.infocontent = orjson.loads(cache)  # type: ignore
             logger.info(f"拉取视频缓存:{self.aid if self.aid else self.bvid}")

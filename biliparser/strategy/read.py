@@ -24,7 +24,7 @@ class Read(Feed):
     def url(self):
         return f"https://www.bilibili.com/read/cv{self.read_id}"
     
-    @cached_property
+    @property
     def cache_key(self):
         return {
             "read:page": f"read:page:{self.read_id}",

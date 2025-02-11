@@ -144,7 +144,7 @@ class Feed(ABC):
     def url(self):
         return self.rawurl
 
-    @cached_property
+    @property
     def cache_key(self):
         return {}
 
