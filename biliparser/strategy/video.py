@@ -262,7 +262,7 @@ class Video(Feed):
     async def handle(self):
         logger.info(f"处理视频信息: 链接: {self.rawurl}")
         match = re.search(
-            r"(?:bilibili\.com/(?:video|bangumi/play)|b23\.tv|acg\.tv)/(?:(?P<bvid>BV\w{10})|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+)|)/?\??(?:p=(?P<page>\d+))?",
+            r"(?:bilibili\.com(?:/video|/bangumi/play)?|b23\.tv|acg\.tv)/(?:(?P<bvid>BV\w{10})|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+)|)/?\??(?:p=(?P<page>\d+))?",
             self.rawurl,
         )
         match_fes = re.search(
