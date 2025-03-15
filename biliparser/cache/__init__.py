@@ -12,7 +12,7 @@ LOCAL_FILE_PATH = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", os.getcwd()))
 CACHE_TIMER_DEFAULTS = {
     # seconds * minutes * hours
     "CREDENTIAL": 60 * 60 * 24 * 7 * 4,
-    "LOCK": 60 * 5,
+    "LOCK": 60 * 60,
     "AUDIO": 60 * 60,
     "BANGUMI": 60 * 60,
     "OPUS": 60 * 60,

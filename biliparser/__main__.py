@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import httpx
+from async_timeout import timeout
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -116,43 +117,49 @@ async def get_media(
     try:
         header = headers.copy()
         header["Referer"] = referer
-        async with client.stream("GET", url, headers=header) as response:
-            logger.info(f"下载开始: {url}")
-            if response.status_code != 200:
-                raise NetworkError(
-                    f"媒体文件获取错误: {response.status_code} {url}->{referer}"
-                )
-            content_type = response.headers.get("content-type")
-            if content_type is None:
-                raise NetworkError(
-                    f"媒体文件获取错误: 无法获取 content-type {url}->{referer}"
-                )
-            mediatype = content_type.split("/")
-            total = int(response.headers.get("content-length", 0))
-            if mediatype[0] in ["video", "audio", "application"]:
-                with open(temp_media, "wb") as file:
-                    with tqdm(
-                        total=total,
-                        unit_scale=True,
-                        unit_divisor=1024,
-                        unit="B",
-                        desc=filename,
-                    ) as pbar:
-                        async for chunk in response.aiter_bytes(chunk_size=8192):
-                            file.write(chunk)
-                            pbar.update(len(chunk))
-            elif media_check_ignore or mediatype[0] == "image":
-                img = await response.aread()
-                if compression and mediatype[1] in ["jpeg", "png"]:
-                    logger.info(f"压缩: {url} {mediatype[1]}")
-                    img = compress(BytesIO(img), size).getvalue()
-                with open(temp_media, "wb") as file:
-                    file.write(img)
-            else:
-                raise NetworkError(f"媒体文件类型错误: {mediatype} {url}->{referer}")
-            temp_media.rename(media)
-            logger.info(f"完成下载: {media}")
-            return media
+        async with timeout(CACHES_TIMER["LOCK"]):
+            async with client.stream("GET", url, headers=header) as response:
+                logger.info(f"下载开始: {url}")
+                if response.status_code != 200:
+                    raise NetworkError(
+                        f"媒体文件获取错误: {response.status_code} {url}->{referer}"
+                    )
+                content_type = response.headers.get("content-type")
+                if content_type is None:
+                    raise NetworkError(
+                        f"媒体文件获取错误: 无法获取 content-type {url}->{referer}"
+                    )
+                mediatype = content_type.split("/")
+                total = int(response.headers.get("content-length", 0))
+                if mediatype[0] in ["video", "audio", "application"]:
+                    with open(temp_media, "wb") as file:
+                        with tqdm(
+                            total=total,
+                            unit_scale=True,
+                            unit_divisor=1024,
+                            unit="B",
+                            desc=filename,
+                        ) as pbar:
+                            async for chunk in response.aiter_bytes(chunk_size=8192):
+                                file.write(chunk)
+                                pbar.update(len(chunk))
+                elif media_check_ignore or mediatype[0] == "image":
+                    img = await response.aread()
+                    if compression and mediatype[1] in ["jpeg", "png"]:
+                        logger.info(f"压缩: {url} {mediatype[1]}")
+                        img = compress(BytesIO(img), size).getvalue()
+                    with open(temp_media, "wb") as file:
+                        file.write(img)
+                else:
+                    raise NetworkError(
+                        f"媒体文件类型错误: {mediatype} {url}->{referer}"
+                    )
+                temp_media.rename(media)
+                logger.info(f"完成下载: {media}")
+                return media
+    except asyncio.TimeoutError:
+        logger.error(f"下载超时: {url}->{referer}")
+        raise NetworkError(f"下载超时: {url}")
     except Exception as e:
         logger.error(f"下载错误: {url}->{referer}")
         logger.exception(e)
@@ -326,7 +333,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         f"上传中，大约需要{round(f.mediafilesize / 1000000)}秒"
                     )
                 )
-            async with RedisCache().lock(f.url, timeout=CACHES_TIMER["LOCK"]):
+            async with RedisCache().lock(f.url, timeout=2 * CACHES_TIMER["LOCK"]):
                 medias = []
                 mediathumb = None
                 try:
