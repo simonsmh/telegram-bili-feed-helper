@@ -46,6 +46,17 @@ class Video(Feed):
     def dashfilename(self):
         return [get_filename(i) for i in self.dashurls] if self.dashurls else list()
 
+    def extract_episode_info(self, target: str):
+        if not self.epid or not self.epcontent or not self.epcontent.get("result"):
+            return
+        for episode in self.epcontent["result"].get("episodes"):
+            if str(episode.get("id")) == str(self.epid):
+                return episode.get(target)
+        for subsection in self.epcontent["result"].get("section"):
+            for episode in subsection.get("episodes"):
+                if str(episode.get("id")) == str(self.epid):
+                    return episode.get(target)
+
     @cached_property
     def cid(self):
         if self.infocontent and self.infocontent.get("data"):
@@ -55,40 +66,19 @@ class Video(Feed):
                         return item.get("cid")
             self.page = 1
             return self.infocontent["data"].get("cid")
-        elif self.epid and self.epcontent and self.epcontent.get("result"):
-            for episode in self.epcontent["result"].get("episodes"):
-                if str(episode.get("id")) == self.epid:
-                    return episode.get("cid")
-            for subsection in self.epcontent["result"].get("section"):
-                for episode in subsection.get("episodes"):
-                    if str(episode.get("id")) == self.epid:
-                        return episode.get("cid")
+        return self.extract_episode_info("cid")
 
     @cached_property
     def bvid(self):
         if self.infocontent and self.infocontent.get("data"):
             return self.infocontent["data"].get("bvid")
-        elif self.epid and self.epcontent and self.epcontent.get("result"):
-            for episode in self.epcontent["result"].get("episodes"):
-                if str(episode.get("id")) == self.epid:
-                    return episode.get("bvid")
-            for subsection in self.epcontent["result"].get("section"):
-                for episode in subsection.get("episodes"):
-                    if str(episode.get("id")) == self.epid:
-                        return episode.get("bvid")
+        return self.extract_episode_info("bvid")
 
     @cached_property
     def aid(self):
         if self.infocontent and self.infocontent.get("data"):
             return self.infocontent["data"].get("aid")
-        elif self.epid and self.epcontent and self.epcontent.get("result"):
-            for episode in self.epcontent["result"].get("episodes"):
-                if str(episode.get("id")) == self.epid:
-                    return episode.get("aid")
-            for subsection in self.epcontent["result"].get("section"):
-                for episode in subsection.get("episodes"):
-                    if str(episode.get("id")) == self.epid:
-                        return episode.get("aid")
+        return self.extract_episode_info("aid")
 
     @cached_property
     def epid(self):
@@ -116,7 +106,7 @@ class Video(Feed):
             "video:aid": f"video:aid:{self.aid}",
             "video:bvid": f"video:bvid:{self.bvid}",
         }
-    
+
     def clear_cached_properties(self):
         for key in ["epid", "ssid", "aid", "bvid", "cid"]:
             if hasattr(self, key) and getattr(self, key) is None:
@@ -348,6 +338,7 @@ class Video(Feed):
                             self.rawurl,
                             self.epcontent,
                         )
+                    self.clear_cached_properties()
                     if not self.epid or not self.ssid or not self.aid:
                         raise ParserException(
                             f"番剧解析错误:{self.epid} {self.ssid} {self.aid}",
@@ -356,7 +347,10 @@ class Video(Feed):
                         )
                     # 4.缓存评论
                     try:
-                        for key in [self.cache_key["bangumi:ep"], self.cache_key["bangumi:ss"]]:
+                        for key in [
+                            self.cache_key["bangumi:ep"],
+                            self.cache_key["bangumi:ss"],
+                        ]:
                             await RedisCache().set(
                                 key,
                                 orjson.dumps(self.epcontent),
@@ -392,7 +386,9 @@ class Video(Feed):
                 self.infocontent = r.json()
             except Exception as e:
                 raise ParserException(
-                    f"视频获取错误:{self.aid if self.aid else self.bvid}", self.rawurl, e
+                    f"视频获取错误:{self.aid if self.aid else self.bvid}",
+                    self.rawurl,
+                    e,
                 )
             # 3.视频解析
             if not self.infocontent and not self.infocontent.get("data"):
