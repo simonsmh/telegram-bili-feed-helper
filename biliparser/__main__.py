@@ -214,7 +214,7 @@ def message_to_urls(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return message, urls
 
 
-async def get_media_mediathumb_by_parser(f):
+async def get_media_mediathumb_by_parser(f, no_media: bool = False):
     async with httpx.AsyncClient(
         http2=True,
         follow_redirects=True,
@@ -232,6 +232,8 @@ async def get_media_mediathumb_by_parser(f):
 
         # Handle main media
         media = []
+        if no_media:
+            return media, mediathumb
 
         # Local mode or raw media requested
         if f.mediaraws or LOCAL_MODE:
@@ -307,6 +309,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message, urls = message_to_urls(update, context)
     if message is None or message.text is None:
         return
+    no_vid = message.text.startswith("/cover")
     if not urls:
         if message.text.startswith("/parse") or message.chat.type == ChatType.PRIVATE:
             await message.reply_text("链接不正确")
@@ -343,7 +346,9 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         )
                         break
                     else:
-                        media, mediathumb = await get_media_mediathumb_by_parser(f)
+                        media, mediathumb = await get_media_mediathumb_by_parser(
+                            f, no_vid
+                        )
                         if not media:
                             if mediathumb:
                                 media = [mediathumb]
@@ -680,7 +685,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                         if f.mediadimention["rotate"]
                         else f.mediadimention["height"]
                     ),
-                )
+                ),
             ]
         elif f.mediatype == "audio":
             cache_file_id = await get_cache_media(f.mediafilename[0])
@@ -789,6 +794,7 @@ async def post_init(application: Application):
             ["file", "获取匹配内容原始文件"],
             ["clear", "清除匹配内容缓存"],
             ["parse", "获取匹配内容"],
+            ["cover", "获取匹配内容封面"],
         ]
     )
     bot_me = await application.bot.get_me()
