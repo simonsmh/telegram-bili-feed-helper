@@ -5,7 +5,13 @@ import orjson
 from telegram.constants import FileSizeLimit
 
 from ..cache import CACHES_TIMER, RedisCache
-from ..utils import BILI_API, LOCAL_MODE, ParserException, escape_markdown, logger
+from ..utils import (
+    BILI_API,
+    LOCAL_MODE,
+    ParserException,
+    escape_markdown,
+    logger,
+)
 from .feed import Feed
 
 
@@ -111,17 +117,22 @@ class Audio(Feed):
                 )
             except Exception as e:
                 logger.exception(f"缓存音频媒体错误: {e}")
-        self.mediaurls = self.mediacontent["data"].get("cdns")
-        self.mediatype = "audio"
-        self.mediaraws = (
-            False
-            if self.mediacontent["data"].get("size")
-            < (
-                FileSizeLimit.FILESIZE_DOWNLOAD_LOCAL_MODE
-                if LOCAL_MODE
-                else FileSizeLimit.FILESIZE_DOWNLOAD
+        audio_size, audio_url = await self.test_url_status_code(self.mediacontent["data"].get("cdns")[0], self.url)
+        if audio_size:
+            self.mediaurls = audio_url
+            self.mediatype = "audio"
+            self.mediaraws = (
+                False
+                if self.mediacontent["data"].get("size")
+                < (
+                    FileSizeLimit.FILESIZE_DOWNLOAD_LOCAL_MODE
+                    if LOCAL_MODE
+                    else FileSizeLimit.FILESIZE_DOWNLOAD
+                )
+                else True
             )
-            else True
-        )
+        else:
+            self.mediaurls = detail.get("cover_url")
+            self.mediatype = "image"
         self.replycontent = await self.parse_reply(self.audio_id, self.reply_type)
         return self

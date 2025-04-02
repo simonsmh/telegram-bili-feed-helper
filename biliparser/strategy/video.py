@@ -15,7 +15,6 @@ from ..utils import (
     credentialFactory,
     escape_markdown,
     get_filename,
-    headers,
     logger,
 )
 from .feed import Feed
@@ -112,14 +111,6 @@ class Video(Feed):
             if hasattr(self, key) and getattr(self, key) is None:
                 delattr(self, key)
 
-    async def __test_url_status_code(self, url, referer):
-        header = headers.copy()
-        header["Referer"] = referer
-        async with self.client.stream("GET", url, headers=header) as response:
-            if response.status_code != 200:
-                return 0
-            return int(response.headers.get("Content-Length", 0))
-
     async def __get_video_result(self, detail, qn: int):
         params = {"avid": self.aid, "cid": self.cid}
         if qn:
@@ -146,12 +137,12 @@ class Video(Feed):
             )
         ):
             url = video_result["data"]["durl"][0]["url"]
-            result = await self.__test_url_status_code(url, self.url)
+            result, url = await self.test_url_status_code(url, self.url)
             if not result and video_result["data"]["durl"][0].get("backup_url", None):
                 backup_urls = video_result["data"]["durl"][0]["backup_url"]
                 for item in backup_urls:
                     url = item
-                    result = await self.__test_url_status_code(item, self.url)
+                    result, item = await self.test_url_status_code(item, self.url)
                     if result:
                         break
             if result:
@@ -186,7 +177,7 @@ class Video(Feed):
         if not video_result.get("code") == 0 or not video_result.get("data"):
             logger.error(f"获取Dash视频流错误: {video_result}")
             return False
-        ## TODO: rewrite self VideoDownloadURLDataDetecter with built-in __test_url_status_code
+        ## TODO: rewrite self VideoDownloadURLDataDetecter with built-in test_url_status_code
         detecter = video.VideoDownloadURLDataDetecter(data=video_result.get("data"))
         streams = detecter.detect(
             video_min_quality=video.VideoQuality._360P,
@@ -211,7 +202,9 @@ class Video(Feed):
         audio_streams.sort(key=lambda x: x.audio_quality.value, reverse=True)
         audio_size = 0
         for audio_stream in audio_streams:
-            audio_size = await self.__test_url_status_code(audio_stream.url, self.url)
+            audio_size, audio_stream.url = await self.test_url_status_code(
+                audio_stream.url, self.url
+            )
             if audio_size:
                 self.dashurls = [audio_stream.url]
                 break
@@ -219,7 +212,9 @@ class Video(Feed):
             logger.error(f"无可用Dash视频音频流清晰度: {streams}")
             return False
         for video_stream in video_streams:
-            video_size = await self.__test_url_status_code(video_stream.url, self.url)
+            video_size, video_stream.url = await self.test_url_status_code(
+                video_stream.url, self.url
+            )
             if (
                 audio_size
                 and video_size

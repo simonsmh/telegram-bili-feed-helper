@@ -1,3 +1,4 @@
+import os
 import re
 from abc import ABC, abstractmethod
 from functools import cached_property
@@ -7,7 +8,13 @@ import orjson
 from telegram.constants import MessageLimit
 
 from ..cache import CACHES_TIMER, RedisCache
-from ..utils import BILI_API, escape_markdown, get_filename, logger
+from ..utils import (
+    BILI_API,
+    escape_markdown,
+    get_filename,
+    headers,
+    logger,
+)
 
 
 class Feed(ABC):
@@ -29,6 +36,27 @@ class Feed(ABC):
     def __init__(self, rawurl: str, client: httpx.AsyncClient):
         self.rawurl = rawurl
         self.client = client
+
+    async def test_url_status_code(self, url, referer):
+        header = headers.copy()
+        header["Referer"] = referer
+        select_urls = [url]
+        if os.environ.get("UPOS_DOMAIN"):
+            test_url = re.sub(
+                r"https?://[^/]+/",
+                f"https://{os.environ.get('UPOS_DOMAIN')}/",
+                url,
+            )  ## UPOS_DOMAIN=upos-sz-mirroraliov.bilivideo.com
+            select_urls.insert(0, test_url)
+        # test_url = re.sub(r"bw=\d+", "bw=1280000", test_url) # 这个真的有用吗
+        for select_url in select_urls:
+            async with self.client.stream(
+                "GET", select_url, headers=header
+            ) as response:
+                if response.status_code != 200:
+                    continue
+                return int(response.headers.get("Content-Length", 0)), select_url
+        return 0, url
 
     @staticmethod
     def make_user_markdown(user, uid):
