@@ -48,7 +48,7 @@ class Feed(ABC):
                 url,
             )  ## UPOS_DOMAIN=upos-sz-mirroraliov.bilivideo.com
             select_urls.insert(0, test_url)
-        # test_url = re.sub(r"bw=\d+", "bw=1280000", test_url) # 这个真的有用吗
+        test_url = re.sub(r"bw=\d+", "bw=1280000", test_url) # 这个真的有用吗
         for select_url in select_urls:
             async with self.client.stream(
                 "GET", select_url, headers=header
