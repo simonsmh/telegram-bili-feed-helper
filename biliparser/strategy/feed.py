@@ -6,7 +6,7 @@ from functools import cached_property
 import httpx
 import orjson
 from telegram.constants import MessageLimit
-
+import random
 from ..cache import CACHES_TIMER, RedisCache
 from ..utils import (
     BILI_API,
@@ -42,13 +42,17 @@ class Feed(ABC):
         header["Referer"] = referer
         select_urls = [url]
         if os.environ.get("UPOS_DOMAIN"):
-            test_url = re.sub(
-                r"https?://[^/]+/",
-                f"https://{os.environ.get('UPOS_DOMAIN')}/",
-                url,
-            )  ## UPOS_DOMAIN=upos-sz-mirroraliov.bilivideo.com
-            select_urls.insert(0, test_url)
-        test_url = re.sub(r"bw=\d+", "bw=1280000", test_url) # 这个真的有用吗
+            domains = os.environ.get('UPOS_DOMAIN').split(",")
+            if domains:
+                random.shuffle(domains)
+                domain = domains.pop()
+                if domain:
+                    test_url = re.sub(
+                        r"https?://[^/]+/",
+                        f"https://{domain}/",
+                        url,
+                    )
+                    select_urls.insert(0, test_url)
         for select_url in select_urls:
             async with self.client.stream(
                 "GET", select_url, headers=header
