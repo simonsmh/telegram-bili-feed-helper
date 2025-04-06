@@ -25,6 +25,7 @@ class CredentialFactory:
                     sessdata=os.environ.get("SESSDATA"),
                     bili_jct=os.environ.get("BILI_JCT"),
                     buvid3=os.environ.get("BUVID3"),
+                    buvid4=os.environ.get("BUVID4"),
                     dedeuserid=os.environ.get("DEDEUSERID"),
                     ac_time_value=os.environ.get("AC_TIME_VALUE"),
                 )

@@ -43,19 +43,16 @@ class Feed(ABC):
         header["Referer"] = referer
         select_urls = [url]
         if os.environ.get("UPOS_DOMAIN"):
-            domains = os.environ.get('UPOS_DOMAIN').split(",")
+            domains = os.environ.get("UPOS_DOMAIN").split(",")
             if domains:
                 random.shuffle(domains)
                 domain = domains.pop()
                 if domain:
-                    test_url = re.sub(
-                        r"https?://[^/]+/",
-                        f"https://{domain}/",
-                        url,
-                    )
+                    test_url = re.sub(r"https?://[^/]+/", f"https://{domain}/", url)
                     select_urls.insert(0, test_url)
         for select_url in select_urls:
             try:
+                select_url = re.sub(r"&buvid=[^&]+", "&buvid=", select_url) ## 清除buvid参数
                 async with self.client.stream(
                     "GET", select_url, headers=header
                 ) as response:

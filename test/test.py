@@ -31,10 +31,10 @@ async def get_video_playurl():
         print(f"原始视频流URL: {video_url}")
 
         # 替换域名
-        video_url = re.sub(
-            r"https?://[^/]+/", "https://upos-sz-mirroraliov.bilivideo.com/", video_url
-        )
-        print(f"替换域名后的URL: {video_url}")
+        # video_url = re.sub(
+        #     r"https?://[^/]+/", "https://upos-sz-mirrorali.bilivideo.com/", video_url
+        # )
+        # print(f"替换域名后的URL: {video_url}")
 
         # 使用流式请求获取视频内容
         async with client.stream("GET", video_url, headers=headers) as stream:

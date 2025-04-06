@@ -104,12 +104,14 @@ async def get_media(
     filename: str,
     compression: bool = True,
     media_check_ignore: bool = False,
+    no_cache: bool = False,
 ) -> Path | str | None:
     if isinstance(url, Path):
         return url
-    file_id: str | None = await get_cache_media(filename)
-    if file_id:
-        return file_id
+    if not no_cache:
+        file_id: str | None = await get_cache_media(filename)
+        if file_id:
+            return file_id
     LOCAL_MEDIA_FILE_PATH.mkdir(parents=True, exist_ok=True)
     media = LOCAL_MEDIA_FILE_PATH / filename
     temp_media = LOCAL_MEDIA_FILE_PATH / uuid4().hex
@@ -139,7 +141,7 @@ async def get_media(
                             unit="B",
                             desc=filename,
                         ) as pbar:
-                            async for chunk in response.aiter_bytes(chunk_size=8192):
+                            async for chunk in response.aiter_bytes():
                                 file.write(chunk)
                                 pbar.update(len(chunk))
                 elif media_check_ignore or mediatype[0] == "image":
@@ -231,7 +233,8 @@ async def get_media_mediathumb_by_parser(
                     f.mediathumb,
                     f.mediathumbfilename,
                     compression=compression,
-                    media_check_ignore=media_check_ignore,
+                    media_check_ignore=False,
+                    no_cache=True,
                 )
             else:
                 mediathumb = referer_url(f.mediathumb, f.url)
@@ -285,8 +288,7 @@ async def handle_dash_media(f, client):
 
         # Download dash segments
         tasks = [
-            get_media(client, f.url, m, fn)
-            for m, fn in zip(f.dashurls, f.dashfilename)
+            get_media(client, f.url, m, fn) for m, fn in zip(f.dashurls, f.dashfilename)
         ]
         res = [m for m in await asyncio.gather(*tasks) if m]
         if len(res) < 2:
@@ -373,19 +375,13 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 caption=f.caption,
                                 reply_markup=origin_link(f.url),
                                 supports_streaming=True,
+                                show_caption_above_media=True,
+                                cover=mediathumb,
                                 thumbnail=mediathumb,
                                 duration=f.mediaduration,
                                 filename=f.mediafilename[0],
-                                width=(
-                                    f.mediadimention["height"]
-                                    if f.mediadimention["rotate"]
-                                    else f.mediadimention["width"]
-                                ),
-                                height=(
-                                    f.mediadimention["width"]
-                                    if f.mediadimention["rotate"]
-                                    else f.mediadimention["height"]
-                                ),
+                                width=f.mediadimention["width"],
+                                height=f.mediadimention["height"],
                             )
                         elif f.mediatype == "audio":
                             result = await message.reply_audio(
@@ -411,6 +407,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                     media[0],
                                     caption=f.caption,
                                     reply_markup=origin_link(f.url),
+                                    show_caption_above_media=True,
                                     filename=f.mediafilename[0],
                                 )
                         else:
@@ -661,6 +658,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     title=f.mediatitle,
                     description=f"{f.user}: {f.content}",
                     reply_markup=origin_link(f.url),
+                    show_caption_above_media=True,
                 )
                 if cache_file_id
                 else InlineQueryResultVideo(
@@ -670,19 +668,12 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     description=f"{f.user}: {f.content}",
                     mime_type="video/mp4",
                     reply_markup=origin_link(f.url),
+                    show_caption_above_media=True,
                     thumbnail_url=f.mediathumb,
                     video_url=referer_url(f.mediaurls[0], f.url),
                     video_duration=f.mediaduration,
-                    video_width=(
-                        f.mediadimention["height"]
-                        if f.mediadimention["rotate"]
-                        else f.mediadimention["width"]
-                    ),
-                    video_height=(
-                        f.mediadimention["width"]
-                        if f.mediadimention["rotate"]
-                        else f.mediadimention["height"]
-                    ),
+                    video_width=f.mediadimention["width"],
+                    video_height=f.mediadimention["height"],
                 ),
             ]
         elif f.mediatype == "audio":
@@ -718,6 +709,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             caption=f.caption,
                             title=f"{f.user}: {f.content}",
                             reply_markup=origin_link(f.url),
+                            show_caption_above_media=True,
                         )
                         if ".gif" in mediaurl
                         else InlineQueryResultCachedPhoto(
@@ -727,6 +719,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             title=f.user,
                             description=f.content,
                             reply_markup=origin_link(f.url),
+                            show_caption_above_media=True,
                         )
                     )
                     if cache_file_id

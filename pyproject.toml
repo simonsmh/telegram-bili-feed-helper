@@ -11,22 +11,23 @@ packages = [{ include = "biliparser" }]
 python = "^3.13"
 aiomysql = "^0.2.0"
 asyncpg = "^0.30.0"
-beautifulsoup4 = "^4.12.3"
-httpx = {extras = ["http2"], version = "^0.28.1"}
+beautifulsoup4 = "^4.13.3"
 loguru = "^0.7.3"
 lxml = "^5.3.0"
 pillow = "^11.0.0"
-python-telegram-bot = {extras = ["all"], version = "^21.10"}
+python-telegram-bot = {extras = ["all"], version = "^22.0"}
 redis = "^5.2.1"
 telegraph = {extras = ["aio"], version = "^2.2.0"}
-tortoise-orm = {extras = ["accel"], version = "^0.23.0"}
-bilibili-api-python = {git = "https://github.com/Nemo2011/bilibili-api.git", rev = "3d797bcd367317912e8cd7b5933d70f74c53eab9"}
+tortoise-orm = {extras = ["accel"], version = "^0.24.2"}
+bilibili-api-python = "^17.1.4"
 tqdm = "^4.67.1"
 async-timeout = "^5.0.1"
+orjson = "^3.10.16"
+httpx = {extras = ["http2"], version = "^0.28.1"}
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.3.3"
-pytest-asyncio = "^0.23.8"
+pytest = "^8.3.5"
+pytest-asyncio = "^0.26.0"
 
 [tool.poetry.scripts]
 bilifeedbot = "biliparser.__main__:main"
