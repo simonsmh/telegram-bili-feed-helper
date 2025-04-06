@@ -1,4 +1,5 @@
 import os
+import random
 import re
 from abc import ABC, abstractmethod
 from functools import cached_property
@@ -6,7 +7,7 @@ from functools import cached_property
 import httpx
 import orjson
 from telegram.constants import MessageLimit
-import random
+
 from ..cache import CACHES_TIMER, RedisCache
 from ..utils import (
     BILI_API,
@@ -54,12 +55,16 @@ class Feed(ABC):
                     )
                     select_urls.insert(0, test_url)
         for select_url in select_urls:
-            async with self.client.stream(
-                "GET", select_url, headers=header
-            ) as response:
-                if response.status_code != 200:
-                    continue
-                return int(response.headers.get("Content-Length", 0)), select_url
+            try:
+                async with self.client.stream(
+                    "GET", select_url, headers=header
+                ) as response:
+                    if response.status_code != 200:
+                        continue
+                    return int(response.headers.get("Content-Length", 0)), select_url
+            except Exception as e:
+                logger.error(f"下载链接测试错误: {url}->{referer}")
+                logger.exception(e)
         return 0, url
 
     @staticmethod
