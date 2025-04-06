@@ -103,7 +103,6 @@ async def get_media(
     url: Path | str,
     filename: str,
     compression: bool = True,
-    size: int = 320,
     media_check_ignore: bool = False,
 ) -> Path | str | None:
     if isinstance(url, Path):
@@ -147,7 +146,7 @@ async def get_media(
                     img = await response.aread()
                     if compression and mediatype[1] in ["jpeg", "png"]:
                         logger.info(f"压缩: {url} {mediatype[1]}")
-                        img = compress(BytesIO(img), size).getvalue()
+                        img = compress(BytesIO(img)).getvalue()
                     with open(temp_media, "wb") as file:
                         file.write(img)
                 else:
@@ -214,7 +213,9 @@ def message_to_urls(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return message, urls
 
 
-async def get_media_mediathumb_by_parser(f, no_media: bool = False):
+async def get_media_mediathumb_by_parser(
+    f, compression=True, media_check_ignore=False, no_media: bool = False
+) -> tuple[list | list[Path | str], Path | str | None]:
     async with httpx.AsyncClient(
         http2=True,
         follow_redirects=True,
@@ -225,7 +226,12 @@ async def get_media_mediathumb_by_parser(f, no_media: bool = False):
         if f.mediathumb:
             if f.mediaraws or LOCAL_MODE:
                 mediathumb = await get_media(
-                    client, f.url, f.mediathumb, f.mediathumbfilename, size=320
+                    client,
+                    f.url,
+                    f.mediathumb,
+                    f.mediathumbfilename,
+                    compression=compression,
+                    media_check_ignore=media_check_ignore,
                 )
             else:
                 mediathumb = referer_url(f.mediathumb, f.url)
@@ -242,7 +248,14 @@ async def get_media_mediathumb_by_parser(f, no_media: bool = False):
                 if media:
                     return media, mediathumb
             tasks = [
-                get_media(client, f.url, m, fn, size=1280)
+                get_media(
+                    client,
+                    f.url,
+                    m,
+                    fn,
+                    compression=compression,
+                    media_check_ignore=media_check_ignore,
+                )
                 for m, fn in zip(f.mediaurls, f.mediafilename)
             ]
             media = [m for m in await asyncio.gather(*tasks) if m]
@@ -254,9 +267,7 @@ async def get_media_mediathumb_by_parser(f, no_media: bool = False):
                 if cache_dash:
                     media = [cache_dash]
                     return media, mediathumb
-            if f.mediatype == "image":
-                media = [i if ".gif" in i else i + "@1280w.jpg" for i in f.mediaurls]
-            elif f.mediatype in ["video", "audio"]:
+            if f.mediatype in ["video", "audio"]:
                 media = [referer_url(f.mediaurls[0], f.url)]
             else:
                 media = f.mediaurls
@@ -274,7 +285,7 @@ async def handle_dash_media(f, client):
 
         # Download dash segments
         tasks = [
-            get_media(client, f.url, m, fn, size=1280)
+            get_media(client, f.url, m, fn)
             for m, fn in zip(f.dashurls, f.dashfilename)
         ]
         res = [m for m in await asyncio.gather(*tasks) if m]
@@ -309,7 +320,6 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message, urls = message_to_urls(update, context)
     if message is None or message.text is None:
         return
-    no_vid = message.text.startswith("/cover")
     if not urls:
         if message.text.startswith("/parse") or message.chat.type == ChatType.PRIVATE:
             await message.reply_text("链接不正确")
@@ -346,9 +356,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         )
                         break
                     else:
-                        media, mediathumb = await get_media_mediathumb_by_parser(
-                            f, no_vid
-                        )
+                        media, mediathumb = await get_media_mediathumb_by_parser(f)
                         if not media:
                             if mediathumb:
                                 media = [mediathumb]
@@ -518,11 +526,12 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message, urls = message_to_urls(update, context)
-    if message is None:
+    if message is None or message.text is None:
         return
     if not urls:
         await message.reply_text("链接不正确")
         return
+    no_media = message.text.startswith("/cover")
     logger.info(f"Fetch: {urls}")
     for f in await biliparser(urls):
         if isinstance(f, Exception):
@@ -533,57 +542,46 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             if f.mediaurls:
                 medias = []
                 try:
-                    async with httpx.AsyncClient(
-                        http2=True,
-                        follow_redirects=True,
-                        proxy=os.environ.get(
-                            "FILE_PROXY", os.environ.get("HTTP_PROXY")
-                        ),
-                    ) as client:
-                        tasks = [
-                            get_media(
-                                client,
-                                f.url,
-                                media,
-                                filename,
-                                compression=False,
-                                media_check_ignore=True,
-                            )
-                            for media, filename in zip(f.mediaurls, f.mediafilename)
-                        ]
-                        medias = [tr for tr in await asyncio.gather(*tasks) if tr]
-                        logger.info(f"上传中: {f.url}")
-                        if len(medias) > 1:
-                            result = await message.reply_media_group(
-                                [
-                                    InputMediaDocument(media, filename=filename)
-                                    for media, filename in zip(medias, f.mediafilename)
-                                ],
-                            )
-                            await message.reply_text(
-                                f.caption, reply_markup=origin_link(f.url)
-                            )
-                            for filename, item in zip(f.mediafilename, result):
-                                if isinstance(
-                                    item.effective_attachment, tuple
-                                ):  # PhotoSize
-                                    await cache_media(
-                                        filename, item.effective_attachment[0]
-                                    )
-                                else:
-                                    await cache_media(
-                                        filename, item.effective_attachment
-                                    )
-                        else:
-                            result = await message.reply_document(
-                                document=medias[0],
-                                caption=f.caption,
-                                reply_markup=origin_link(f.url),
-                                filename=f.mediafilename[0],
-                            )
-                            await cache_media(
-                                f.mediafilename[0], result.effective_attachment
-                            )
+                    medias, mediathumb = await get_media_mediathumb_by_parser(
+                        f,
+                        compression=False,
+                        media_check_ignore=True,
+                        no_media=no_media,
+                    )
+                    mediafilenames = f.mediafilename
+                    if mediathumb:
+                        medias.insert(0, mediathumb)
+                        mediafilenames.insert(0, f.mediathumbfilename)
+                    logger.info(f"上传中: {f.url}")
+                    if len(medias) > 1:
+                        result = await message.reply_media_group(
+                            [
+                                InputMediaDocument(media, filename=filename)
+                                for media, filename in zip(medias, mediafilenames)
+                            ],
+                        )
+                        await message.reply_text(
+                            f.caption, reply_markup=origin_link(f.url)
+                        )
+                        for filename, item in zip(mediafilenames, result):
+                            if isinstance(
+                                item.effective_attachment, tuple
+                            ):  # PhotoSize
+                                await cache_media(
+                                    filename, item.effective_attachment[0]
+                                )
+                            else:
+                                await cache_media(filename, item.effective_attachment)
+                    else:
+                        result = await message.reply_document(
+                            document=medias[0],
+                            caption=f.caption,
+                            reply_markup=origin_link(f.url),
+                            filename=f.mediafilename[0],
+                        )
+                        await cache_media(
+                            f.mediafilename[0], result.effective_attachment
+                        )
                 finally:
                     for item in medias:
                         if isinstance(item, Path):
@@ -791,10 +789,10 @@ async def post_init(application: Application):
     await application.bot.set_my_commands(
         [
             ["start", "关于本 Bot"],
-            ["file", "获取匹配内容原始文件"],
-            ["clear", "清除匹配内容缓存"],
             ["parse", "获取匹配内容"],
-            ["cover", "获取匹配内容封面"],
+            ["file", "获取匹配内容原始文件"],
+            ["cover", "获取匹配内容原始文件预览"],
+            ["clear", "清除匹配内容缓存"],
         ]
     )
     bot_me = await application.bot.get_me()
@@ -808,6 +806,7 @@ async def post_shutdown(application: Application):
 def add_handler(application: Application):
     application.add_handler(CommandHandler("start", start, block=False))
     application.add_handler(CommandHandler("file", fetch, block=False))
+    application.add_handler(CommandHandler("cover", fetch, block=False))
     application.add_handler(CommandHandler("clear", clear, block=False))
     application.add_handler(
         MessageHandler(
