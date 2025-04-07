@@ -3,7 +3,8 @@ version: '3.8'
 services:
   redis:
     image: redis:latest
-    env_file: stack.env
+    env_file: 
+      - stack.env
     volumes:
       - redis-data:/data
     restart: always
@@ -12,7 +13,8 @@ services:
 
   postgres:
     image: postgres:latest
-    env_file: stack.env
+    env_file: 
+      - stack.env
     volumes:
       - postgres-data:/var/lib/postgresql/data
     restart: always
@@ -21,7 +23,8 @@ services:
 
   telegram-bot-api:
     image: aiogram/telegram-bot-api:latest
-    env_file: stack.env
+    env_file: 
+      - stack.env
     volumes:
       - telegram-bot-api-data:/var/lib/telegram-bot-api
     restart: always
@@ -34,7 +37,8 @@ services:
       - redis
       - postgres
       - telegram-bot-api
-    env_file: stack.env
+    env_file: 
+      - stack.env
     volumes:
       - telegram-bot-api-data:/var/lib/telegram-bot-api
     restart: always
