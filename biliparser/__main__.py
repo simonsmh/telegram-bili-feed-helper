@@ -375,7 +375,6 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 caption=f.caption,
                                 reply_markup=origin_link(f.url),
                                 supports_streaming=True,
-                                show_caption_above_media=True,
                                 cover=mediathumb,
                                 thumbnail=mediathumb,
                                 duration=f.mediaduration,
@@ -407,7 +406,6 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                     media[0],
                                     caption=f.caption,
                                     reply_markup=origin_link(f.url),
-                                    show_caption_above_media=True,
                                     filename=f.mediafilename[0],
                                 )
                         else:
@@ -658,7 +656,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     title=f.mediatitle,
                     description=f"{f.user}: {f.content}",
                     reply_markup=origin_link(f.url),
-                    show_caption_above_media=True,
                 )
                 if cache_file_id
                 else InlineQueryResultVideo(
@@ -668,7 +665,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     description=f"{f.user}: {f.content}",
                     mime_type="video/mp4",
                     reply_markup=origin_link(f.url),
-                    show_caption_above_media=True,
                     thumbnail_url=f.mediathumb,
                     video_url=referer_url(f.mediaurls[0], f.url),
                     video_duration=f.mediaduration,
@@ -709,7 +705,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             caption=f.caption,
                             title=f"{f.user}: {f.content}",
                             reply_markup=origin_link(f.url),
-                            show_caption_above_media=True,
                         )
                         if ".gif" in mediaurl
                         else InlineQueryResultCachedPhoto(
@@ -719,7 +714,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             title=f.user,
                             description=f.content,
                             reply_markup=origin_link(f.url),
-                            show_caption_above_media=True,
                         )
                     )
                     if cache_file_id
