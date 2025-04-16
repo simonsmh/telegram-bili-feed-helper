@@ -320,7 +320,7 @@ async def handle_dash_media(f, client):
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message, urls = message_to_urls(update, context)
-    if message is None or message.text is None:
+    if message is None:
         return
     if not urls:
         if message.text.startswith("/parse") or message.chat.type == ChatType.PRIVATE:
@@ -521,7 +521,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message, urls = message_to_urls(update, context)
-    if message is None or message.text is None:
+    if message is None:
         return
     if not urls:
         await message.reply_text("链接不正确")
