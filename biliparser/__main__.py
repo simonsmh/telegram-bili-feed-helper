@@ -322,8 +322,9 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message, urls = message_to_urls(update, context)
     if message is None:
         return
+    isParse = bool(message.text and message.text.startswith("/parse"))
     if not urls:
-        if message.text.startswith("/parse") or message.chat.type == ChatType.PRIVATE:
+        if isParse or message.chat.type == ChatType.PRIVATE:
             await message.reply_text("链接不正确")
         return
     logger.info(f"Parse: {urls}")
@@ -336,13 +337,10 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         for i in range(1, 5):
             if isinstance(f, Exception):
                 logger.warning(f"解析错误! {f}")
-                if message.text.startswith("/parse"):
+                if isParse:
                     await message.reply_text(str(f))
                 break
-            if f.mediafilesize and (
-                message.text.startswith("/parse")
-                or message.chat.type == ChatType.PRIVATE
-            ):
+            if f.mediafilesize and (isParse or message.chat.type == ChatType.PRIVATE):
                 temp_msgs.append(
                     await message.reply_text(
                         f"上传中，大约需要{round(f.mediafilesize / 1000000)}秒"
