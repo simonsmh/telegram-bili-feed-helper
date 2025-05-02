@@ -348,18 +348,22 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         pass
     temp_msgs = []
     for f in await biliparser(urls):
-        for i in range(1, 5):
+        MAX_RETRIES: int = 4
+        for attempt in range(1, MAX_RETRIES + 1):
             if isinstance(f, Exception):
                 logger.warning(f"解析错误! {f}")
                 if isParse:
                     await message.reply_text(str(f))
                 break
             if f.mediafilesize and (isParse or message.chat.type == ChatType.PRIVATE):
-                temp_msgs.append(
-                    await message.reply_text(
-                        f"上传中，大约需要{round(f.mediafilesize / 1000000)}秒"
-                    )
+                wait_text = (
+                    "处理中，"
+                    if attempt == 1
+                    else f"第 {attempt}/{MAX_RETRIES} 次尝试处理 URL：\n{escape_markdown(f.url)}\n"
                 )
+                wait_text += f"大约需要 {round(f.mediafilesize / 1000000)} 秒"
+                wait_msg = await message.reply_text(wait_text)
+                temp_msgs.append(wait_msg)
             async with RedisCache().lock(f.url, timeout=2 * CACHES_TIMER["LOCK"]):
                 medias = []
                 mediathumb = None
@@ -479,7 +483,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     ):
                         await message.chat.leave()
                         logger.warning(
-                            f"{err} 第{i}次异常->权限不足, "
+                            f"{err} 第{attempt}次异常->权限不足，"
                             f"无法发送给 @{get_msg_username_or_chatid(message)}"
                         )
                         break
@@ -489,22 +493,22 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         or "Message thread not found" in err.message
                     ):
                         logger.warning(
-                            f"{err} 第{i}次异常->主题/话题已删除、关闭或早于加入时间, "
+                            f"{err} 第{attempt}次异常->主题/话题已删除、关闭或早于加入时间，"
                             f"无法发送给 @{get_msg_username_or_chatid(message)}"
                         )
                         break
                     else:
-                        logger.error(f"{err} 第{i}次异常->下载后上传: {f.url}")
+                        logger.error(f"{err} 第{attempt}次异常->下载后上传: {f.url}")
                         f.mediaraws = True
                     continue
                 except RetryAfter as err:
                     await asyncio.sleep(err.retry_after)
-                    logger.error(f"{err} 第{i}次异常->限流: {f.url}")
+                    logger.error(f"{err} 第{attempt}次异常->限流: {f.url}")
                     continue
                 except NetworkError as err:
-                    logger.error(f"{err} 第{i}次异常->服务错误: {f.url}")
+                    logger.error(f"{err} 第{attempt}次异常->服务错误: {f.url}")
                 except httpx.HTTPError as err:
-                    logger.error(f"{err} 第{i}次异常->请求异常: {f.url}")
+                    logger.error(f"{err} 第{attempt}次异常->请求异常: {f.url}")
                 except Exception as err:
                     logger.exception(err)
                 else:
