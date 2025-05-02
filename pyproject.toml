@@ -1,37 +1,36 @@
-[tool.poetry]
+[project]
+authors = [
+    {name = "simonsmh"},
+]
+license = {text = "GPLv3"}
+requires-python = "<4.0,>=3.13"
+dependencies = [
+    "aiomysql",
+    "asyncpg",
+    "beautifulsoup4",
+    "loguru",
+    "lxml",
+    "pillow",
+    "python-telegram-bot[all]",
+    "redis",
+    "telegraph[aio]",
+    "tortoise-orm[accel]",
+    "bilibili-api-python",
+    "tqdm",
+    "async-timeout",
+    "orjson",
+    "httpx[http2]",
+]
 name = "telegram-bili-feed-helper"
 version = "0.1.0"
 description = ""
-authors = ["simonsmh"]
-license = "GPLv3"
 readme = "README.md"
-packages = [{ include = "biliparser" }]
 
-[tool.poetry.dependencies]
-python = "^3.13"
-aiomysql = "^0.2.0"
-asyncpg = "^0.30.0"
-beautifulsoup4 = "^4.13.3"
-loguru = "^0.7.3"
-lxml = "^5.3.0"
-pillow = "^11.0.0"
-python-telegram-bot = {extras = ["all"], version = "^22.0"}
-redis = "^5.2.1"
-telegraph = {extras = ["aio"], version = "^2.2.0"}
-tortoise-orm = {extras = ["accel"], version = "^0.24.2"}
-bilibili-api-python = "^17.1.4"
-tqdm = "^4.67.1"
-async-timeout = "^5.0.1"
-orjson = "^3.10.16"
-httpx = {extras = ["http2"], version = "^0.28.1"}
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.3.5"
-pytest-asyncio = "^0.26.0"
-
-[tool.poetry.scripts]
+[project.scripts]
 bilifeedbot = "biliparser.__main__:main"
 
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
