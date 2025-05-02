@@ -5,6 +5,7 @@ import subprocess
 import sys
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import httpx
@@ -26,6 +27,7 @@ from telegram import (
     InputMediaPhoto,
     InputMediaVideo,
     InputTextMessageContent,
+    Message,
     MessageEntity,
     MessageOriginChannel,
     MessageOriginChat,
@@ -86,15 +88,25 @@ def origin_link(content: str) -> InlineKeyboardMarkup:
     )
 
 
-async def get_description(context: ContextTypes.DEFAULT_TYPE):
+async def get_description(context: ContextTypes.DEFAULT_TYPE) -> str:
     bot_me = await context.bot.get_me()
-    return f"欢迎使用 @{bot_me.username} 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组或频道自动匹配消息。\nInline 模式限制: 只可发单张图，消耗设备流量，安全性低\n群组模式限制: {'' if LOCAL_MODE else '图片小于10M，视频小于50M，'}通过 Bot 上传速度较慢"
+    description: str = (
+        f"欢迎使用 @{bot_me.username} 的 Inline 模式来转发动态，您也可以将 Bot 添加到群组或频道自动匹配消息。\n"
+        f"Inline 模式限制：只可发单张图，消耗设备流量，安全性低。\n"
+        f"群组模式限制：{'图片小于 10MB，视频小于 50MB，' if not LOCAL_MODE else ''}通过 Bot 上传速度较慢。\n"
+    )
+    return description
 
 
-async def get_cache_media(filename):
+def get_msg_username_or_chatid(message: Message) -> str:
+    return message.chat.username if message.chat.username else str(message.chat.id)
+
+
+async def get_cache_media(filename) -> str | None:
     file = await file_cache.get_or_none(mediafilename=filename)
     if file:
         return file.file_id
+    return None
 
 
 async def get_media(
@@ -109,7 +121,7 @@ async def get_media(
     if isinstance(url, Path):
         return url
     if not no_cache:
-        file_id: str | None = await get_cache_media(filename)
+        file_id = await get_cache_media(filename)
         if file_id:
             return file_id
     LOCAL_MEDIA_FILE_PATH.mkdir(parents=True, exist_ok=True)
@@ -183,7 +195,9 @@ async def cache_media(
         return
 
 
-def message_to_urls(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def message_to_urls(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> tuple[Message | None, list[Any]]:
     message = update.message or update.channel_post
     if (
         message is None
@@ -278,7 +292,7 @@ async def get_media_mediathumb_by_parser(
         return media, mediathumb
 
 
-async def handle_dash_media(f, client):
+async def handle_dash_media(f, client: httpx.AsyncClient):
     res = []
     try:
         cache_dash_file = LOCAL_MEDIA_FILE_PATH / f.mediafilename[0]
@@ -465,7 +479,8 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     ):
                         await message.chat.leave()
                         logger.warning(
-                            f"{err} 第{i}次异常->权限不足, 无法发送给{'@' + message.chat.username if message.chat.username else message.chat.id}"
+                            f"{err} 第{i}次异常->权限不足, "
+                            f"无法发送给 @{get_msg_username_or_chatid(message)}"
                         )
                         break
                     elif (
@@ -474,7 +489,8 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         or "Message thread not found" in err.message
                     ):
                         logger.warning(
-                            f"{err} 第{i}次异常->主题/话题已删除、关闭或早于加入时间，无法发送给{'@' + message.chat.username if message.chat.username else message.chat.id}"
+                            f"{err} 第{i}次异常->主题/话题已删除、关闭或早于加入时间, "
+                            f"无法发送给 @{get_msg_username_or_chatid(message)}"
                         )
                         break
                     else:
@@ -500,7 +516,8 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             and not message.reply_to_message
                             and message.text is not None
                         ):
-                            # try to delete only if bot have delete permission and this message is only for sharing
+                            # Try to delete only if bot have delete permission
+                            # and this message is only for sharing
                             match = re.match(BILIBILI_SHARE_URL_REGEX, message.text)
                             if urls[0] == message.text or (
                                 match and match.group(0) == message.text
@@ -512,7 +529,9 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     for item in medias:
                         if isinstance(item, Path):
                             item.unlink(missing_ok=True)
-            f = (await biliparser(f.url))[0]  # 重试获取该条链接信息
+
+            # Retry to obtain the link information
+            f = (await biliparser(f.url))[0]
     for temp_msg in temp_msgs:
         await temp_msg.delete()
 
@@ -606,7 +625,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         InlineQueryResultArticle(
             id=uuid4().hex,
             title="帮助",
-            description="将 Bot 添加到群组或频道可以自动匹配消息, 请注意 Inline 模式存在限制: 只可发单张图，消耗设备流量。",
+            description="将 Bot 添加到群组或频道可以自动匹配消息，请注意 Inline 模式存在限制：只可发单张图，消耗设备流量。",
             reply_markup=SOURCE_CODE_MARKUP,
             input_message_content=InputTextMessageContent(
                 await get_description(context)
@@ -626,7 +645,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         results = [
             InlineQueryResultArticle(
                 id=uuid4().hex,
-                title="解析错误!",
+                title="解析错误！",
                 description=escape_markdown(f.__str__()),
                 input_message_content=InputTextMessageContent(str(f)),
             )
@@ -647,48 +666,52 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if f.mediatype == "video":
             cache_file_id = await get_cache_media(f.mediafilename[0])
             results = [
-                InlineQueryResultCachedVideo(
-                    id=uuid4().hex,
-                    video_file_id=cache_file_id,
-                    caption=f.caption,
-                    title=f.mediatitle,
-                    description=f"{f.user}: {f.content}",
-                    reply_markup=origin_link(f.url),
+                (
+                    InlineQueryResultCachedVideo(
+                        id=uuid4().hex,
+                        video_file_id=cache_file_id,
+                        caption=f.caption,
+                        title=f.mediatitle,
+                        description=f"{f.user}: {f.content}",
+                        reply_markup=origin_link(f.url),
+                    )
+                    if cache_file_id
+                    else InlineQueryResultVideo(
+                        id=uuid4().hex,
+                        caption=f.caption,
+                        title=f.mediatitle,
+                        description=f"{f.user}: {f.content}",
+                        mime_type="video/mp4",
+                        reply_markup=origin_link(f.url),
+                        thumbnail_url=f.mediathumb,
+                        video_url=referer_url(f.mediaurls[0], f.url),
+                        video_duration=f.mediaduration,
+                        video_width=f.mediadimention["width"],
+                        video_height=f.mediadimention["height"],
+                    )
                 )
-                if cache_file_id
-                else InlineQueryResultVideo(
-                    id=uuid4().hex,
-                    caption=f.caption,
-                    title=f.mediatitle,
-                    description=f"{f.user}: {f.content}",
-                    mime_type="video/mp4",
-                    reply_markup=origin_link(f.url),
-                    thumbnail_url=f.mediathumb,
-                    video_url=referer_url(f.mediaurls[0], f.url),
-                    video_duration=f.mediaduration,
-                    video_width=f.mediadimention["width"],
-                    video_height=f.mediadimention["height"],
-                ),
             ]
         elif f.mediatype == "audio":
             cache_file_id = await get_cache_media(f.mediafilename[0])
             results = [
-                InlineQueryResultCachedAudio(
-                    id=uuid4().hex,
-                    audio_file_id=cache_file_id,
-                    caption=f.caption,
-                    reply_markup=origin_link(f.url),
+                (
+                    InlineQueryResultCachedAudio(
+                        id=uuid4().hex,
+                        audio_file_id=cache_file_id,
+                        caption=f.caption,
+                        reply_markup=origin_link(f.url),
+                    )
+                    if cache_file_id
+                    else InlineQueryResultAudio(
+                        id=uuid4().hex,
+                        caption=f.caption,
+                        title=f.mediatitle,
+                        audio_duration=f.mediaduration,
+                        audio_url=referer_url(f.mediaurls[0], f.url),
+                        performer=f.user,
+                        reply_markup=origin_link(f.url),
+                    )
                 )
-                if cache_file_id
-                else InlineQueryResultAudio(
-                    id=uuid4().hex,
-                    caption=f.caption,
-                    title=f.mediatitle,
-                    audio_duration=f.mediaduration,
-                    audio_url=referer_url(f.mediaurls[0], f.url),
-                    performer=f.user,
-                    reply_markup=origin_link(f.url),
-                ),
             ]
         else:
             cache_file_ids = await asyncio.gather(
@@ -753,7 +776,7 @@ async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         for key, value in f.cache_key.items():
             if value:
                 await RedisCache().delete(value)
-        await message.reply_text(f"清除缓存成功: {escape_markdown(f.url)}\n请重新获取")
+        await message.reply_text(f"清除缓存成功：{escape_markdown(f.url)}\n请重新获取")
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -769,7 +792,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
-async def post_init(application: Application):
+async def post_init(application: Application) -> None:
     await db_init()
     await application.bot.set_my_commands(
         [
@@ -784,11 +807,11 @@ async def post_init(application: Application):
     logger.info(f"Bot @{bot_me.username} started.")
 
 
-async def post_shutdown(application: Application):
+async def post_shutdown(application: Application) -> None:
     await db_close()
 
 
-def add_handler(application: Application):
+def add_handler(application: Application) -> None:
     application.add_handler(CommandHandler("start", start, block=False))
     application.add_handler(CommandHandler("file", fetch, block=False))
     application.add_handler(CommandHandler("cover", fetch, block=False))
@@ -807,7 +830,7 @@ def add_handler(application: Application):
     application.add_error_handler(error_handler)
 
 
-def main():
+def main() -> None:
     if os.environ.get("TOKEN"):
         TOKEN = os.environ["TOKEN"]
     elif len(sys.argv) >= 2:
