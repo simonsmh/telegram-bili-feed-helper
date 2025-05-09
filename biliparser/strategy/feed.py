@@ -52,7 +52,9 @@ class Feed(ABC):
                     select_urls.insert(0, test_url)
         for select_url in select_urls:
             try:
-                select_url = re.sub(r"&buvid=[^&]+", "&buvid=", select_url) ## 清除buvid参数
+                select_url = re.sub(
+                    r"&buvid=[^&]+", "&buvid=", select_url
+                )  ## 清除buvid参数
                 async with self.client.stream(
                     "GET", select_url, headers=header
                 ) as response:
@@ -193,13 +195,19 @@ class Feed(ABC):
             caption += self.user_markdown + ":\n"
         prev_caption = caption
         if self.content_markdown:
-            caption += (self.clean_cn_tag_style(self.content_markdown)) + "\n"
+            caption += (
+                "**>"
+                + (self.clean_cn_tag_style(self.content_markdown)).replace("\n", "\n>")
+                + "||"
+            )
         if len(caption) > MessageLimit.CAPTION_LENGTH:
             return prev_caption
         prev_caption = caption
         if self.comment_markdown:
-            caption += "〰〰〰〰〰〰〰〰〰〰\n" + (
-                self.clean_cn_tag_style(self.comment_markdown)
+            caption += (
+                "**>"
+                + (self.clean_cn_tag_style(self.comment_markdown)).replace("\n", "\n>")
+                + "||"
             )
         if len(caption) > MessageLimit.CAPTION_LENGTH:
             return prev_caption

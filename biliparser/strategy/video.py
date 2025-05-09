@@ -1,3 +1,4 @@
+import datetime
 import os
 import re
 from functools import cached_property
@@ -106,6 +107,10 @@ class Video(Feed):
             "video:bvid": f"video:bvid:{self.bvid}",
         }
 
+    @staticmethod
+    def wan(num):
+        return f"{num / 10000:.2f}万" if num >= 10000 else num
+
     def clear_cached_properties(self):
         for key in ["epid", "ssid", "aid", "bvid", "cid"]:
             if hasattr(self, key) and getattr(self, key) is None:
@@ -147,11 +152,9 @@ class Video(Feed):
                         break
             if result:
                 self.mediacontent = video_result
-                self.mediathumb = detail.get("pic")
                 self.mediaduration = round(
                     video_result["data"]["durl"][0]["length"] / 1000
                 )
-                self.mediadimention = detail.get("pages")[0].get("dimension")
                 self.mediaurls = url
                 self.mediatype = "video"
                 self.mediaraws = False
@@ -233,7 +236,7 @@ class Video(Feed):
                 )
             ):
                 logger.info(
-                    f"选择Dash视频清晰度: {video_stream.video_quality.name} 大小：{video_size}"
+                    f"选择Dash视频清晰度:{video_stream.video_quality.name} 大小:{video_size}"
                 )
                 self.dashurls.insert(0, video_stream.url)
                 self.dashtype = "dash"
@@ -413,14 +416,32 @@ class Video(Feed):
         detail = self.infocontent["data"]
         self.user = detail.get("owner").get("name")
         self.uid = detail.get("owner").get("mid")
-        self.content = detail.get("tname", "发布视频")
+        content = "发布视频"
+        if detail.get("tname"):
+            content += f":{detail.get('tname')}"
+        if detail.get("tname_v2"):
+            content += f"-{detail.get('tname_v2')}\n"
         if detail.get("pages") and len(detail["pages"]) > 1:
-            self.content += f" - 第{self.page}P/共{len(detail['pages'])}P"
-        if detail.get("dynamic") or detail.get("desc"):
-            self.content += f" - {detail.get('dynamic') or detail.get('desc')}"
+            content += f"第{self.page}P/共{len(detail['pages'])}P\n"
+        if detail.get("stat"):
+            content += f"播放量:{self.wan(detail.get('stat').get('view', 0))}\t\t弹幕:{self.wan(detail.get('stat').get('danmaku', 0))}\t\t评论:{self.wan(detail.get('stat').get('reply', 0))}\n"
+            content += f"点赞:{self.wan(detail.get('stat').get('like', 0))}\t\t投币:{self.wan(detail.get('stat').get('coin', 0))}\t\t收藏:{self.wan(detail.get('stat').get('favorite', 0))}\n"
+        if detail.get("pubdate"):
+            content += f"发布日期:{datetime.datetime.fromtimestamp(detail.get('pubdate')).strftime('%Y-%m-%d %H:%M:%S')}\n"
+        if detail.get("ctime"):
+            content += f"上传日期:{datetime.datetime.fromtimestamp(detail.get('ctime')).strftime('%Y-%m-%d %H:%M:%S')}\n"
+        if detail.get("duration"):
+            content += f"时长:{datetime.timedelta(seconds=detail.get('duration', 0))}\n"
+        self.content = content
         self.extra_markdown = f"[{escape_markdown(detail.get('title'))}]({self.url})"
+        if detail.get("desc") or detail.get("dynamic"):
+            self.extra_markdown += "\n**>" + escape_markdown(
+                detail.get("desc") or detail.get("dynamic")
+            ).replace("\n", "\n>") + "||"
         self.mediatitle = detail.get("title")
         self.mediaurls = detail.get("pic")
+        self.mediathumb = detail.get("pic")
+        self.mediadimention = detail.get("pages")[self.page - 1].get("dimension")
         self.mediatype = "image"
         self.replycontent = await self.parse_reply(self.aid, self.reply_type, seek_id)
         try:
