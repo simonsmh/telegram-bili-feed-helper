@@ -192,11 +192,11 @@ class Feed(ABC):
             else self.extra_markdown + "\n"
         )  # I don't need url twice with extra_markdown
         if self.user:
-            caption += self.user_markdown + ":\n"
+            caption += self.user_markdown + ":"
         prev_caption = caption
         if self.content_markdown:
             caption += (
-                "**>"
+                "\n**>"
                 + (self.clean_cn_tag_style(self.content_markdown)).replace("\n", "\n>")
                 + "||"
             )
@@ -205,7 +205,7 @@ class Feed(ABC):
         prev_caption = caption
         if self.comment_markdown:
             caption += (
-                "**>"
+                "\n**>"
                 + (self.clean_cn_tag_style(self.comment_markdown)).replace("\n", "\n>")
                 + "||"
             )
