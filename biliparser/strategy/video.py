@@ -418,9 +418,10 @@ class Video(Feed):
         self.uid = detail.get("owner").get("mid")
         content = "发布视频"
         if detail.get("tname"):
-            content += f":{detail.get('tname')}"
+            content += f"-{detail.get('tname')}"
         if detail.get("tname_v2"):
-            content += f"-{detail.get('tname_v2')}\n"
+            content += f"-{detail.get('tname_v2')}"
+        content += "\n"
         if detail.get("pages") and len(detail["pages"]) > 1:
             content += f"第{self.page}P/共{len(detail['pages'])}P\n"
         if detail.get("stat"):
