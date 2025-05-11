@@ -167,6 +167,7 @@ async def get_media(
                     raise NetworkError(
                         f"媒体文件类型错误: {mediatype} {url}->{referer}"
                     )
+                media.unlink(missing_ok=True)
                 temp_media.rename(media)
                 logger.info(f"完成下载: {media}")
                 return media
@@ -295,7 +296,10 @@ async def get_media_mediathumb_by_parser(
 async def handle_dash_media(f, client: httpx.AsyncClient):
     res = []
     try:
-        cache_dash_file = LOCAL_MEDIA_FILE_PATH / f.mediafilename[0]
+        if f.mediatype == "image": # 仅支持dash的场景
+            cache_dash_file = LOCAL_MEDIA_FILE_PATH / f"{f.bvid}.mp4"
+        else:
+            cache_dash_file = LOCAL_MEDIA_FILE_PATH / f.mediafilename[0]
         cache_dash = await get_cache_media(cache_dash_file.name)
         if cache_dash:
             return [cache_dash]
@@ -331,6 +335,10 @@ async def handle_dash_media(f, client: httpx.AsyncClient):
             if isinstance(item, Path):
                 item.unlink(missing_ok=True)
 
+def cleanup_medias(medias):
+    for item in medias:
+        if isinstance(item, Path):
+            item.unlink(missing_ok=True)
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message, urls = message_to_urls(update, context)
@@ -486,6 +494,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             f"{err} 第{attempt}次异常->权限不足，"
                             f"无法发送给 @{get_msg_username_or_chatid(message)}"
                         )
+                        cleanup_medias(medias)
                         break
                     elif (
                         "Topic_deleted" in err.message
@@ -496,14 +505,17 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             f"{err} 第{attempt}次异常->主题/话题已删除、关闭或早于加入时间，"
                             f"无法发送给 @{get_msg_username_or_chatid(message)}"
                         )
+                        cleanup_medias(medias)
                         break
                     else:
                         logger.error(f"{err} 第{attempt}次异常->下载后上传: {f.url}")
                         f.mediaraws = True
+                    cleanup_medias(medias)
                     continue
                 except RetryAfter as err:
                     await asyncio.sleep(err.retry_after)
                     logger.error(f"{err} 第{attempt}次异常->限流: {f.url}")
+                    cleanup_medias(medias)
                     continue
                 except NetworkError as err:
                     logger.error(f"{err} 第{attempt}次异常->服务错误: {f.url}")
@@ -530,9 +542,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     finally:
                         break
                 finally:
-                    for item in medias:
-                        if isinstance(item, Path):
-                            item.unlink(missing_ok=True)
+                    cleanup_medias(medias)
 
             # Retry to obtain the link information
             f = (await biliparser(f.url))[0]
@@ -599,9 +609,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             f.mediafilename[0], result.effective_attachment
                         )
                 finally:
-                    for item in medias:
-                        if isinstance(item, Path):
-                            item.unlink(missing_ok=True)
+                    cleanup_medias(medias)
 
 
 async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
