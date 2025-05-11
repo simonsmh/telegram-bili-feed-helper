@@ -297,6 +297,7 @@ async def handle_dash_media(f, client: httpx.AsyncClient):
     res = []
     try:
         if f.mediatype == "image": # 仅支持dash的场景
+            f.mediatype = "video"
             cache_dash_file = LOCAL_MEDIA_FILE_PATH / f"{f.bvid}.mp4"
         else:
             cache_dash_file = LOCAL_MEDIA_FILE_PATH / f.mediafilename[0]
