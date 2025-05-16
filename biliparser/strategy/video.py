@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlparse
 import orjson
 from bilibili_api import video
 from telegram.constants import FileSizeLimit
+from difflib import SequenceMatcher
 
 from ..cache import CACHES_TIMER, RedisCache
 from ..utils import (
@@ -20,14 +21,13 @@ from ..utils import (
 )
 from .feed import Feed
 
-QN = [64, 32, 16]
-
 
 class Video(Feed):
     cidcontent: dict = {}
     epcontent: dict = {}
     infocontent: dict = {}
     page = 1
+    quality = video.VideoQuality._8K
     reply_type: int = 1
     __dashurls: list[str] = []
     dashtype: str = ""
@@ -111,15 +111,26 @@ class Video(Feed):
     def wan(num):
         return f"{num / 10000:.2f}万" if num >= 10000 else num
 
+    def set_quality(self, in_str: str | None):
+        if in_str is None:
+            return
+        in_str = in_str.strip().upper().replace("+", "PLUS")
+        similarities = [
+            (opt, SequenceMatcher(lambda x: x == "_", in_str, opt).ratio())
+            for opt in [q.name for q in video.VideoQuality]
+        ]
+        best_match = max(similarities, key=lambda x: x[1])
+        self.quality = video.VideoQuality[best_match[0]]
+
     def clear_cached_properties(self):
         for key in ["epid", "ssid", "aid", "bvid", "cid"]:
             if hasattr(self, key) and getattr(self, key) is None:
                 delattr(self, key)
 
-    async def __get_video_result(self, detail, qn: int):
+    async def __get_video_result(self, qn: video.VideoQuality):
         params = {"avid": self.aid, "cid": self.cid}
         if qn:
-            params["qn"] = qn
+            params["qn"] = qn.value
         r = await self.client.get(
             BILI_API + "/x/player/playurl",
             params=params,
@@ -184,6 +195,7 @@ class Video(Feed):
         detecter = video.VideoDownloadURLDataDetecter(data=video_result.get("data"))
         streams = detecter.detect(
             video_min_quality=video.VideoQuality._360P,
+            video_max_quality=self.quality,
             codecs=[video.VideoCodecs(os.environ.get("VIDEO_CODEC", "avc"))],
         )  # 可以设置成hev/av01减少文件体积，但是tg不二压会造成部分老设备直接解码指定codec时不展示，需要指定成avc
         video_streams = [
@@ -247,7 +259,9 @@ class Video(Feed):
             logger.error(f"无可用Dash视频流清晰度: {streams}")
             return False
 
-    async def handle(self):
+    async def handle(self, extra: dict | None = None) -> "Video":
+        if extra:
+            self.set_quality(extra.get("quality"))
         logger.info(f"处理视频信息: 链接: {self.rawurl}")
         match = re.search(
             r"(?:bilibili\.com(?:/video|/bangumi/play)?|b23\.tv|acg\.tv)/(?:(?P<bvid>BV\w{10})|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+)|)/?\??(?:p=(?P<page>\d+))?",
@@ -429,16 +443,20 @@ class Video(Feed):
             content += f"点赞:{self.wan(detail.get('stat').get('like', 0))}\t\t投币:{self.wan(detail.get('stat').get('coin', 0))}\t\t收藏:{self.wan(detail.get('stat').get('favorite', 0))}\n"
         if detail.get("pubdate"):
             content += f"发布日期:{datetime.datetime.fromtimestamp(detail.get('pubdate')).strftime('%Y-%m-%d %H:%M:%S')}\n"
-        if detail.get("ctime"):
+        if detail.get("ctime") and detail.get("ctime") != detail.get("pubdate"):
             content += f"上传日期:{datetime.datetime.fromtimestamp(detail.get('ctime')).strftime('%Y-%m-%d %H:%M:%S')}\n"
         if detail.get("duration"):
             content += f"时长:{datetime.timedelta(seconds=detail.get('duration', 0))}\n"
         self.content = content
         self.extra_markdown = f"[{escape_markdown(detail.get('title'))}]({self.url})"
         if detail.get("desc") or detail.get("dynamic"):
-            self.extra_markdown += "\n**>" + escape_markdown(
-                detail.get("desc") or detail.get("dynamic")
-            ).replace("\n", "\n>") + "||"
+            self.extra_markdown += (
+                "\n**>"
+                + escape_markdown(detail.get("desc") or detail.get("dynamic")).replace(
+                    "\n", "\n>"
+                )
+                + "||"
+            )
         self.mediatitle = detail.get("title")
         self.mediaurls = detail.get("pic")
         self.mediathumb = detail.get("pic")
@@ -446,8 +464,12 @@ class Video(Feed):
         self.mediatype = "image"
         self.replycontent = await self.parse_reply(self.aid, self.reply_type, seek_id)
         try:
-            for qn in QN:
-                if await self.__get_video_result(detail, qn):
+            for mp4_qn in [
+                video.VideoQuality._720P,
+                video.VideoQuality._480P,
+                video.VideoQuality._360P,
+            ]:
+                if await self.__get_video_result(mp4_qn):
                     break
             await self.__get_dash_video()
         except Exception as e:

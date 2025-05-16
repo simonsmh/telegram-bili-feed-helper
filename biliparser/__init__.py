@@ -9,10 +9,10 @@ from .utils import ParserException, headers, logger, retry_catcher
 
 
 @retry_catcher
-async def __feed_parser(client: httpx.AsyncClient, url: str):
+async def __feed_parser(client: httpx.AsyncClient, url: str, extra: dict | None = None):
     # bypass b23 short link
     if re.search(r"(?:^|/)(?:BV\w{10}|av\d+|ep\d+|ss\d+)", url):
-        return await Video(url if "/" in url else f"b23.tv/{url}", client).handle()
+        return await Video(url if "/" in url else f"b23.tv/{url}", client).handle(extra)
     r = await client.get(url)
     url = str(r.url)
     logger.debug(f"URL: {url}")
@@ -39,7 +39,9 @@ async def __feed_parser(client: httpx.AsyncClient, url: str):
     raise ParserException("URL错误", url)
 
 
-async def biliparser(urls) -> list[Video | Read | Audio | Live | Opus]:
+async def biliparser(
+    urls, extra: dict | None = None
+) -> list[Video | Read | Audio | Live | Opus]:
     if isinstance(urls, str):
         urls = [urls]
     elif isinstance(urls, tuple):
@@ -56,6 +58,7 @@ async def biliparser(urls) -> list[Video | Read | Audio | Live | Opus]:
                 f"http://{url}"
                 if not url.startswith(("http:", "https:", "av", "BV"))
                 else url,
+                extra,
             )
             for url in list(set(urls))
         )

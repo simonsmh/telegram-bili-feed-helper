@@ -47,6 +47,7 @@ from telegram.ext import (
     filters,
 )
 from tqdm import tqdm
+from bilibili_api import video
 
 from . import biliparser
 from .cache import CACHES_TIMER, RedisCache
@@ -76,16 +77,6 @@ SOURCE_CODE_MARKUP = InlineKeyboardMarkup(
         ]
     ]
 )
-
-
-def origin_link(content: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(text="原链接", url=content),
-            ]
-        ]
-    )
 
 
 async def get_description(context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -296,9 +287,11 @@ async def get_media_mediathumb_by_parser(
 async def handle_dash_media(f, client: httpx.AsyncClient):
     res = []
     try:
-        if f.mediatype == "image": # 仅支持dash的场景
+        if (
+            f.mediatype == "image" or f.quality != video.VideoQuality._8K
+        ):  # 仅支持dash/自定义清晰度的场景
             f.mediatype = "video"
-            cache_dash_file = LOCAL_MEDIA_FILE_PATH / f"{f.bvid}.mp4"
+            cache_dash_file = LOCAL_MEDIA_FILE_PATH / f"{f.bvid}{f.quality.name}.mp4"
         else:
             cache_dash_file = LOCAL_MEDIA_FILE_PATH / f.mediafilename[0]
         cache_dash = await get_cache_media(cache_dash_file.name)
@@ -336,18 +329,33 @@ async def handle_dash_media(f, client: httpx.AsyncClient):
             if isinstance(item, Path):
                 item.unlink(missing_ok=True)
 
+
 def cleanup_medias(medias):
     for item in medias:
         if isinstance(item, Path):
             item.unlink(missing_ok=True)
 
+
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message, urls = message_to_urls(update, context)
     if message is None:
         return
-    isParse = bool(message.text and message.text.startswith("/parse"))
+    isParse, isVideo = (
+        bool(message.text and message.text.startswith("/parse")),
+        bool(message.text and message.text.startswith("/video")),
+    )
+    extra = None
+    if isVideo:
+        if (
+            not message.text
+            or message.text == "/video"
+            or len(texts := message.text.split(" ")) < 2
+        ):
+            await message.reply_text("参数不正确，例如：/video 720P BV1Y25Nz4EZ3")
+            return
+        extra = {"quality": texts[1]}
     if not urls:
-        if isParse or message.chat.type == ChatType.PRIVATE:
+        if isParse or isVideo or message.chat.type == ChatType.PRIVATE:
             await message.reply_text("链接不正确")
         return
     logger.info(f"Parse: {urls}")
@@ -356,15 +364,17 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception:
         pass
     temp_msgs = []
-    for f in await biliparser(urls):
+    for f in await biliparser(urls, extra=extra):
         MAX_RETRIES: int = 4
         for attempt in range(1, MAX_RETRIES + 1):
             if isinstance(f, Exception):
                 logger.warning(f"解析错误! {f}")
-                if isParse:
+                if isParse or isVideo:
                     await message.reply_text(str(f))
                 break
-            if f.mediafilesize and (isParse or message.chat.type == ChatType.PRIVATE):
+            if f.mediafilesize and (
+                isParse or isVideo or message.chat.type == ChatType.PRIVATE
+            ):
                 wait_text = (
                     "处理中，"
                     if attempt == 1
@@ -378,9 +388,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 mediathumb = None
                 try:
                     if not f.mediaurls:
-                        await message.reply_text(
-                            f.caption, reply_markup=origin_link(f.url)
-                        )
+                        await message.reply_text(f.caption)
                         break
                     else:
                         media, mediathumb = await get_media_mediathumb_by_parser(f)
@@ -390,15 +398,12 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 f.mediaurls = f.mediathumb
                                 f.mediatype = "image"
                             else:
-                                await message.reply_text(
-                                    f.caption, reply_markup=origin_link(f.url)
-                                )
+                                await message.reply_text(f.caption)
                                 break
                         if f.mediatype == "video":
                             result = await message.reply_video(
                                 media[0],
                                 caption=f.caption,
-                                reply_markup=origin_link(f.url),
                                 supports_streaming=True,
                                 cover=mediathumb,
                                 thumbnail=mediathumb,
@@ -413,7 +418,6 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 caption=f.caption,
                                 duration=f.mediaduration,
                                 performer=f.user,
-                                reply_markup=origin_link(f.url),
                                 thumbnail=mediathumb,
                                 title=f.mediatitle,
                                 filename=f.mediafilename[0],
@@ -423,14 +427,12 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 result = await message.reply_animation(
                                     media[0],
                                     caption=f.caption,
-                                    reply_markup=origin_link(f.url),
                                     filename=f.mediafilename[0],
                                 )
                             else:
                                 result = await message.reply_photo(
                                     media[0],
                                     caption=f.caption,
-                                    reply_markup=origin_link(f.url),
                                     filename=f.mediafilename[0],
                                 )
                         else:
@@ -455,9 +457,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                     )
                                 ],
                             )
-                            await message.reply_text(
-                                f.caption, reply_markup=origin_link(f.url)
-                            )
+                            await message.reply_text(f.caption)
                         # store file caches
                         if isinstance(result, tuple):  # media group
                             for filename, item in zip(f.mediafilename, result):
@@ -553,7 +553,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message, urls = message_to_urls(update, context)
-    if message is None:
+    if message is None or not message.text:
         return
     if not urls:
         await message.reply_text("链接不正确")
@@ -587,9 +587,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 for media, filename in zip(medias, mediafilenames)
                             ],
                         )
-                        await message.reply_text(
-                            f.caption, reply_markup=origin_link(f.url)
-                        )
+                        await message.reply_text(f.caption)
                         for filename, item in zip(mediafilenames, result):
                             if isinstance(
                                 item.effective_attachment, tuple
@@ -603,7 +601,6 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         result = await message.reply_document(
                             document=medias[0],
                             caption=f.caption,
-                            reply_markup=origin_link(f.url),
                             filename=f.mediafilename[0],
                         )
                         await cache_media(
@@ -671,7 +668,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 id=uuid4().hex,
                 title=f.user,
                 description=f.content,
-                reply_markup=origin_link(f.url),
                 input_message_content=InputTextMessageContent(f.caption),
             )
         ]
@@ -686,7 +682,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                         caption=f.caption,
                         title=f.mediatitle,
                         description=f"{f.user}: {f.content}",
-                        reply_markup=origin_link(f.url),
                     )
                     if cache_file_id
                     else InlineQueryResultVideo(
@@ -695,7 +690,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                         title=f.mediatitle,
                         description=f"{f.user}: {f.content}",
                         mime_type="video/mp4",
-                        reply_markup=origin_link(f.url),
                         thumbnail_url=f.mediathumb,
                         video_url=referer_url(f.mediaurls[0], f.url),
                         video_duration=f.mediaduration,
@@ -712,7 +706,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                         id=uuid4().hex,
                         audio_file_id=cache_file_id,
                         caption=f.caption,
-                        reply_markup=origin_link(f.url),
                     )
                     if cache_file_id
                     else InlineQueryResultAudio(
@@ -722,7 +715,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                         audio_duration=f.mediaduration,
                         audio_url=referer_url(f.mediaurls[0], f.url),
                         performer=f.user,
-                        reply_markup=origin_link(f.url),
                     )
                 )
             ]
@@ -738,7 +730,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             gif_file_id=cache_file_id,
                             caption=f.caption,
                             title=f"{f.user}: {f.content}",
-                            reply_markup=origin_link(f.url),
                         )
                         if ".gif" in mediaurl
                         else InlineQueryResultCachedPhoto(
@@ -747,7 +738,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             caption=f.caption,
                             title=f.user,
                             description=f.content,
-                            reply_markup=origin_link(f.url),
                         )
                     )
                     if cache_file_id
@@ -757,7 +747,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             caption=f.caption,
                             title=f"{f.user}: {f.content}",
                             gif_url=mediaurl,
-                            reply_markup=origin_link(f.url),
                             thumbnail_url=mediaurl,
                         )
                         if ".gif" in mediaurl
@@ -767,7 +756,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             title=f.user,
                             description=f.content,
                             photo_url=mediaurl + "@1280w.jpg",
-                            reply_markup=origin_link(f.url),
                             thumbnail_url=mediaurl + "@512w_512h.jpg",
                         )
                     )
@@ -813,6 +801,7 @@ async def post_init(application: Application) -> None:
             ["parse", "获取匹配内容"],
             ["file", "获取匹配内容原始文件"],
             ["cover", "获取匹配内容原始文件预览"],
+            ["video", "获取匹配清晰度视频，需参数：/video 720P BV号"],
             ["clear", "清除匹配内容缓存"],
         ]
     )
@@ -829,6 +818,8 @@ def add_handler(application: Application) -> None:
     application.add_handler(CommandHandler("file", fetch, block=False))
     application.add_handler(CommandHandler("cover", fetch, block=False))
     application.add_handler(CommandHandler("clear", clear, block=False))
+    application.add_handler(CommandHandler("video", parse, block=False))
+    application.add_handler(CommandHandler("parse", parse, block=False))
     application.add_handler(
         MessageHandler(
             filters.Entity(MessageEntity.URL)
