@@ -47,7 +47,7 @@ from telegram.ext import (
     filters,
 )
 from tqdm import tqdm
-from bilibili_api import video
+from bilibili_api.video import VideoQuality
 
 from . import biliparser
 from .cache import CACHES_TIMER, RedisCache
@@ -288,7 +288,7 @@ async def handle_dash_media(f, client: httpx.AsyncClient):
     res = []
     try:
         if (
-            f.mediatype == "image" or f.quality != video.VideoQuality._8K
+            f.mediatype == "image" or f.quality != VideoQuality._8K
         ):  # 仅支持dash/自定义清晰度的场景
             f.mediatype = "video"
             cache_dash_file = LOCAL_MEDIA_FILE_PATH / f"{f.bvid}{f.quality.name}.mp4"
