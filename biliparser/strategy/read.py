@@ -123,7 +123,7 @@ class Read(Feed):
                         title=title,
                         content=result,
                         author_name=self.user,
-                        author_url=f"https://space.bilibili.com/{self.uid}",
+                        author_url=self.url,
                     )
                 ).get("url")
             except orjson.JSONDecodeError:
@@ -151,7 +151,7 @@ class Read(Feed):
                         title=title,
                         html_content=result,
                         author_name=self.user,
-                        author_url=f"https://space.bilibili.com/{self.uid}",
+                        author_url=self.url,
                     )
                 ).get("url")
             logger.info(f"生成页面: {graphurl}")

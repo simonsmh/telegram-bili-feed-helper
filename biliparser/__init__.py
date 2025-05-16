@@ -18,7 +18,7 @@ async def __feed_parser(client: httpx.AsyncClient, url: str, extra: dict | None 
     logger.debug(f"URL: {url}")
     # main video
     if re.search(r"video|bangumi/play|festival", url):
-        return await Video(url, client).handle()
+        return await Video(url, client).handle(extra)
     # au audio
     elif "read" in url:
         return await Read(url, client).handle()
