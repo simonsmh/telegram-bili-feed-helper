@@ -42,8 +42,9 @@ class Feed(ABC):
         header = headers.copy()
         header["Referer"] = referer
         select_urls = [url]
-        if os.environ.get("UPOS_DOMAIN"):
-            domains = os.environ.get("UPOS_DOMAIN").split(",")
+        upos_domain = os.environ.get("UPOS_DOMAIN")
+        if upos_domain:
+            domains = upos_domain.split(",")
             if domains:
                 random.shuffle(domains)
                 domain = domains.pop()
@@ -184,34 +185,28 @@ class Feed(ABC):
     def cache_key(self):
         return {}
 
+    def _try_append_within_limit(self, components: list[str], content: str) -> bool:
+        if not content:
+            return True
+        test_content = "".join(components + [content])
+        if len(test_content) < MessageLimit.CAPTION_LENGTH:
+            components.append(content)
+            return True
+        return False
+
     @cached_property
-    def caption(self):
-        caption = (
-            escape_markdown(self.url)
-            if not self.extra_markdown
-            else self.extra_markdown + "\n"
-        )  # I don't need url twice with extra_markdown
+    def caption(self) -> str:
+        components = [f"{self.extra_markdown or escape_markdown(self.url)}\n"]
         if self.user:
-            caption += self.user_markdown + ":"
-        prev_caption = caption
-        if self.content_markdown:
-            caption += (
-                "\n**>"
-                + (self.clean_cn_tag_style(self.content_markdown)).replace("\n", "\n>")
-                + "||"
-            )
-        if len(caption) > MessageLimit.CAPTION_LENGTH:
-            return prev_caption
-        prev_caption = caption
-        if self.comment_markdown:
-            caption += (
-                "\n**>"
-                + (self.clean_cn_tag_style(self.comment_markdown)).replace("\n", "\n>")
-                + "||"
-            )
-        if len(caption) > MessageLimit.CAPTION_LENGTH:
-            return prev_caption
-        return caption
+            if not self._try_append_within_limit(components, f"{self.user_markdown}:"):
+                return "".join(components)
+        for content_source in [self.content_markdown, self.comment_markdown]:
+            if content_source:
+                formatted_content = f"\n**>{self.clean_cn_tag_style(content_source).replace('\n', '\n>')}||"
+                if formatted_content:
+                    if not self._try_append_within_limit(components, formatted_content):
+                        return "".join(components)
+        return "".join(components)
 
     async def parse_reply(self, oid, reply_type, seek_comment_id=None):
         logger.info(

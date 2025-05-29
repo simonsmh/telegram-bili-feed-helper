@@ -1,13 +1,13 @@
 import datetime
 import os
 import re
+from difflib import SequenceMatcher
 from functools import cached_property
 from urllib.parse import parse_qs, urlparse
 
 import orjson
 from bilibili_api import video
-from telegram.constants import FileSizeLimit
-from difflib import SequenceMatcher
+from telegram.constants import FileSizeLimit, MessageLimit
 
 from ..cache import CACHES_TIMER, RedisCache
 from ..utils import (
@@ -449,14 +449,16 @@ class Video(Feed):
             content += f"时长:{datetime.timedelta(seconds=detail.get('duration', 0))}\n"
         self.content = content
         self.extra_markdown = f"[{escape_markdown(detail.get('title'))}]({self.url})"
-        if detail.get("desc") or detail.get("dynamic"):
-            self.extra_markdown += (
-                "\n**>"
-                + escape_markdown(detail.get("desc") or detail.get("dynamic")).replace(
-                    "\n", "\n>"
-                )
-                + "||"
+        extra_desc = f"\n**{
+            escape_markdown(detail.get('desc') or detail.get('dynamic')).replace(
+                '\n', '\n>'
             )
+        }||"
+        if (
+            extra_desc
+            and len(self.extra_markdown + extra_desc) < MessageLimit.CAPTION_LENGTH
+        ):
+            self.extra_markdown += extra_desc
         self.mediatitle = detail.get("title")
         self.mediaurls = detail.get("pic")
         self.mediathumb = detail.get("pic")
