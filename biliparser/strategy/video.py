@@ -449,7 +449,7 @@ class Video(Feed):
             content += f"时长:{datetime.timedelta(seconds=detail.get('duration', 0))}\n"
         self.content = content
         self.extra_markdown = f"[{escape_markdown(detail.get('title'))}]({self.url})"
-        extra_desc = f"\n**{
+        extra_desc = f"\n**>{
             escape_markdown(detail.get('desc') or detail.get('dynamic')).replace(
                 '\n', '\n>'
             )
