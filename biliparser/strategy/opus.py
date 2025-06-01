@@ -4,7 +4,7 @@ from functools import cached_property, lru_cache, reduce
 import orjson
 
 from ..cache import CACHES_TIMER, RedisCache
-from ..utils import BILI_API, ParserException, escape_markdown, logger
+from ..utils import ParserException, bili_api_request, escape_markdown, logger
 from .feed import Feed
 
 
@@ -139,8 +139,9 @@ class Opus(Feed):
             logger.info(f"拉取动态缓存: {self.dynamic_id}")
         else:
             try:
-                r = await self.client.get(
-                    BILI_API + "/x/polymer/web-dynamic/desktop/v1/detail",
+                r = await bili_api_request(
+                    self.client,
+                    "/x/polymer/web-dynamic/desktop/v1/detail",
                     params={"id": self.dynamic_id},
                 )
                 response = r.json()

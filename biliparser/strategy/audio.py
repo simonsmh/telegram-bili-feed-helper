@@ -6,9 +6,9 @@ from telegram.constants import FileSizeLimit
 
 from ..cache import CACHES_TIMER, RedisCache
 from ..utils import (
-    BILI_API,
     LOCAL_MODE,
     ParserException,
+    bili_api_request,
     escape_markdown,
     logger,
 )
@@ -49,8 +49,9 @@ class Audio(Feed):
             logger.info(f"拉取音频缓存: {self.audio_id}")
         else:
             try:
-                r = await self.client.get(
-                    BILI_API + "/audio/music-service-c/songs/playing",
+                r = await bili_api_request(
+                    self.client,
+                    "/audio/music-service-c/songs/playing",
                     params={"song_id": self.audio_id},
                 )
                 self.infocontent = r.json()
@@ -89,8 +90,9 @@ class Audio(Feed):
             logger.info(f"拉取音频缓存: {self.audio_id}")
         else:
             try:
-                r = await self.client.get(
-                    BILI_API + "/audio/music-service-c/url",
+                r = await bili_api_request(
+                    self.client,
+                    "/audio/music-service-c/url",
                     params={
                         "songid": self.audio_id,
                         "mid": self.uid,
@@ -117,7 +119,9 @@ class Audio(Feed):
                 )
             except Exception as e:
                 logger.exception(f"缓存音频媒体错误: {e}")
-        audio_size, audio_url = await self.test_url_status_code(self.mediacontent["data"].get("cdns")[0], self.url)
+        audio_size, audio_url = await self.test_url_status_code(
+            self.mediacontent["data"].get("cdns")[0], self.url
+        )
         if audio_size:
             self.mediaurls = audio_url
             self.mediatype = "audio"

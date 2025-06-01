@@ -3,6 +3,7 @@ import os
 import re
 from functools import cached_property
 
+from httpx import HTTPStatusError
 import orjson
 from bs4 import BeautifulSoup
 from bs4.element import Tag
@@ -23,7 +24,7 @@ class Read(Feed):
     @cached_property
     def url(self):
         return f"https://www.bilibili.com/read/cv{self.read_id}"
-    
+
     @property
     def cache_key(self):
         return {
@@ -56,14 +57,19 @@ class Read(Feed):
             cv_content = orjson.loads(cache_base)  # type: ignore
         else:
             try:
-                r = await self.client.get(self.rawurl)
+                resp = await self.client.get(self.rawurl)
+                resp.raise_for_status()
+            except HTTPStatusError as e:
+                raise ParserException(
+                    f"文章页面获取错误:{self.read_id}", e.request.url, e
+                )
             except Exception as e:
                 raise ParserException(
                     f"文章页面获取错误:{self.read_id}", self.rawurl, e
                 )
                 # 3.解析文章
             cv_init = re.search(
-                r"window\.__INITIAL_STATE__=(.*?);\(function\(\)", r.text
+                r"window\.__INITIAL_STATE__=(.*?);\(function\(\)", resp.text
             )
             if not cv_init:
                 raise ParserException(

@@ -2,19 +2,27 @@ import asyncio
 import os
 import re
 
-import httpx
+from httpx import AsyncClient, HTTPStatusError
 
 from .strategy import Audio, Live, Opus, Read, Video
 from .utils import ParserException, headers, logger, retry_catcher
 
 
 @retry_catcher
-async def __feed_parser(client: httpx.AsyncClient, url: str, extra: dict | None = None):
+async def __feed_parser(client: AsyncClient, url: str, extra: dict | None = None):
     # bypass b23 short link
     if re.search(r"(?:^|/)(?:BV\w{10}|av\d+|ep\d+|ss\d+)", url):
         return await Video(url if "/" in url else f"b23.tv/{url}", client).handle(extra)
-    r = await client.get(url)
-    url = str(r.url)
+    try:
+        resp = await client.get(url)
+        resp.raise_for_status()
+    except HTTPStatusError as e:
+        logger.warning(f"URL请求失败 [{e.response.status_code}]: {e.request.url}")
+        raise ParserException("URL请求失败", url)
+    except Exception as e:
+        logger.error(f"URL请求异常 [{url}]: {str(e)}")
+        raise ParserException("URL请求异常", url)
+    url = str(resp.url)
     logger.debug(f"URL: {url}")
     # main video
     if re.search(r"video|bangumi/play|festival", url):
@@ -36,7 +44,7 @@ async def __feed_parser(client: httpx.AsyncClient, url: str, extra: dict | None 
     # dynamic opus
     elif re.search(r"^https?:\/\/[th]\.|dynamic|opus", url):
         return await Opus(url, client).handle()
-    raise ParserException("URL错误", url)
+    raise ParserException("URL无可用策略", url)
 
 
 async def biliparser(
@@ -46,7 +54,7 @@ async def biliparser(
         urls = [urls]
     elif isinstance(urls, tuple):
         urls = list(urls)
-    async with httpx.AsyncClient(
+    async with AsyncClient(
         headers=headers,
         http2=True,
         follow_redirects=True,

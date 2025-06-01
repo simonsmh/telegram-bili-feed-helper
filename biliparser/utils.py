@@ -4,14 +4,14 @@ import os
 import re
 import sys
 from io import BytesIO
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urljoin
 
+from httpx import AsyncClient, HTTPStatusError, Response
 from loguru import logger
 from PIL import Image
 
 from .cache import LOCAL_FILE_PATH
 from .credentialFactory import CredentialFactory
-
 
 logger.remove()
 logger.add(sys.stdout, backtrace=True, diagnose=True)
@@ -19,10 +19,9 @@ if os.environ.get("LOG_TO_FILE"):
     logger.add("bili_feed.log", backtrace=True, diagnose=True, rotation="1 MB")
 
 headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) bilibili_pc/1.12.1 Chrome/106.0.5249.199 Electron/21.3.3 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) bilibili_pc/1.16.4 Chrome/108.0.5359.215 Electron/22.3.27 Safari/537.36 build/1001016004"
 }
 
-BILI_API = os.environ.get("BILI_API", "https://api.bilibili.com")
 LOCAL_MODE = os.environ.get("LOCAL_MODE", False)
 LOCAL_MEDIA_FILE_PATH = LOCAL_FILE_PATH / ".tmp"
 credentialFactory = CredentialFactory()
@@ -95,3 +94,30 @@ def referer_url(url: str, referer: str):
     return (
         f"https://referer.simonsmh.workers.dev/?{urlencode(params)}#{get_filename(url)}"
     )
+
+
+async def bili_api_request(client: AsyncClient, path: str, **kwargs) -> Response:
+    url_prefixes = ["https://api.bilibili.com"]
+    bili_apis = os.environ.get("BILI_API")
+    if bili_apis:
+        url_prefixes = [*bili_apis.split(","), *url_prefixes]
+    for url_prefix in url_prefixes:
+        try:
+            url = urljoin(url_prefix.rstrip("/") + "/", path.lstrip("/"))
+            resp = await client.get(url, **kwargs)
+            resp.raise_for_status()
+            if resp.status_code == 200:
+                result = resp.json()
+                if result.get("code") == 0:
+                    logger.debug(
+                        f"biliAPI请求成功 [{resp.status_code}]: {url} -> {resp.text}"
+                    )
+                    return resp
+        except HTTPStatusError as e:
+            logger.warning(
+                f"biliAPI请求失败 [{e.response.status_code}]: {e.request.url}"
+            )
+        except Exception as e:
+            logger.error(f"biliAPI请求异常 [{url_prefix}]: {str(e)}")
+            continue
+    raise ParserException("biliAPI请求错误", path)

@@ -1,6 +1,7 @@
 import re
 from functools import cached_property
 
+from httpx import HTTPStatusError
 import orjson
 
 from ..cache import CACHES_TIMER, RedisCache
@@ -19,6 +20,7 @@ class Live(Feed):
     @property
     def cache_key(self):
         return {"live": f"live:{self.room_id}"}
+
     async def handle(self):
         logger.info(f"处理直播信息: 链接: {self.rawurl}")
         match = re.search(r"live\.bilibili\.com[\/\w]*\/(\d+)", self.rawurl)
@@ -37,16 +39,19 @@ class Live(Feed):
             logger.info(f"拉取直播缓存: {self.room_id}")
         else:
             try:
-                r = await self.client.get(
+                resp = await self.client.get(
                     "https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom",
                     params={"room_id": self.room_id},
                 )
-                self.rawcontent = r.json()
+                resp.raise_for_status()
+                self.rawcontent = resp.json()
+            except HTTPStatusError as e:
+                raise ParserException(f"直播获取错误:{self.room_id}", e.request.url, e)
             except Exception as e:
                 raise ParserException(f"直播获取错误:{self.room_id}", self.rawurl, e)
             # 3.解析直播
             if not self.rawcontent or not self.rawcontent.get("data"):
-                raise ParserException("直播解析错误", r.url, self.rawcontent)
+                raise ParserException("直播解析错误", resp.url, self.rawcontent)
             # 4.缓存直播
             try:
                 await RedisCache().set(

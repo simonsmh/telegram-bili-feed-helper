@@ -11,9 +11,9 @@ from telegram.constants import FileSizeLimit, MessageLimit
 
 from ..cache import CACHES_TIMER, RedisCache
 from ..utils import (
-    BILI_API,
     LOCAL_MODE,
     ParserException,
+    bili_api_request,
     credentialFactory,
     escape_markdown,
     get_filename,
@@ -131,8 +131,9 @@ class Video(Feed):
         params = {"avid": self.aid, "cid": self.cid}
         if qn:
             params["qn"] = qn.value
-        r = await self.client.get(
-            BILI_API + "/x/player/playurl",
+        r = await bili_api_request(
+            self.client,
+            "/x/player/playurl",
             params=params,
             cookies=(await credentialFactory.get()).get_cookies(),
         )
@@ -182,8 +183,9 @@ class Video(Feed):
             "fourk": 1,
             "voice_balance": 1,
         }
-        r = await self.client.get(
-            BILI_API + "/x/player/playurl",
+        r = await bili_api_request(
+            self.client,
+            "/x/player/playurl",
             params=params,
             cookies=(await credentialFactory.get()).get_cookies(),
         )
@@ -331,8 +333,9 @@ class Video(Feed):
                     )
                 else:
                     try:
-                        r = await self.client.get(
-                            BILI_API + "/pgc/view/web/season",
+                        r = await bili_api_request(
+                            self.client,
+                            "/pgc/view/web/season",
                             params=params,
                         )
                         self.epcontent = r.json()
@@ -391,8 +394,9 @@ class Video(Feed):
             logger.info(f"拉取视频缓存:{self.aid if self.aid else self.bvid}")
         else:
             try:
-                r = await self.client.get(
-                    BILI_API + "/x/web-interface/view",
+                r = await bili_api_request(
+                    self.client,
+                    "/x/web-interface/view",
                     params=params,
                 )
                 self.infocontent = r.json()
@@ -439,8 +443,12 @@ class Video(Feed):
         if detail.get("pages") and len(detail["pages"]) > 1:
             content += f"第{self.page}P/共{len(detail['pages'])}P\n"
         if detail.get("stat"):
-            content += f"播放量:{self.wan(detail.get('stat').get('view', 0))}\t\t弹幕:{self.wan(detail.get('stat').get('danmaku', 0))}\t\t评论:{self.wan(detail.get('stat').get('reply', 0))}\n"
-            content += f"点赞:{self.wan(detail.get('stat').get('like', 0))}\t\t投币:{self.wan(detail.get('stat').get('coin', 0))}\t\t收藏:{self.wan(detail.get('stat').get('favorite', 0))}\n"
+            if detail.get("stat").get("now_rank"):
+                content += f"当前排行榜第{detail.get('stat').get('now_rank')}位\n"
+            elif detail.get("stat").get("his_rank"):
+                content += f"历史排行榜第{detail.get('stat').get('his_rank')}位\n"
+            content += f"播放量:{self.wan(detail.get('stat').get('view', 0))} 弹幕:{self.wan(detail.get('stat').get('danmaku', 0))} 评论:{self.wan(detail.get('stat').get('reply', 0))}\n"
+            content += f"点赞:{self.wan(detail.get('stat').get('like', 0))} 投币:{self.wan(detail.get('stat').get('coin', 0))} 收藏:{self.wan(detail.get('stat').get('favorite', 0))} 转发:{self.wan(detail.get('stat').get('share', 0))}\n"
         if detail.get("pubdate"):
             content += f"发布日期:{datetime.datetime.fromtimestamp(detail.get('pubdate')).strftime('%Y-%m-%d %H:%M:%S')}\n"
         if detail.get("ctime") and detail.get("ctime") != detail.get("pubdate"):
@@ -449,13 +457,16 @@ class Video(Feed):
             content += f"时长:{datetime.timedelta(seconds=detail.get('duration', 0))}\n"
         self.content = content
         self.extra_markdown = f"[{escape_markdown(detail.get('title'))}]({self.url})"
-        extra_desc = f"\n**>{
-            escape_markdown(detail.get('desc') or detail.get('dynamic')).replace(
-                '\n', '\n>'
-            )
-        }||"
+        extra_desc = detail.get("desc") or detail.get("dynamic")
+        if extra_desc and extra_desc != "-":
+            extra_desc = f"\n**>{
+                escape_markdown(detail.get('desc') or detail.get('dynamic')).replace(
+                    '\n', '\n>'
+                )
+            }||"
         if (
             extra_desc
+            and extra_desc != "-"
             and len(self.extra_markdown + extra_desc) < MessageLimit.CAPTION_LENGTH
         ):
             self.extra_markdown += extra_desc

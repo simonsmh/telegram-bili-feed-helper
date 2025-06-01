@@ -10,7 +10,7 @@ from telegram.constants import MessageLimit
 
 from ..cache import CACHES_TIMER, RedisCache
 from ..utils import (
-    BILI_API,
+    bili_api_request,
     escape_markdown,
     get_filename,
     headers,
@@ -230,8 +230,9 @@ class Feed(ABC):
                 params = {"oid": oid, "type": reply_type}
                 if seek_comment_id is not None:
                     params["seek_rpid"] = seek_comment_id
-                r = await self.client.get(
-                    BILI_API + "/x/v2/reply/main",
+                r = await bili_api_request(
+                    self.client,
+                    "/x/v2/reply/main",
                     params=params,
                     headers={"Referer": "https://www.bilibili.com/client"},
                 )
