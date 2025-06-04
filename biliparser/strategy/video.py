@@ -407,7 +407,7 @@ class Video(Feed):
                     e,
                 )
             # 3.视频解析
-            if not self.infocontent and not self.infocontent.get("data"):
+            if not self.infocontent or not self.infocontent.get("data"):
                 # Video detects non-China IP
                 raise ParserException(
                     f"视频解析错误{self.aid if self.aid else self.bvid}",
