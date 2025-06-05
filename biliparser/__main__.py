@@ -193,6 +193,7 @@ def message_to_urls(
     message = update.message or update.channel_post
     if (
         message is None
+        or message.is_automatic_forward
         or (
             isinstance(message.forward_origin, MessageOriginUser)
             and (
