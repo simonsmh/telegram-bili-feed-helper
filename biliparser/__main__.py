@@ -193,7 +193,6 @@ def message_to_urls(
     message = update.message or update.channel_post
     if (
         message is None
-        or message.is_automatic_forward
         or (
             isinstance(message.forward_origin, MessageOriginUser)
             and (
@@ -533,6 +532,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             and not update.channel_post
                             and not message.reply_to_message
                             and message.text is not None
+                            and not message.is_automatic_forward
                         ):
                             # Try to delete only if bot have delete permission
                             # and this message is only for sharing
