@@ -187,32 +187,37 @@ async def cache_media(
         return
 
 
-def message_to_urls(
+async def message_to_urls(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> tuple[Message | None, list[Any]]:
     message = update.message or update.channel_post
-    if (
-        message is None
-        or (
-            isinstance(message.forward_origin, MessageOriginUser)
-            and (
-                message.forward_origin.sender_user.is_bot
-                and message.forward_origin.sender_user.username == context.bot.username
-            )
-        )
-        or (
-            isinstance(message.forward_origin, MessageOriginHiddenUser)
-            and message.forward_origin.sender_user_name == context.bot.first_name
-        )
-        or (
-            (
-                isinstance(message.forward_origin, MessageOriginChat)
-                or isinstance(message.forward_origin, MessageOriginChannel)
-            )
-            and message.forward_origin.author_signature == context.bot.first_name
-        )
-    ):
+    if message is None:
         return message, []
+    if isinstance(message.forward_origin, MessageOriginUser):
+        if (
+            message.forward_origin.sender_user.is_bot
+            and message.forward_origin.sender_user.username == context.bot.username
+        ):
+            return message, []
+    elif isinstance(message.forward_origin, MessageOriginHiddenUser):
+        if message.forward_origin.sender_user_name == context.bot.first_name:
+            return message, []
+    elif isinstance(message.forward_origin, MessageOriginChat):
+        if message.forward_origin.author_signature == context.bot.first_name:
+            return message, []
+    elif isinstance(message.forward_origin, MessageOriginChannel):
+        if message.forward_origin.author_signature == context.bot.first_name:
+            return message, []
+        else:
+            ## If the bot is in the channel, return
+            try:
+                self_user = await message.forward_origin.chat.get_member(context.bot.id)
+                ## Bot must be an administrator to access the member list.
+                if self_user.status == "administrator":
+                    return message, []
+            except Exception:
+                ## Member list is inaccessible.
+                pass
     urls = re.findall(BILIBILI_URL_REGEX, message.text or message.caption or "")
     if message.entities:
         for entity in message.entities:
@@ -337,7 +342,7 @@ def cleanup_medias(medias):
 
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message, urls = message_to_urls(update, context)
+    message, urls = await message_to_urls(update, context)
     if message is None:
         return
     isParse, isVideo = (
@@ -553,7 +558,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message, urls = message_to_urls(update, context)
+    message, urls = await message_to_urls(update, context)
     if message is None or not message.text:
         return
     if not urls:
@@ -767,7 +772,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message, urls = message_to_urls(update, context)
+    message, urls = await message_to_urls(update, context)
     if message is None:
         return
     if not urls:
