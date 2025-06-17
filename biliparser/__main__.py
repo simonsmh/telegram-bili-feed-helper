@@ -442,10 +442,15 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 )
                         else:
                             if len(f.mediaurls) <= 10:
+                                medias_splits = [media]
                                 mediaurls_splits = [f.mediaurls]
                                 mediafilenames_splits = [f.mediafilename]
                             else:
                                 mid_list = len(f.mediaurls) // 2
+                                medias_splits = [
+                                    media[:mid_list],
+                                    media[mid_list:],
+                                ]
                                 mediaurls_splits = [
                                     f.mediaurls[:mid_list],
                                     f.mediaurls[mid_list:],
@@ -455,7 +460,8 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                     f.mediafilename[mid_list:],
                                 ]
                             result = tuple()
-                            for sub_mediaurls, sub_mediafilenames in zip(
+                            for sub_imgs, sub_mediaurls, sub_mediafilenames in zip(
+                                medias_splits,
                                 mediaurls_splits,
                                 mediafilenames_splits,
                             ):
@@ -476,7 +482,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                             )
                                         )
                                         for img, mediaurl, filename in zip(
-                                            media, sub_mediaurls, sub_mediafilenames
+                                            sub_imgs, sub_mediaurls, sub_mediafilenames
                                         )
                                     ],
                                 )
