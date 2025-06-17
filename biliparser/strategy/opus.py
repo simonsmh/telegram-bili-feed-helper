@@ -22,6 +22,7 @@ class Opus(Feed):
     forward_user: str = ""
     forward_uid: int = 0
     forward_content: str = ""
+    stat_content: str = ""
     has_forward: bool = False
 
     @cached_property
@@ -55,6 +56,7 @@ class Opus(Feed):
             if self.forward_user:
                 content += f"//@{self.forward_user}:\n"
             content += self.forward_content
+        content += self.stat_content
         return self.shrink_line(content)
 
     @content.setter
@@ -72,6 +74,7 @@ class Opus(Feed):
             content_markdown += escape_markdown(self.forward_content)
         if not content_markdown.endswith("\n"):
             content_markdown += "\n"
+        content_markdown += self.stat_content
         return self.shrink_line(content_markdown)
 
     @cached_property
@@ -181,6 +184,8 @@ class Opus(Feed):
             self.content = self.__opus_handle_desc_text(detailcontent["module_desc"])
         if detailcontent.get("module_dynamic"):
             self.__opus_handle_major(detailcontent["module_dynamic"])
+        if detailcontent.get("module_stat"):
+            self.stat_content = f"转发:{self.wan(detailcontent['module_stat'].get('forward', {}).get('count', 0))} 评论:{self.wan(detailcontent['module_stat'].get('comment', {}).get('count', 0))} 点赞:{self.wan(detailcontent['module_stat'].get('like', {}).get('count', 0))}"
         self.extra_markdown = f"[{escape_markdown(self.user)}的动态]({self.url})"
         self.replycontent = await self.parse_reply(self.rid, self.reply_type)
         return self

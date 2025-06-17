@@ -107,10 +107,6 @@ class Video(Feed):
             "video:bvid": f"video:bvid:{self.bvid}",
         }
 
-    @staticmethod
-    def wan(num):
-        return f"{num / 10000:.2f}万" if num >= 10000 else num
-
     def set_quality(self, in_str: str | None):
         if in_str is None:
             return

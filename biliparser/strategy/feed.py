@@ -95,6 +95,10 @@ class Feed(ABC):
         ## Refine cn tag style display: #abc# -> #abc
         return re.sub(r"\\#((?:(?!\\#).)+)\\#", r"\\#\1 ", content)
 
+    @staticmethod
+    def wan(num):
+        return f"{num / 10000:.2f}万" if num >= 10000 else num
+
     @cached_property
     def user_markdown(self):
         return self.make_user_markdown(self.user, self.uid)
