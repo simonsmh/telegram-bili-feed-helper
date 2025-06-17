@@ -441,27 +441,46 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                     filename=f.mediafilename[0],
                                 )
                         else:
-                            result = await message.reply_media_group(
-                                [
-                                    (
-                                        InputMediaVideo(
-                                            img,
-                                            caption=f.caption,
-                                            filename=filename,
-                                            supports_streaming=True,
+                            if len(f.mediaurls) <= 10:
+                                mediaurls_splits = [f.mediaurls]
+                                mediafilenames_splits = [f.mediafilename]
+                            else:
+                                mid_list = len(f.mediaurls) // 2
+                                mediaurls_splits = [
+                                    f.mediaurls[:mid_list],
+                                    f.mediaurls[mid_list:],
+                                ]
+                                mediafilenames_splits = [
+                                    f.mediafilename[:mid_list],
+                                    f.mediafilename[mid_list:],
+                                ]
+                            result = tuple()
+                            for sub_mediaurls, sub_mediafilenames in zip(
+                                mediaurls_splits,
+                                mediafilenames_splits,
+                            ):
+                                sub_result = await message.reply_media_group(
+                                    [
+                                        (
+                                            InputMediaVideo(
+                                                img,
+                                                caption=f.caption,
+                                                filename=filename,
+                                                supports_streaming=True,
+                                            )
+                                            if ".gif" in mediaurl
+                                            else InputMediaPhoto(
+                                                img,
+                                                caption=f.caption,
+                                                filename=filename,
+                                            )
                                         )
-                                        if ".gif" in mediaurl
-                                        else InputMediaPhoto(
-                                            img,
-                                            caption=f.caption,
-                                            filename=filename,
+                                        for img, mediaurl, filename in zip(
+                                            media, sub_mediaurls, sub_mediafilenames
                                         )
-                                    )
-                                    for img, mediaurl, filename in zip(
-                                        media, f.mediaurls, f.mediafilename
-                                    )
-                                ],
-                            )
+                                    ],
+                                )
+                                result += sub_result
                             await message.reply_text(f.caption)
                         # store file caches
                         if isinstance(result, tuple):  # media group
@@ -586,13 +605,40 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         medias.insert(0, mediathumb)
                         mediafilenames.insert(0, f.mediathumbfilename)
                     logger.info(f"上传中: {f.url}")
-                    if len(medias) > 1:
-                        result = await message.reply_media_group(
-                            [
-                                InputMediaDocument(media, filename=filename)
-                                for media, filename in zip(medias, mediafilenames)
-                            ],
+                    if len(medias) == 1:
+                        result = await message.reply_document(
+                            document=medias[0],
+                            caption=f.caption,
+                            filename=f.mediafilename[0],
                         )
+                        await cache_media(
+                            f.mediafilename[0], result.effective_attachment
+                        )
+                    else:
+                        if len(medias) <= 10:
+                            medias_splits = [medias]
+                            mediafilenames_splits = [mediafilenames]
+                        else:
+                            mid_list = len(medias) // 2
+                            medias_splits = [medias[:mid_list], medias[mid_list:]]
+                            mediafilenames_splits = [
+                                mediafilenames[:mid_list],
+                                mediafilenames[mid_list:],
+                            ]
+                        result = tuple()
+                        for sub_medias, sub_mediafilenames in zip(
+                            medias_splits,
+                            mediafilenames_splits,
+                        ):
+                            sub_result = await message.reply_media_group(
+                                [
+                                    InputMediaDocument(media, filename=filename)
+                                    for media, filename in zip(
+                                        sub_medias, sub_mediafilenames
+                                    )
+                                ],
+                            )
+                            result += sub_result
                         await message.reply_text(f.caption)
                         for filename, item in zip(mediafilenames, result):
                             if isinstance(
@@ -603,15 +649,6 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 )
                             else:
                                 await cache_media(filename, item.effective_attachment)
-                    else:
-                        result = await message.reply_document(
-                            document=medias[0],
-                            caption=f.caption,
-                            filename=f.mediafilename[0],
-                        )
-                        await cache_media(
-                            f.mediafilename[0], result.effective_attachment
-                        )
                 finally:
                     cleanup_medias(medias)
 
