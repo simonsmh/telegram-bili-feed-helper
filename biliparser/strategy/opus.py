@@ -123,7 +123,7 @@ class Opus(Feed):
 
     async def handle(self):
         logger.info(f"处理动态信息: 链接: {self.rawurl}")
-        match = re.search(r"bilibili\.com[\/\w]*\/(\d+)", self.rawurl)
+        match = re.search(r"(?:www|t|h|m)\.bilibili\.com\/(?:[^\/?]+\/)*?(\d+)(?:[\/?].*)?", self.rawurl)
         if not match:
             raise ParserException("动态链接错误", self.rawurl)
         self.dynamic_id = int(match.group(1))

@@ -13,6 +13,14 @@ async def __feed_parser(client: AsyncClient, url: str, extra: dict | None = None
     # bypass b23 short link
     if re.search(r"(?:^|/)(?:BV\w{10}|av\d+|ep\d+|ss\d+)", url):
         return await Video(url if "/" in url else f"b23.tv/{url}", client).handle(extra)
+    elif re.search(r"(?:www|t|h|m)\.bilibili\.com\/(?:[^\/?]+\/)*?(?:\d+)(?:[\/?].*)?", url):
+        return await Opus(url, client).handle()
+    elif re.search(r"live\.bilibili\.com[\/\w]*\/(\d+)", url):
+        return await Live(url, client).handle()
+    elif re.search(r"bilibili\.com\/audio\/au(\d+)", url):
+        return await Audio(url, client).handle()
+    elif re.search(r"bilibili\.com\/read\/(?:cv|mobile\/|mobile\?id=)(\d+)", url):
+        return await Read(url, client).handle()
     try:
         resp = await client.get(url)
         resp.raise_for_status()
@@ -27,23 +35,23 @@ async def __feed_parser(client: AsyncClient, url: str, extra: dict | None = None
     # main video
     if re.search(r"video|bangumi/play|festival", url):
         return await Video(url, client).handle(extra)
-    # au audio
-    elif "read" in url:
-        return await Read(url, client).handle()
-    # au audio
-    elif "audio" in url:
-        return await Audio(url, client).handle()
+    # dynamic opus
+    elif re.search(r"(?:www|t|h|m)\.bilibili\.com\/(?:[^\/?]+\/)*?(?:\d+)(?:[\/?].*)?", url):
+        return await Opus(url, client).handle()
     # live image
     elif "live" in url:
         return await Live(url, client).handle()
+    # au audio
+    elif "audio" in url:
+        return await Audio(url, client).handle()
+    # cv read
+    elif "read" in url:
+        return await Read(url, client).handle()
     # API link blackboard link user space link
     elif re.search(
         r"^https?:\/\/(?:api|www\.bilibili\.com\/blackboard|space\.bilibili\.com)", url
     ):
         pass
-    # dynamic opus
-    elif re.search(r"^https?:\/\/[th]\.|dynamic|opus", url):
-        return await Opus(url, client).handle()
     raise ParserException("URL无可用策略", url)
 
 

@@ -33,9 +33,6 @@ version = "0.1.0"
 description = ""
 readme = "README.md"
 
-[project.scripts]
-bilifeedbot = "biliparser.__main__:main"
-
 [dependency-groups]
 dev = [
     "pytest",
