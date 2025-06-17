@@ -18,10 +18,10 @@ logger.add(sys.stdout, backtrace=True, diagnose=True)
 if os.environ.get("LOG_TO_FILE"):
     logger.add("bili_feed.log", backtrace=True, diagnose=True, rotation="1 MB")
 
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) bilibili_pc/1.16.4 Chrome/108.0.5359.215 Electron/22.3.27 Safari/537.36 build/1001016004"
+BILIBILI_DESKTOP_HEADER = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) bilibili_pc/1.16.5 Chrome/108.0.5359.215 Electron/22.3.27 Safari/537.36 build/1001016005"
 }
-
+BILIBILI_DESKTOP_BUILD = "11605"
 LOCAL_MODE = os.environ.get("LOCAL_MODE", False)
 LOCAL_MEDIA_FILE_PATH = LOCAL_FILE_PATH / ".tmp"
 credentialFactory = CredentialFactory()

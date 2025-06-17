@@ -5,7 +5,7 @@ import re
 from httpx import AsyncClient, HTTPStatusError
 
 from .strategy import Audio, Live, Opus, Read, Video
-from .utils import ParserException, headers, logger, retry_catcher
+from .utils import ParserException, BILIBILI_DESKTOP_HEADER, logger, retry_catcher
 
 
 @retry_catcher
@@ -63,7 +63,7 @@ async def biliparser(
     elif isinstance(urls, tuple):
         urls = list(urls)
     async with AsyncClient(
-        headers=headers,
+        headers=BILIBILI_DESKTOP_HEADER,
         http2=True,
         follow_redirects=True,
         proxy=os.environ.get("FILE_PROXY", os.environ.get("HTTP_PROXY")),

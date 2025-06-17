@@ -4,7 +4,13 @@ from functools import cached_property, lru_cache, reduce
 import orjson
 
 from ..cache import CACHES_TIMER, RedisCache
-from ..utils import ParserException, bili_api_request, escape_markdown, logger
+from ..utils import (
+    BILIBILI_DESKTOP_BUILD,
+    ParserException,
+    bili_api_request,
+    escape_markdown,
+    logger,
+)
 from .feed import Feed
 
 
@@ -123,7 +129,10 @@ class Opus(Feed):
 
     async def handle(self):
         logger.info(f"处理动态信息: 链接: {self.rawurl}")
-        match = re.search(r"(?:www|t|h|m)\.bilibili\.com\/(?:[^\/?]+\/)*?(\d+)(?:[\/?].*)?", self.rawurl)
+        match = re.search(
+            r"(?:www|t|h|m)\.bilibili\.com\/(?:[^\/?]+\/)*?(\d+)(?:[\/?].*)?",
+            self.rawurl,
+        )
         if not match:
             raise ParserException("动态链接错误", self.rawurl)
         self.dynamic_id = int(match.group(1))
@@ -142,7 +151,7 @@ class Opus(Feed):
                 r = await bili_api_request(
                     self.client,
                     "/x/polymer/web-dynamic/desktop/v1/detail",
-                    params={"id": self.dynamic_id},
+                    params={"id": self.dynamic_id, "build": BILIBILI_DESKTOP_BUILD},
                 )
                 response = r.json()
             except Exception as e:

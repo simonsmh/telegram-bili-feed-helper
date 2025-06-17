@@ -57,7 +57,7 @@ from .utils import (
     LOCAL_MODE,
     compress,
     escape_markdown,
-    headers,
+    BILIBILI_DESKTOP_HEADER,
     logger,
     referer_url,
 )
@@ -119,7 +119,7 @@ async def get_media(
     media = LOCAL_MEDIA_FILE_PATH / filename
     temp_media = LOCAL_MEDIA_FILE_PATH / uuid4().hex
     try:
-        header = headers.copy()
+        header = BILIBILI_DESKTOP_HEADER.copy()
         header["Referer"] = referer
         async with timeout(CACHES_TIMER["LOCK"]):
             async with client.stream("GET", url, headers=header) as response:

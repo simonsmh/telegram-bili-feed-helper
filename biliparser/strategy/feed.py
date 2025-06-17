@@ -13,7 +13,7 @@ from ..utils import (
     bili_api_request,
     escape_markdown,
     get_filename,
-    headers,
+    BILIBILI_DESKTOP_HEADER,
     logger,
 )
 
@@ -39,7 +39,7 @@ class Feed(ABC):
         self.client = client
 
     async def test_url_status_code(self, url, referer):
-        header = headers.copy()
+        header = BILIBILI_DESKTOP_HEADER.copy()
         header["Referer"] = referer
         select_urls = [url]
         upos_domain = os.environ.get("UPOS_DOMAIN")
