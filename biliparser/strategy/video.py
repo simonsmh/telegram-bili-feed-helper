@@ -1,4 +1,5 @@
 import datetime
+import math
 import os
 import re
 from difflib import SequenceMatcher
@@ -470,6 +471,14 @@ class Video(Feed):
         self.mediaurls = detail.get("pic")
         self.mediathumb = detail.get("pic")
         self.mediadimention = detail.get("pages")[self.page - 1].get("dimension")
+        ## 标准化 width+height不超过10k https://github.com/tdlib/td/blob/5c77c4692c28eb48a68ef1c1eeb1b1d732d507d3/td/telegram/PhotoSize.cpp#L422
+        if self.mediadimention is not None and (self.mediadimention.get("width", 0) + self.mediadimention.get("height", 0) > 10000):
+            scale = 10000 / (self.mediadimention.get("width", 0) + self.mediadimention.get("height", 0))
+            self.mediadimention = {
+                "width": math.floor(scale * self.mediadimention.get("width", 0)),
+                "height": math.floor(scale * self.mediadimention.get("height", 0)),
+                "rotate": self.mediadimention.get("rotate", 0),
+            }
         self.mediatype = "image"
         self.replycontent = await self.parse_reply(self.aid, self.reply_type, seek_id)
         try:
