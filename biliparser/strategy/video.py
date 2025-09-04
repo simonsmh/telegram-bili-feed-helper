@@ -263,11 +263,11 @@ class Video(Feed):
             self.set_quality(extra.get("quality"))
         logger.info(f"处理视频信息: 链接: {self.rawurl}")
         match = re.search(
-            r"(?:bilibili\.com(?:/video|/bangumi/play)?|b23\.tv|acg\.tv)/(?:(?P<bvid>BV\w{10})|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+)|)/?\??(?:p=(?P<page>\d+))?",
+            r"(?:bilibili\.com(?:/video|/bangumi/play)?|b23\.tv|acg\.tv)/(?:(?P<bvid>BV\w{10})|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+)|)",
             self.rawurl,
         )
         match_fes = re.search(
-            r"bilibili\.com/festival/(?P<festivalid>\w+)\?(?:bvid=(?P<bvid>BV\w{10}))",
+            r"bilibili\.com/festival/(?P<festivalid>\w+)",
             self.rawurl,
         )
         pr = urlparse(self.rawurl)
@@ -280,8 +280,8 @@ class Video(Feed):
         elif pr.fragment.startswith("reply"):
             seek_id = pr.fragment.removeprefix("reply")
         if match_fes:
-            __bvid = match_fes.group("bvid")
-            if __bvid:
+            if "bvid" in qs:
+                __bvid = qs["bvid"][0]
                 params = {"bvid": __bvid}
                 self.bvid = __bvid
             else:
@@ -291,9 +291,10 @@ class Video(Feed):
             __epid = match.group("epid")
             __aid = match.group("aid")
             __ssid = match.group("ssid")
-            __page = match.group("page")
-            if __page and __page.isdigit():
-                self.page = max(1, int(__page))
+            if "p" in qs:
+                __page = qs["p"][0]
+                if __page.isdigit():
+                    self.page = max(1, int(__page))
             if __epid:
                 params = {"ep_id": __epid}
                 self.epid = __epid
@@ -450,8 +451,6 @@ class Video(Feed):
             content += f"发布日期:{datetime.datetime.fromtimestamp(detail.get('pubdate')).strftime('%Y-%m-%d %H:%M:%S')}\n"
         if detail.get("ctime") and detail.get("ctime") != detail.get("pubdate"):
             content += f"上传日期:{datetime.datetime.fromtimestamp(detail.get('ctime')).strftime('%Y-%m-%d %H:%M:%S')}\n"
-        if detail.get("duration"):
-            content += f"时长:{datetime.timedelta(seconds=detail.get('duration', 0))}\n"
         self.content = content
         self.extra_markdown = f"[{escape_markdown(detail.get('title'))}]({self.url})"
         extra_desc = detail.get("desc") or detail.get("dynamic")
