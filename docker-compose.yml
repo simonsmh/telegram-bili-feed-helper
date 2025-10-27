@@ -12,7 +12,7 @@ services:
       - internal_network
 
   postgres:
-    image: postgres:latest
+    image: postgres:17
     env_file: 
       - stack.env
     volumes:

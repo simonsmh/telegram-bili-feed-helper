@@ -1,11 +1,11 @@
 import asyncio
-import os
 import re
+import uuid
 
 from httpx import AsyncClient, HTTPStatusError
 
 from .strategy import Audio, Live, Opus, Read, Video
-from .utils import ParserException, BILIBILI_DESKTOP_HEADER, logger, retry_catcher
+from .utils import ParserException, BILIBILI_DESKTOP_HEADER, credentialFactory, logger, retry_catcher
 
 
 @retry_catcher
@@ -66,7 +66,7 @@ async def biliparser(
         headers=BILIBILI_DESKTOP_HEADER,
         http2=True,
         follow_redirects=True,
-        proxy=os.environ.get("FILE_PROXY", os.environ.get("HTTP_PROXY")),
+        cookies={"buvid3": f'{uuid.uuid4()}infoc'},
     ) as client:
         tasks = list(
             __feed_parser(
