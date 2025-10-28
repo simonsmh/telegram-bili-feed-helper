@@ -22,8 +22,8 @@ async def __feed_parser(client: AsyncClient, url: str, extra: dict | None = None
     elif re.search(r"bilibili\.com\/read\/(?:cv|mobile\/|mobile\?id=)(\d+)", url):
         return await Read(url, client).handle()
     try:
-        resp = await client.get(url)
-        resp.raise_for_status()
+        resp = await client.head(url)
+        #resp.raise_for_status()
     except HTTPStatusError as e:
         logger.warning(f"URL请求失败 [{e.response.status_code}]: {e.request.url}")
         raise ParserException("URL请求失败", url)
