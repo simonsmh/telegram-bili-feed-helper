@@ -12,11 +12,11 @@ services:
       - internal_network
 
   postgres:
-    image: postgres:17
+    image: postgres:18
     env_file: 
       - stack.env
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgresql-data:/var/lib/postgresql
     restart: always
     networks:
       - internal_network
@@ -47,7 +47,7 @@ services:
 
 volumes:
   redis-data:
-  postgres-data:
+  postgresql-data:
   telegram-bot-api-data:
 
 networks:

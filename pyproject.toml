@@ -3,7 +3,7 @@ authors = [
     {name = "simonsmh"},
 ]
 license = {text = "GPLv3"}
-requires-python = "<4.0,>=3.13"
+requires-python = "<4.0,>=3.14"
 dependencies = [
     "aiomysql",
     "asyncpg",
@@ -20,13 +20,6 @@ dependencies = [
     "async-timeout",
     "orjson",
     "httpx[http2]",
-    "brotli>=1.1.0",
-    "pycryptodomex>=3.23.0",
-    "pyjwt>=2.10.1",
-    "pyyaml>=6.0.2",
-    "qrcode>=8.2",
-    "qrcode-terminal>=0.8",
-    "yarl>=1.20.0",
 ]
 name = "telegram-bili-feed-helper"
 version = "0.1.0"
