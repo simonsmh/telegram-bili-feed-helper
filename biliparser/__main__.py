@@ -102,9 +102,12 @@ class UploadTask:
 class UploadQueueManager:
     """上传队列管理器 - 处理 Telegram API 限流"""
 
-    def __init__(self, max_workers: int = 1, max_queue_size: int = 200):
+    def __init__(
+        self, max_workers: int = 4, max_user_tasks: int = 5, max_queue_size: int = 200
+    ):
         self.queue: asyncio.Queue[UploadTask] = asyncio.Queue(maxsize=max_queue_size)
         self.max_workers = max_workers
+        self.max_user_tasks = max_user_tasks
         self.active_tasks: dict[
             int, dict[str, UploadTask]
         ] = {}  # user_id -> {task_id -> UploadTask}
@@ -121,8 +124,15 @@ class UploadQueueManager:
             if task.user_id not in self.active_tasks:
                 self.active_tasks[task.user_id] = {}
 
-            # 检查重复任务
+            # 检查用户任务数量是否超过限制
             user_tasks = self.active_tasks[task.user_id]
+            if len(user_tasks) >= self.max_user_tasks:
+                logger.warning(
+                    f"用户 {task.user_id} 的任务数已达上限 ({self.max_user_tasks})，丢弃新任务 (URLs: {task.urls})"
+                )
+                return
+
+            # 检查重复任务
             for existing_task in user_tasks.values():
                 if existing_task.urls == task.urls:
                     logger.info(
@@ -159,7 +169,7 @@ class UploadQueueManager:
                 del self.active_tasks[user_id]
 
             if cancelled_count > 0:
-                logger.info(f"用户 {user_id} 手动取消了所有任务 ({cancelled_count} 个)")
+                logger.info(f"用户 {user_id} 手动取消了 ({cancelled_count} 个任务)")
                 return cancelled_count
             return 0
 
@@ -1294,10 +1304,18 @@ async def post_init(application: Application) -> None:
 
     # 初始化上传队列管理器
     max_workers = int(os.environ.get("UPLOAD_WORKERS", 4))
-    upload_queue_manager = UploadQueueManager(max_workers=max_workers)
+    max_user_tasks = int(os.environ.get("MAX_USER_TASKS", 5))
+    max_queue_size = int(os.environ.get("MAX_QUEUE_SIZE", 200))
+    upload_queue_manager = UploadQueueManager(
+        max_workers=max_workers,
+        max_user_tasks=max_user_tasks,
+        max_queue_size=max_queue_size,
+    )
     await upload_queue_manager.start_workers()
     application.bot_data["upload_queue_manager"] = upload_queue_manager
-    logger.info(f"上传队列管理器已启动 ({max_workers} 个 worker)")
+    logger.info(
+        f"上传队列管理器已启动 ({max_workers} 个 worker, 单用户任务上限: {max_user_tasks})"
+    )
 
     await application.bot.set_my_commands(
         [
