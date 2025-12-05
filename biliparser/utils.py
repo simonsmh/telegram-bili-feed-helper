@@ -51,7 +51,7 @@ def retry_catcher(func):
     return inner_function
 
 
-def compress(inpil, size=1280, fix_ratio=False) -> BytesIO:
+def compress(inpil, size=1280, fix_ratio=False, format="PNG") -> BytesIO:
     pil = Image.open(inpil)
     if fix_ratio:
         w, h = pil.size
@@ -70,7 +70,9 @@ def compress(inpil, size=1280, fix_ratio=False) -> BytesIO:
     if size > 0:
         pil.thumbnail((size, size), Image.Resampling.LANCZOS)
     outpil = BytesIO()
-    pil.save(outpil, "PNG", optimize=True)
+    if format.upper() == "JPEG":
+        pil = pil.convert("RGB")
+    pil.save(outpil, format, optimize=True)
     return outpil
 
 

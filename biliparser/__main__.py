@@ -716,6 +716,7 @@ async def get_media(
     compression: bool = True,
     media_check_ignore: bool = False,
     no_cache: bool = False,
+    is_thumbnail: bool = False,
 ) -> Path | str | None:
     if isinstance(url, Path):
         return url
@@ -759,7 +760,12 @@ async def get_media(
                     img = await response.aread()
                     if compression and mediatype[1] in ["jpeg", "png"]:
                         logger.info(f"压缩: {url} {mediatype[1]}")
-                        img = compress(BytesIO(img)).getvalue()
+                        if is_thumbnail:
+                            img = compress(
+                                BytesIO(img), size=320, format="JPEG"
+                            ).getvalue()
+                        else:
+                            img = compress(BytesIO(img)).getvalue()
                     with open(temp_media, "wb") as file:
                         file.write(img)
                 else:
@@ -854,6 +860,7 @@ async def get_media_mediathumb_by_parser(
                     compression=compression,
                     media_check_ignore=False,
                     no_cache=True,
+                    is_thumbnail=True,
                 )
             else:
                 mediathumb = referer_url(f.mediathumb, f.url)
