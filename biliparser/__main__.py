@@ -456,12 +456,11 @@ class UploadQueueManager:
                     no_media=no_media,
                 )
 
-                mediafilenames = f.mediafilename.copy()
                 if mediathumb:
                     medias.insert(0, mediathumb)
-                    mediafilenames.insert(0, f.mediathumbfilename)
-
-                    mediafilenames.insert(0, f.mediathumbfilename)
+                    mediafilenames = [f.mediathumbfilename] + f.mediafilename
+                else:
+                    mediafilenames = f.mediafilename
 
                 logger.info(f"任务 {task.task_id[:8]} (fetch) 开始上传: {f.url}")
 
