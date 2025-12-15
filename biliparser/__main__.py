@@ -750,7 +750,7 @@ async def get_media(
                             unit_scale=True,
                             unit_divisor=1024,
                             unit="B",
-                            desc=filename,
+                            desc=response.request.url.host + "->" + filename,
                         ) as pbar:
                             async for chunk in response.aiter_bytes():
                                 file.write(chunk)
