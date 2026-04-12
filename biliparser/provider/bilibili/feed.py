@@ -6,15 +6,17 @@ from functools import cached_property
 
 import httpx
 import orjson
-from telegram.constants import MessageLimit
 
-from ..cache import CACHES_TIMER, RedisCache
-from ..utils import (
-    bili_api_request,
+from ...storage.cache import RedisCache
+from ...utils import (
     escape_markdown,
     get_filename,
-    BILIBILI_DESKTOP_HEADER,
     logger,
+)
+from .api import (
+    BILIBILI_DESKTOP_HEADER,
+    CACHES_TIMER,
+    bili_api_request,
 )
 
 
@@ -53,12 +55,8 @@ class Feed(ABC):
                     select_urls.insert(0, test_url)
         for select_url in select_urls:
             try:
-                select_url = re.sub(
-                    r"&buvid=[^&]+", "&buvid=", select_url
-                )  ## 清除buvid参数
-                async with self.client.stream(
-                    "GET", select_url, headers=header
-                ) as response:
+                select_url = re.sub(r"&buvid=[^&]+", "&buvid=", select_url)  ## 清除buvid参数
+                async with self.client.stream("GET", select_url, headers=header) as response:
                     if response.status_code != 200:
                         continue
                     return int(response.headers.get("Content-Length", 0)), select_url
@@ -69,11 +67,7 @@ class Feed(ABC):
 
     @staticmethod
     def make_user_markdown(user, uid):
-        return (
-            f"[@{escape_markdown(user)}](https://space.bilibili.com/{uid})"
-            if user and uid
-            else str()
-        )
+        return f"[@{escape_markdown(user)}](https://space.bilibili.com/{uid})" if user and uid else ""
 
     @staticmethod
     def shrink_line(text: str):
@@ -85,7 +79,7 @@ class Feed(ABC):
             )
             .replace(r"\n*\n", r"\n")
             if text
-            else str()
+            else ""
         )
 
     @staticmethod
@@ -99,10 +93,6 @@ class Feed(ABC):
     def wan(num):
         return f"{num / 10000:.2f}万" if num >= 10000 else num
 
-    @cached_property
-    def user_markdown(self):
-        return self.make_user_markdown(self.user, self.uid)
-
     @property
     def content(self):
         return self.shrink_line(self.__content)
@@ -112,17 +102,8 @@ class Feed(ABC):
         self.__content = content
 
     @cached_property
-    def content_markdown(self):
-        content_markdown = escape_markdown(self.content)
-        if not content_markdown.endswith("\n"):
-            content_markdown += "\n"
-        # if self.extra_markdown:
-        #     content_markdown += self.extra_markdown
-        return self.shrink_line(content_markdown)
-
-    @cached_property
     def comment(self):
-        comment = str()
+        comment = ""
         if isinstance(self.replycontent, dict):
             target = self.replycontent.get("target")
             if target:
@@ -133,20 +114,6 @@ class Feed(ABC):
                     if item:
                         comment += f"🔝> @{item['member']['uname']}:\n{item['content']['message']}\n"
         return self.shrink_line(comment)
-
-    @cached_property
-    def comment_markdown(self):
-        comment_markdown = str()
-        if isinstance(self.replycontent, dict):
-            target = self.replycontent.get("target")
-            if target:
-                comment_markdown += f"💬\\> {self.make_user_markdown(target['member']['uname'], target['member']['mid'])}:\n{escape_markdown(target['content']['message'])}\n"
-            top = self.replycontent.get("top")
-            if top:
-                for item in top:
-                    if item:
-                        comment_markdown += f"🔝\\> {self.make_user_markdown(item['member']['uname'], item['member']['mid'])}:\n{escape_markdown(item['content']['message'])}\n"
-        return self.shrink_line(comment_markdown)
 
     @property
     def mediaurls(self):
@@ -163,9 +130,7 @@ class Feed(ABC):
 
     @cached_property
     def mediafilename(self):
-        return (
-            [get_filename(i) for i in self.__mediaurls] if self.__mediaurls else list()
-        )
+        return [get_filename(i) for i in self.__mediaurls] if self.__mediaurls else list()
 
     @property
     def mediathumb(self):
@@ -179,7 +144,7 @@ class Feed(ABC):
 
     @cached_property
     def mediathumbfilename(self):
-        return get_filename(self.mediathumb) if self.mediathumb else str()
+        return get_filename(self.mediathumb) if self.mediathumb else ""
 
     @cached_property
     def url(self):
@@ -189,36 +154,9 @@ class Feed(ABC):
     def cache_key(self):
         return {}
 
-    def _try_append_within_limit(self, components: list[str], content: str) -> bool:
-        if not content:
-            return True
-        test_content = "".join(components + [content])
-        if len(test_content) < MessageLimit.CAPTION_LENGTH:
-            components.append(content)
-            return True
-        return False
-
-    @cached_property
-    def caption(self) -> str:
-        components = [f"{self.extra_markdown or escape_markdown(self.url)}\n"]
-        if self.user:
-            if not self._try_append_within_limit(components, f"{self.user_markdown}:"):
-                return "".join(components)
-        for content_source in [self.content_markdown, self.comment_markdown]:
-            if content_source:
-                formatted_content = f"\n**>{self.clean_cn_tag_style(content_source).replace('\n', '\n>')}||"
-                if formatted_content:
-                    if not self._try_append_within_limit(components, formatted_content):
-                        return "".join(components)
-        return "".join(components)
-
     async def parse_reply(self, oid, reply_type, seek_comment_id=None):
-        logger.info(
-            f"处理评论信息: 媒体ID: {oid} 评论类型: {reply_type} 评论ID {seek_comment_id}"
-        )
-        cache_key = "new_reply:" + ":".join(
-            str(x) for x in [oid, reply_type, seek_comment_id] if x is not None
-        )
+        logger.info(f"处理评论信息: 媒体ID: {oid} 评论类型: {reply_type} 评论ID {seek_comment_id}")
+        cache_key = "new_reply:" + ":".join(str(x) for x in [oid, reply_type, seek_comment_id] if x is not None)
         # 1.获取缓存
         try:
             cache = await RedisCache().get(cache_key)
@@ -256,11 +194,10 @@ class Feed(ABC):
                     if str(r["rpid"]) == str(seek_comment_id):
                         target = r
                         break
-                    else:
-                        for sr in r["replies"]:
-                            if str(sr["rpid"]) == str(seek_comment_id):
-                                target = sr
-                                break
+                    for sr in r["replies"]:
+                        if str(sr["rpid"]) == str(seek_comment_id):
+                            target = sr
+                            break
             reply = {"top": data.get("top_replies"), "target": target}
             # 4.缓存评论
             try:

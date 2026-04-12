@@ -2,15 +2,16 @@ import re
 from functools import cached_property
 
 import orjson
-from telegram.constants import FileSizeLimit
 
-from ..cache import CACHES_TIMER, RedisCache
-from ..utils import (
-    LOCAL_MODE,
-    ParserException,
-    bili_api_request,
+from ...storage.cache import RedisCache
+from ...utils import (
     escape_markdown,
     logger,
+)
+from .api import (
+    CACHES_TIMER,
+    ParserException,
+    bili_api_request,
 )
 from .feed import Feed
 
@@ -31,7 +32,7 @@ class Audio(Feed):
             "audio:media": f"audio:media:{self.audio_id}",
         }
 
-    async def handle(self):
+    async def handle(self, constraints=None):
         logger.info(f"处理音频信息: 链接: {self.rawurl}")
         match = re.search(r"bilibili\.com\/audio\/au(\d+)", self.rawurl)
         if not match:
@@ -103,9 +104,7 @@ class Audio(Feed):
                 )
                 self.mediacontent = r.json()
             except Exception as e:
-                raise ParserException(
-                    f"音频媒体获取错误:{self.audio_id}", self.rawurl, e
-                )
+                raise ParserException(f"音频媒体获取错误:{self.audio_id}", self.rawurl, e)
             # 3.解析音频
             if not self.mediacontent or not self.mediacontent.get("data"):
                 raise ParserException("音频媒体解析错误", r.url, self.mediacontent)
@@ -119,22 +118,12 @@ class Audio(Feed):
                 )
             except Exception as e:
                 logger.exception(f"缓存音频媒体错误: {e}")
-        audio_size, audio_url = await self.test_url_status_code(
-            self.mediacontent["data"].get("cdns")[0], self.url
-        )
+        max_size = constraints.max_upload_size if constraints else 50 * 1024 * 1024
+        audio_size, audio_url = await self.test_url_status_code(self.mediacontent["data"].get("cdns")[0], self.url)
         if audio_size:
             self.mediaurls = audio_url
             self.mediatype = "audio"
-            self.mediaraws = (
-                False
-                if self.mediacontent["data"].get("size")
-                < (
-                    FileSizeLimit.FILESIZE_DOWNLOAD_LOCAL_MODE
-                    if LOCAL_MODE
-                    else FileSizeLimit.FILESIZE_DOWNLOAD
-                )
-                else True
-            )
+            self.mediaraws = not (self.mediacontent["data"].get("size") < max_size)
         else:
             self.mediaurls = detail.get("cover_url")
             self.mediatype = "image"

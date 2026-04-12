@@ -8,19 +8,22 @@ from urllib.parse import parse_qs, urlparse
 
 import orjson
 from bilibili_api import video
-from telegram.constants import FileSizeLimit, MessageLimit
 
-from ..cache import CACHES_TIMER, RedisCache
-from ..utils import (
-    LOCAL_MODE,
-    ParserException,
-    bili_api_request,
-    credentialFactory,
+from ...storage.cache import RedisCache
+from ...utils import (
     escape_markdown,
     get_filename,
     logger,
 )
+from .api import (
+    CACHES_TIMER,
+    ParserException,
+    bili_api_request,
+)
+from .credential import credentialFactory
 from .feed import Feed
+
+_DEFAULT_MAX_SIZE = 50 * 1024 * 1024  # 50MB
 
 
 class Video(Feed):
@@ -49,7 +52,7 @@ class Video(Feed):
 
     def extract_episode_info(self, target: str):
         if not self.epid or not self.epcontent or not self.epcontent.get("result"):
-            return
+            return None
         for episode in self.epcontent["result"].get("episodes"):
             if str(episode.get("id")) == str(self.epid):
                 return episode.get(target)
@@ -83,11 +86,7 @@ class Video(Feed):
 
     @cached_property
     def epid(self):
-        if (
-            self.epcontent
-            and self.epcontent.get("result")
-            and self.epcontent["result"].get("episodes")
-        ):
+        if self.epcontent and self.epcontent.get("result") and self.epcontent["result"].get("episodes"):
             return self.epcontent["result"]["episodes"][-1].get("id")
 
     @cached_property
@@ -124,7 +123,7 @@ class Video(Feed):
             if hasattr(self, key) and getattr(self, key) is None:
                 delattr(self, key)
 
-    async def __get_video_result(self, qn: video.VideoQuality):
+    async def __get_video_result(self, qn: video.VideoQuality, max_size: int):
         params = {"avid": self.aid, "cid": self.cid}
         if qn:
             params["qn"] = qn.value
@@ -135,20 +134,12 @@ class Video(Feed):
             cookies=(await credentialFactory.get()).get_cookies(),
         )
         video_result = r.json()
+        size_limit = int(os.environ.get("VIDEO_SIZE_LIMIT", max_size))
         if (
             video_result.get("code") == 0
             and video_result.get("data")
             and video_result.get("data").get("durl")
-            and video_result.get("data").get("durl")[0].get("size")
-            < (
-                int(
-                    os.environ.get(
-                        "VIDEO_SIZE_LIMIT", FileSizeLimit.FILESIZE_UPLOAD_LOCAL_MODE
-                    )
-                )
-                if LOCAL_MODE
-                else FileSizeLimit.FILESIZE_UPLOAD
-            )
+            and video_result.get("data").get("durl")[0].get("size") < size_limit
         ):
             url = video_result["data"]["durl"][0]["url"]
             result, url = await self.test_url_status_code(url, self.url)
@@ -161,16 +152,14 @@ class Video(Feed):
                         break
             if result:
                 self.mediacontent = video_result
-                self.mediaduration = round(
-                    video_result["data"]["durl"][0]["length"] / 1000
-                )
+                self.mediaduration = round(video_result["data"]["durl"][0]["length"] / 1000)
                 self.mediaurls = url
                 self.mediatype = "video"
                 self.mediaraws = False
                 self.mediafilesize = video_result.get("data").get("durl")[0].get("size")
                 return True
 
-    async def __get_dash_video(self):
+    async def __get_dash_video(self, max_size: int):
         params = {
             "avid": self.aid,
             "cid": self.cid,
@@ -187,7 +176,7 @@ class Video(Feed):
             cookies=(await credentialFactory.get()).get_cookies(),
         )
         video_result = r.json()
-        if not video_result.get("code") == 0 or not video_result.get("data"):
+        if video_result.get("code") != 0 or not video_result.get("data"):
             logger.error(f"获取Dash视频流错误: {video_result}")
             return False
         ## TODO: rewrite self VideoDownloadURLDataDetecter with built-in test_url_status_code
@@ -197,16 +186,8 @@ class Video(Feed):
             video_max_quality=self.quality,
             codecs=[video.VideoCodecs(os.environ.get("VIDEO_CODEC", "avc"))],
         )  # 可以设置成hev/av01减少文件体积，但是tg不二压会造成部分老设备直接解码指定codec时不展示，需要指定成avc
-        video_streams = [
-            video_stream
-            for video_stream in streams
-            if type(video_stream) is video.VideoStreamDownloadURL
-        ]
-        audio_streams = [
-            audio_stream
-            for audio_stream in streams
-            if type(audio_stream) is video.AudioStreamDownloadURL
-        ]
+        video_streams = [video_stream for video_stream in streams if type(video_stream) is video.VideoStreamDownloadURL]
+        audio_streams = [audio_stream for audio_stream in streams if type(audio_stream) is video.AudioStreamDownloadURL]
         if not video_streams or not audio_streams:
             logger.error(f"获取Dash视频流错误: {streams}")
             return False
@@ -216,39 +197,18 @@ class Video(Feed):
         audio_streams.sort(key=lambda x: x.audio_quality.value, reverse=True)
         audio_size = 0
         for audio_stream in audio_streams:
-            audio_size, audio_stream.url = await self.test_url_status_code(
-                audio_stream.url, self.url
-            )
+            audio_size, audio_stream.url = await self.test_url_status_code(audio_stream.url, self.url)
             if audio_size:
                 self.dashurls = [audio_stream.url]
                 break
         if len(self.dashurls) < 1:
             logger.error(f"无可用Dash视频音频流清晰度: {streams}")
             return False
+        size_limit = int(os.environ.get("VIDEO_SIZE_LIMIT", max_size))
         for video_stream in video_streams:
-            video_size, video_stream.url = await self.test_url_status_code(
-                video_stream.url, self.url
-            )
-            if (
-                audio_size
-                and video_size
-                and (
-                    audio_size + video_size
-                    < (
-                        int(
-                            os.environ.get(
-                                "VIDEO_SIZE_LIMIT",
-                                FileSizeLimit.FILESIZE_UPLOAD_LOCAL_MODE,
-                            )
-                        )
-                        if LOCAL_MODE
-                        else FileSizeLimit.FILESIZE_UPLOAD
-                    )
-                )
-            ):
-                logger.info(
-                    f"选择Dash视频清晰度:{video_stream.video_quality.name} 大小:{video_size}"
-                )
+            video_size, video_stream.url = await self.test_url_status_code(video_stream.url, self.url)
+            if audio_size and video_size and (audio_size + video_size < size_limit):
+                logger.info(f"选择Dash视频清晰度:{video_stream.video_quality.name} 大小:{video_size}")
                 self.dashurls.insert(0, video_stream.url)
                 self.dashtype = "dash"
                 self.mediaraws = True
@@ -258,7 +218,9 @@ class Video(Feed):
             logger.error(f"无可用Dash视频流清晰度: {streams}")
             return False
 
-    async def handle(self, extra: dict | None = None) -> "Video":
+    async def handle(self, constraints=None, extra: dict | None = None) -> "Video":
+        max_size = constraints.max_upload_size if constraints else _DEFAULT_MAX_SIZE
+        caption_length = constraints.max_caption_length if constraints else 1024
         if extra:
             self.set_quality(extra.get("quality"))
         logger.info(f"处理视频信息: 链接: {self.rawurl}")
@@ -324,11 +286,7 @@ class Video(Feed):
                 self.clear_cached_properties()
                 if cache:
                     self.epcontent = orjson.loads(cache)  # type: ignore
-                    logger.info(
-                        f"拉取番剧缓存:epid {self.epid}"
-                        if self.epid
-                        else f"拉取番剧缓存:ssid {self.ssid}"
-                    )
+                    logger.info(f"拉取番剧缓存:epid {self.epid}" if self.epid else f"拉取番剧缓存:ssid {self.ssid}")
                 else:
                     try:
                         r = await bili_api_request(
@@ -339,7 +297,7 @@ class Video(Feed):
                         self.epcontent = r.json()
                     except Exception as e:
                         raise ParserException(
-                            f"番剧获取错误:{self.epid if self.epid else self.ssid}",
+                            f"番剧获取错误:{self.epid or self.ssid}",
                             self.rawurl,
                             e,
                         )
@@ -347,7 +305,7 @@ class Video(Feed):
                     if not self.epcontent or not self.epcontent.get("result"):
                         # Anime detects non-China IP
                         raise ParserException(
-                            f"番剧解析错误:{self.epid if self.epid else self.ssid} {self.epcontent}",
+                            f"番剧解析错误:{self.epid or self.ssid} {self.epcontent}",
                             self.rawurl,
                             self.epcontent,
                         )
@@ -389,7 +347,7 @@ class Video(Feed):
         self.clear_cached_properties()
         if cache:
             self.infocontent = orjson.loads(cache)  # type: ignore
-            logger.info(f"拉取视频缓存:{self.aid if self.aid else self.bvid}")
+            logger.info(f"拉取视频缓存:{self.aid or self.bvid}")
         else:
             try:
                 r = await bili_api_request(
@@ -400,7 +358,7 @@ class Video(Feed):
                 self.infocontent = r.json()
             except Exception as e:
                 raise ParserException(
-                    f"视频获取错误:{self.aid if self.aid else self.bvid}",
+                    f"视频获取错误:{self.aid or self.bvid}",
                     self.rawurl,
                     e,
                 )
@@ -408,7 +366,7 @@ class Video(Feed):
             if not self.infocontent or not self.infocontent.get("data"):
                 # Video detects non-China IP
                 raise ParserException(
-                    f"视频解析错误{self.aid if self.aid else self.bvid}",
+                    f"视频解析错误{self.aid or self.bvid}",
                     r.url,
                     self.infocontent,
                 )
@@ -448,30 +406,30 @@ class Video(Feed):
             content += f"播放量:{self.wan(detail.get('stat').get('view', 0))} 弹幕:{self.wan(detail.get('stat').get('danmaku', 0))} 评论:{self.wan(detail.get('stat').get('reply', 0))}\n"
             content += f"点赞:{self.wan(detail.get('stat').get('like', 0))} 投币:{self.wan(detail.get('stat').get('coin', 0))} 收藏:{self.wan(detail.get('stat').get('favorite', 0))} 转发:{self.wan(detail.get('stat').get('share', 0))}\n"
         if detail.get("pubdate"):
-            content += f"发布日期:{datetime.datetime.fromtimestamp(detail.get('pubdate')).strftime('%Y-%m-%d %H:%M:%S')}\n"
+            content += (
+                f"发布日期:{datetime.datetime.fromtimestamp(detail.get('pubdate')).strftime('%Y-%m-%d %H:%M:%S')}\n"
+            )
         if detail.get("ctime") and detail.get("ctime") != detail.get("pubdate"):
-            content += f"上传日期:{datetime.datetime.fromtimestamp(detail.get('ctime')).strftime('%Y-%m-%d %H:%M:%S')}\n"
+            content += (
+                f"上传日期:{datetime.datetime.fromtimestamp(detail.get('ctime')).strftime('%Y-%m-%d %H:%M:%S')}\n"
+            )
         self.content = content
         self.extra_markdown = f"[{escape_markdown(detail.get('title'))}]({self.url})"
         extra_desc = detail.get("desc") or detail.get("dynamic")
         if extra_desc and extra_desc != "-":
-            extra_desc = f"\n**>{
-                escape_markdown(detail.get('desc') or detail.get('dynamic')).replace(
-                    '\n', '\n>'
-                )
-            }||"
-        if (
-            extra_desc
-            and extra_desc != "-"
-            and len(self.extra_markdown + extra_desc) < MessageLimit.CAPTION_LENGTH
-        ):
+            extra_desc = (
+                f"\n**>{escape_markdown(detail.get('desc') or detail.get('dynamic')).replace(chr(10), chr(10) + '>')}||"
+            )
+        if extra_desc and extra_desc != "-" and len(self.extra_markdown + extra_desc) < caption_length:
             self.extra_markdown += extra_desc
         self.mediatitle = detail.get("title")
         self.mediaurls = detail.get("pic")
         self.mediathumb = detail.get("pic")
         self.mediadimention = detail.get("pages")[self.page - 1].get("dimension")
         ## 标准化 width+height不超过10k https://github.com/tdlib/td/blob/5c77c4692c28eb48a68ef1c1eeb1b1d732d507d3/td/telegram/PhotoSize.cpp#L422
-        if self.mediadimention is not None and (self.mediadimention.get("width", 0) + self.mediadimention.get("height", 0) > 10000):
+        if self.mediadimention is not None and (
+            self.mediadimention.get("width", 0) + self.mediadimention.get("height", 0) > 10000
+        ):
             scale = 10000 / (self.mediadimention.get("width", 0) + self.mediadimention.get("height", 0))
             self.mediadimention = {
                 "width": math.floor(scale * self.mediadimention.get("width", 0)),
@@ -486,9 +444,9 @@ class Video(Feed):
                 video.VideoQuality._480P,
                 video.VideoQuality._360P,
             ]:
-                if await self.__get_video_result(mp4_qn):
+                if await self.__get_video_result(mp4_qn, max_size):
                     break
-            await self.__get_dash_video()
+            await self.__get_dash_video(max_size)
         except Exception as e:
             logger.exception(f"视频下载解析错误: {e}")
         return self

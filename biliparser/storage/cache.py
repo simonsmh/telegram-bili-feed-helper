@@ -7,25 +7,7 @@ from typing import Any
 
 import redis.asyncio as redis
 
-LOCAL_FILE_PATH = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", os.getcwd()))
-
-CACHE_TIMER_DEFAULTS = {
-    # seconds * minutes * hours
-    "CREDENTIAL": 60 * 60 * 24 * 7 * 4,
-    "LOCK": 60 * 60,
-    "AUDIO": 60 * 60,
-    "BANGUMI": 60 * 60,
-    "OPUS": 60 * 60,
-    "LIVE": 60 * 5,
-    "READ": 60 * 60,
-    "REPLY": 60 * 60,
-    "VIDEO": 60 * 60,
-}
-
-CACHES_TIMER = {
-    k: int(os.environ.get(f"{k}_CACHE_TIME", v))
-    for k, v in CACHE_TIMER_DEFAULTS.items()
-}
+LOCAL_FILE_PATH = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", str(Path.cwd())))
 
 
 class FakeLock:
@@ -38,21 +20,15 @@ class FakeLock:
     async def acquire(self):
         current_time = int(time.time())
         lock_value = await self.store.get(self.lock_key)
-
         if lock_value:
             if current_time - float(lock_value) > self.timeout:
-                # Lock expired, replace it
                 await self.store.set(self.lock_key, str(current_time))
                 self._acquired = True
                 return True
-            else:
-                # Lock is still valid
-                return False
-        else:
-            # Lock is not present, create it
-            await self.store.set(self.lock_key, str(current_time))
-            self._acquired = True
-            return True
+            return False
+        await self.store.set(self.lock_key, str(current_time))
+        self._acquired = True
+        return True
 
     async def release(self):
         if self._acquired:
@@ -75,17 +51,16 @@ class FakeRedis:
 
     def _load_cache(self) -> dict[Any, Any]:
         try:
-            with open(self.cache_file, "r", encoding="utf-8") as f:
+            with self.cache_file.open(encoding="utf-8") as f:
                 result = json.load(f)
-                if isinstance(result, dict):
-                    if result.get("__version") == 2:
-                        return result
-        except (IOError, json.JSONDecodeError):
+                if isinstance(result, dict) and result.get("__version") == 2:
+                    return result
+        except (OSError, json.JSONDecodeError):
             pass
         return {"__version": 2}
 
     def _save_cache(self):
-        with open(self.cache_file, "w", encoding="utf-8") as f:
+        with self.cache_file.open("w", encoding="utf-8") as f:
             json.dump(self.cache, f, ensure_ascii=False)
 
     async def get(self, key: str):
@@ -101,13 +76,7 @@ class FakeRedis:
         return None
 
     async def set(
-        self,
-        key: str,
-        value: str | bytes,
-        ex: int | None = None,
-        nx: bool | None = None,
-        *args,
-        **kwargs,
+        self, key: str, value: str | bytes, ex: int | None = None, nx: bool | None = None, *args, **kwargs
     ) -> None:
         if isinstance(value, bytes):
             value = value.decode("utf-8")
@@ -123,7 +92,7 @@ class FakeRedis:
             del self.cache[key]
             self._save_cache()
 
-    def lock(self, key: str, timeout: int = CACHES_TIMER["LOCK"]):
+    def lock(self, key: str, timeout: int = 3600):
         return FakeLock(self, key, timeout)
 
 

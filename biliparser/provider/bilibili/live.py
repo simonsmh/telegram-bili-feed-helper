@@ -1,11 +1,15 @@
 import re
 from functools import cached_property
 
-from httpx import HTTPStatusError
 import orjson
+from httpx import HTTPStatusError
 
-from ..cache import CACHES_TIMER, RedisCache
-from ..utils import ParserException, escape_markdown, logger
+from ...storage.cache import RedisCache
+from ...utils import escape_markdown, logger
+from .api import (
+    CACHES_TIMER,
+    ParserException,
+)
 from .feed import Feed
 
 
@@ -21,7 +25,7 @@ class Live(Feed):
     def cache_key(self):
         return {"live": f"live:{self.room_id}"}
 
-    async def handle(self):
+    async def handle(self, constraints=None):
         logger.info(f"处理直播信息: 链接: {self.rawurl}")
         match = re.search(r"live\.bilibili\.com[\/\w]*\/(\d+)", self.rawurl)
         if not match:

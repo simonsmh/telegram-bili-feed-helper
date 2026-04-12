@@ -3,13 +3,16 @@ from functools import cached_property, lru_cache, reduce
 
 import orjson
 
-from ..cache import CACHES_TIMER, RedisCache
-from ..utils import (
-    BILIBILI_DESKTOP_BUILD,
-    ParserException,
-    bili_api_request,
+from ...storage.cache import RedisCache
+from ...utils import (
     escape_markdown,
     logger,
+)
+from .api import (
+    BILIBILI_DESKTOP_BUILD,
+    CACHES_TIMER,
+    ParserException,
+    bili_api_request,
 )
 from .feed import Feed
 
@@ -56,7 +59,8 @@ class Opus(Feed):
             if self.forward_user:
                 content += f"//@{self.forward_user}:\n"
             content += self.forward_content
-        content += self.stat_content
+        if self.stat_content:
+            content += "\n" + self.stat_content
         return self.shrink_line(content)
 
     @content.setter
@@ -110,9 +114,7 @@ class Opus(Feed):
             self.forward_user = majorcontent["module_author"]["user"]["name"]
             self.forward_uid = majorcontent["module_author"]["user"]["mid"]
             if majorcontent.get("module_desc"):
-                self.forward_content = self.__opus_handle_desc_text(
-                    majorcontent["module_desc"]
-                )
+                self.forward_content = self.__opus_handle_desc_text(majorcontent["module_desc"])
             if not self.mediatype and majorcontent.get("module_dynamic"):
                 self.__opus_handle_major(majorcontent["module_dynamic"])
         elif major["type"] == "MDL_DYN_TYPE_DRAW":
@@ -130,7 +132,7 @@ class Opus(Feed):
             return ""
         return desc["text"]
 
-    async def handle(self):
+    async def handle(self, constraints=None):
         logger.info(f"处理动态信息: 链接: {self.rawurl}")
         match = re.search(
             r"(?:www|t|h|m)\.bilibili\.com\/(?:[^\/?]+\/)*?(\d+)(?:[\/?].*)?",
@@ -160,11 +162,7 @@ class Opus(Feed):
             except Exception as e:
                 raise ParserException(f"动态获取错误:{self.dynamic_id}", self.rawurl, e)
             # 3.动态解析
-            if (
-                not response
-                or not response.get("data")
-                or not response["data"].get("item")
-            ):
+            if not response or not response.get("data") or not response["data"].get("item"):
                 raise ParserException("动态解析错误", self.rawurl, response)
             self.detailcontent = response["data"]
             # 4.缓存动态

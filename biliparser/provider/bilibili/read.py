@@ -3,14 +3,19 @@ import os
 import re
 from functools import cached_property
 
-from httpx import HTTPStatusError
 import orjson
 from bs4 import BeautifulSoup
 from bs4.element import Tag
+from httpx import HTTPStatusError
 from telegraph.aio import Telegraph
 
-from ..cache import CACHES_TIMER, RedisCache
-from ..utils import ParserException, escape_markdown, logger, referer_url
+from ...storage.cache import RedisCache
+from ...utils import escape_markdown, logger
+from .api import (
+    CACHES_TIMER,
+    ParserException,
+    referer_url,
+)
 from .feed import Feed
 
 telegraph = Telegraph(access_token=os.environ.get("TELEGRAPH_ACCESS_TOKEN", None))
@@ -36,11 +41,9 @@ class Read(Feed):
         src = img.attrs.pop("data-src")
         img.attrs = {"src": src if "hdslb" not in src else referer_url(src, self.url)}
 
-    async def handle(self):
+    async def handle(self, constraints=None):
         logger.info(f"处理文章信息: 链接: {self.rawurl}")
-        match = re.search(
-            r"bilibili\.com\/read\/(?:cv|mobile\/|mobile\?id=)(\d+)", self.rawurl
-        )
+        match = re.search(r"bilibili\.com\/read\/(?:cv|mobile\/|mobile\?id=)(\d+)", self.rawurl)
         if not match:
             raise ParserException("文章链接错误", self.rawurl)
         self.read_id = int(match.group(1))
@@ -60,30 +63,18 @@ class Read(Feed):
                 resp = await self.client.get(self.rawurl)
                 resp.raise_for_status()
             except HTTPStatusError as e:
-                raise ParserException(
-                    f"文章页面获取错误:{self.read_id}", e.request.url, e
-                )
+                raise ParserException(f"文章页面获取错误:{self.read_id}", e.request.url, e)
             except Exception as e:
-                raise ParserException(
-                    f"文章页面获取错误:{self.read_id}", self.rawurl, e
-                )
+                raise ParserException(f"文章页面获取错误:{self.read_id}", self.rawurl, e)
                 # 3.解析文章
-            cv_init = re.search(
-                r"window\.__INITIAL_STATE__=(.*?);\(function\(\)", resp.text
-            )
+            cv_init = re.search(r"window\.__INITIAL_STATE__=(.*?);\(function\(\)", resp.text)
             if not cv_init:
-                raise ParserException(
-                    f"文章页面内容获取错误:{self.read_id}", self.rawurl, cv_init
-                )
+                raise ParserException(f"文章页面内容获取错误:{self.read_id}", self.rawurl, cv_init)
             cv_content = orjson.loads(cv_init.group(1))
         self.uid = cv_content.get("readInfo").get("author").get("mid")
         self.user = cv_content.get("readInfo").get("author").get("name")
         self.content = cv_content.get("readInfo").get("summary")
-        mediaurls = (
-            cv_content.get("readInfo").get("banner_url")
-            if cv_content.get("readInfo").get("banner_url")
-            else cv_content.get("readInfo").get("image_urls")
-        )
+        mediaurls = cv_content.get("readInfo").get("banner_url") or cv_content.get("readInfo").get("image_urls")
         if mediaurls:
             logger.info(f"文章mediaurls: {mediaurls}")
             self.mediaurls = mediaurls
@@ -116,9 +107,7 @@ class Read(Feed):
             article_content = cv_content.get("readInfo").get("content")
             if not telegraph.get_access_token():
                 logger.info("creating_account")
-                result = await telegraph.create_account(
-                    "bilifeedbot", "bilifeedbot", "https://t.me/bilifeedbot"
-                )
+                result = await telegraph.create_account("bilifeedbot", "bilifeedbot", "https://t.me/bilifeedbot")
                 logger.info(f"Telegraph create_account: {result}")
             try:
                 article = orjson.loads(article_content)
@@ -149,9 +138,7 @@ class Read(Feed):
                 await asyncio.gather(*task)
                 result = ""
                 if isinstance(article.body, Tag):
-                    result = "".join(
-                        [str(i) for i in article.body.contents]
-                    )  ## convert tags to string
+                    result = "".join([str(i) for i in article.body.contents])  ## convert tags to string
                 graphurl = (
                     await telegraph.create_page(
                         title=title,
