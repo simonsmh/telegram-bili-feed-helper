@@ -59,7 +59,8 @@ class Opus(Feed):
             if self.forward_user:
                 content += f"//@{self.forward_user}:\n"
             content += self.forward_content
-        content += self.stat_content
+        if self.stat_content:
+            content += "\n" + self.stat_content
         return self.shrink_line(content)
 
     @content.setter
