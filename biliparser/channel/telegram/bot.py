@@ -61,58 +61,75 @@ SOURCE_CODE_MARKUP = InlineKeyboardMarkup(
 )
 
 
+def _clean_cn_tag_style(content: str) -> str:
+    """Refine cn tag style display: #abc# -> #abc"""
+    if not content:
+        return ""
+    return re.sub(r"\\#((?:(?!\\#).)+)\\#", r"\\#\1 ", content)
+
+
+def _make_user_markdown(name: str, uid: str) -> str:
+    if name and uid:
+        return f"[@{escape_markdown(name)}](https://space.bilibili.com/{uid})"
+    return ""
+
+
+def _format_comment_markdown(comments: list[Comment]) -> str:
+    result = ""
+    for c in comments:
+        user_md = _make_user_markdown(c.author.name, c.author.uid)
+        if c.is_target:
+            result += f"💬\\> {user_md}:\n{escape_markdown(c.text)}\n"
+        elif c.is_top:
+            result += f"🔝\\> {user_md}:\n{escape_markdown(c.text)}\n"
+    return result
+
+
+def _try_append_within_limit(components: list[str], text: str, max_len: int) -> bool:
+    if not text:
+        return True
+    test_content = "".join(components + [text])
+    if len(test_content) < max_len:
+        components.append(text)
+        return True
+    return False
+
+
 def format_caption_for_telegram(
     content: ParsedContent, constraints: MediaConstraints
 ) -> str:
-    """Format ParsedContent into a Telegram MarkdownV2 caption string."""
+    """Format ParsedContent into a Telegram MarkdownV2 caption string.
+
+    Mirrors the original Feed.caption logic:
+    - First line: extra_markdown or escaped url
+    - User markdown link
+    - Content and comments wrapped in **>...|| (spoiler blockquote)
+    """
     max_len = constraints.caption_max_length
 
-    # Build user markdown link
-    user_markdown = ""
-    if content.author.name and content.author.uid:
-        user_markdown = (
-            f"[@{escape_markdown(content.author.name)}]"
-            f"(https://space.bilibili.com/{content.author.uid})"
-        )
+    components = [f"{content.extra_markdown or escape_markdown(content.url)}\n"]
 
-    # Build extra/url part
-    if content.extra_markdown:
-        extra_part = content.extra_markdown
-    else:
-        extra_part = escape_markdown(content.url)
+    if content.author.name:
+        user_md = _make_user_markdown(content.author.name, content.author.uid)
+        if not _try_append_within_limit(components, f"{user_md}:", max_len):
+            return "".join(components)
 
-    # Build content part (prefer markdown version)
-    content_text = content.content_markdown or escape_markdown(content.content)
+    # Content markdown
+    content_md = content.content_markdown or escape_markdown(content.content)
+    if content_md and not content_md.endswith("\n"):
+        content_md += "\n"
 
-    # Build comments part
-    comment_lines = []
-    for c in content.comments:
-        author_str = escape_markdown(c.author.name)
-        text_str = escape_markdown(c.text)
-        if c.is_target:
-            comment_lines.append(f"💬\\> @{author_str}:\n{text_str}")
-        elif c.is_top:
-            comment_lines.append(f"🔝\\> @{author_str}:\n{text_str}")
-    comment_text = "\n".join(comment_lines)
+    # Comment markdown
+    comment_md = _format_comment_markdown(content.comments)
 
-    # Assemble caption parts
-    parts = []
-    if extra_part:
-        parts.append(extra_part)
-    if user_markdown:
-        parts.append(user_markdown)
-    if content_text:
-        parts.append(content_text)
-    if comment_text:
-        parts.append(comment_text)
+    # Wrap content and comments in **>...|| (spoiler blockquote for folding)
+    for text in [content_md, comment_md]:
+        if text:
+            formatted = f"\n**>{_clean_cn_tag_style(text).replace(chr(10), chr(10) + '>')}||"
+            if not _try_append_within_limit(components, formatted, max_len):
+                return "".join(components)
 
-    caption = "\n".join(parts)
-
-    # Truncate to max length
-    if len(caption) > max_len:
-        caption = caption[:max_len]
-
-    return caption
+    return "".join(components)
 
 
 async def get_description(context: ContextTypes.DEFAULT_TYPE) -> str:

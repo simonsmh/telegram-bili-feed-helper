@@ -38,7 +38,7 @@ def test_with_author():
 
 
 def test_author_no_uid():
-    """没有 uid 时不应生成 user_markdown"""
+    """没有 uid 时不应生成 user_markdown link，但 author.name 仍触发 user_markdown 分支"""
     pc = ParsedContent(
         url="https://bilibili.com/video/BV123",
         author=Author(name="UP主", uid=""),
@@ -57,13 +57,25 @@ def test_with_content():
     assert "视频描述" in caption
 
 
+def test_content_wrapped_in_spoiler_blockquote():
+    """content 应被 **>...|| 包裹（Telegram spoiler blockquote 折叠格式）"""
+    pc = ParsedContent(
+        url="https://bilibili.com",
+        author=Author(),
+        content="测试内容",
+    )
+    caption = format_caption_for_telegram(pc, _mc())
+    assert "**>" in caption
+    assert "||" in caption
+
+
 def test_with_comments():
     pc = ParsedContent(
         url="https://bilibili.com/video/BV123",
         author=Author(),
         comments=[
-            Comment(author=Author(name="评论者A"), text="好看", is_target=True),
-            Comment(author=Author(name="评论者B"), text="顶", is_top=True),
+            Comment(author=Author(name="评论者A", uid="111"), text="好看", is_target=True),
+            Comment(author=Author(name="评论者B", uid="222"), text="顶", is_top=True),
         ],
     )
     caption = format_caption_for_telegram(pc, _mc())
@@ -71,11 +83,24 @@ def test_with_comments():
     assert "评论者B" in caption
 
 
+def test_comments_wrapped_in_spoiler_blockquote():
+    """comments 应被 **>...|| 包裹"""
+    pc = ParsedContent(
+        url="https://bilibili.com",
+        author=Author(),
+        comments=[Comment(author=Author(name="user", uid="1"), text="msg", is_target=True)],
+    )
+    caption = format_caption_for_telegram(pc, _mc())
+    # content 和 comment 各自独立包裹
+    assert caption.count("**>") >= 1
+    assert caption.count("||") >= 1
+
+
 def test_target_comment_prefix():
     pc = ParsedContent(
         url="https://bilibili.com",
         author=Author(),
-        comments=[Comment(author=Author(name="user"), text="msg", is_target=True)],
+        comments=[Comment(author=Author(name="user", uid="1"), text="msg", is_target=True)],
     )
     caption = format_caption_for_telegram(pc, _mc())
     assert "💬" in caption
@@ -85,13 +110,14 @@ def test_top_comment_prefix():
     pc = ParsedContent(
         url="https://bilibili.com",
         author=Author(),
-        comments=[Comment(author=Author(name="user"), text="msg", is_top=True)],
+        comments=[Comment(author=Author(name="user", uid="1"), text="msg", is_top=True)],
     )
     caption = format_caption_for_telegram(pc, _mc())
     assert "🔝" in caption
 
 
 def test_truncation():
+    """超长 content 应被截断（不追加到 components）"""
     pc = ParsedContent(
         url="https://bilibili.com/video/BV123",
         author=Author(name="UP主", uid="12345"),
@@ -128,3 +154,15 @@ def test_empty_content():
     pc = ParsedContent(url="https://bilibili.com", author=Author())
     caption = format_caption_for_telegram(pc, _mc())
     assert caption  # 至少有 URL
+
+
+def test_multiline_content_blockquote():
+    """多行 content 中每行应以 > 开头（blockquote 格式）"""
+    pc = ParsedContent(
+        url="https://bilibili.com",
+        author=Author(),
+        content="第一行\n第二行\n第三行",
+    )
+    caption = format_caption_for_telegram(pc, _mc())
+    # 在 **>...|| 内部，换行后应有 >
+    assert "\n>" in caption
