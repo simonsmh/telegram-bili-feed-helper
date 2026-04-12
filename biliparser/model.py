@@ -32,8 +32,9 @@ class MediaInfo:
 @dataclass
 class MediaConstraints:
     """Channel 声明自己的媒体能力，传给 Provider"""
-    max_upload_size: int        # bytes
-    max_download_size: int      # bytes
+
+    max_upload_size: int  # bytes
+    max_download_size: int  # bytes
     caption_max_length: int
     local_mode: bool = False
 
@@ -41,6 +42,7 @@ class MediaConstraints:
 @dataclass
 class ParsedContent:
     """Provider 产出，Channel 消费"""
+
     url: str
     author: Author
     title: str = ""
@@ -56,6 +58,7 @@ class ParsedContent:
 @dataclass
 class PreparedMedia:
     """Provider 准备好的媒体文件"""
+
     files: list[Path | str]
     thumbnail: "Path | str | None"
     cleanup_paths: list[Path] = field(default_factory=list)

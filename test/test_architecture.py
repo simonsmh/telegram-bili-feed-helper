@@ -1,6 +1,6 @@
 """测试架构约束 — 验证依赖方向正确"""
+
 import ast
-import os
 from pathlib import Path
 
 
@@ -19,9 +19,8 @@ def _collect_imports(directory: str) -> dict[str, set[str]]:
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     imports.add(alias.name)
-            elif isinstance(node, ast.ImportFrom):
-                if node.module:
-                    imports.add(node.module)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.add(node.module)
         result[rel] = imports
     return result
 
@@ -31,8 +30,9 @@ def test_provider_no_telegram_imports():
     imports = _collect_imports("biliparser/provider")
     for filepath, modules in imports.items():
         for mod in modules:
-            assert "telegram" not in mod.lower() or "bilibili" in mod.lower(), \
+            assert "telegram" not in mod.lower() or "bilibili" in mod.lower(), (
                 f"{filepath} imports telegram module: {mod}"
+            )
 
 
 def test_model_no_business_imports():
@@ -42,13 +42,10 @@ def test_model_no_business_imports():
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                assert alias.name in allowed_modules, \
-                    f"model.py imports non-stdlib: {alias.name}"
-        elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                top = node.module.split(".")[0]
-                assert top in allowed_modules, \
-                    f"model.py imports non-stdlib: {node.module}"
+                assert alias.name in allowed_modules, f"model.py imports non-stdlib: {alias.name}"
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            top = node.module.split(".")[0]
+            assert top in allowed_modules, f"model.py imports non-stdlib: {node.module}"
 
 
 def test_storage_no_channel_or_provider_imports():
@@ -56,31 +53,27 @@ def test_storage_no_channel_or_provider_imports():
     imports = _collect_imports("biliparser/storage")
     for filepath, modules in imports.items():
         for mod in modules:
-            assert "channel" not in mod, \
-                f"{filepath} imports channel: {mod}"
-            assert "provider" not in mod, \
-                f"{filepath} imports provider: {mod}"
+            assert "channel" not in mod, f"{filepath} imports channel: {mod}"
+            assert "provider" not in mod, f"{filepath} imports provider: {mod}"
 
 
 def test_no_old_module_imports():
     """确保没有残留的旧模块引用"""
-    old_modules = ["biliparser.cache", "biliparser.credentialFactory",
-                   "biliparser.database", "biliparser.strategy"]
+    old_modules = ["biliparser.cache", "biliparser.credentialFactory", "biliparser.database", "biliparser.strategy"]
     for py_file in Path("biliparser").rglob("*.py"):
         content = py_file.read_text()
         for old_mod in old_modules:
             # 检查 from xxx import 和 import xxx 形式
-            assert f"from {old_mod}" not in content and f"import {old_mod}" not in content, \
+            assert f"from {old_mod}" not in content and f"import {old_mod}" not in content, (
                 f"{py_file} still references old module: {old_mod}"
+            )
         # 也检查相对导入形式
-        assert "from .cache import" not in content or "storage" in str(py_file), \
+        assert "from .cache import" not in content or "storage" in str(py_file), (
             f"{py_file} uses old relative import from .cache"
-        assert "from .credentialFactory" not in content, \
-            f"{py_file} uses old relative import from .credentialFactory"
-        assert "from .database" not in content, \
-            f"{py_file} uses old relative import from .database"
-        assert "from .strategy" not in content, \
-            f"{py_file} uses old relative import from .strategy"
+        )
+        assert "from .credentialFactory" not in content, f"{py_file} uses old relative import from .credentialFactory"
+        assert "from .database" not in content, f"{py_file} uses old relative import from .database"
+        assert "from .strategy" not in content, f"{py_file} uses old relative import from .strategy"
 
 
 def test_old_files_deleted():

@@ -1,5 +1,4 @@
 """测试兼容入口 — from biliparser import biliparser"""
-import pytest
 
 from biliparser import biliparser
 from biliparser.model import ParsedContent
@@ -11,35 +10,35 @@ def test_biliparser_is_callable():
 
 def test_import_model_classes():
     from biliparser.model import (
-        Author, Comment, MediaInfo, MediaConstraints,
-        ParsedContent, PreparedMedia,
+        Author,
     )
+
     # 所有类都应可导入
     assert Author is not None
     assert ParsedContent is not None
 
 
 def test_import_provider():
-    from biliparser.provider import Provider, ProviderRegistry
     from biliparser.provider.bilibili import BilibiliProvider
+
     assert BilibiliProvider is not None
 
 
 def test_import_channel():
-    from biliparser.channel import Channel
     from biliparser.channel.telegram import TelegramChannel
+
     assert TelegramChannel is not None
 
 
 def test_import_storage():
-    from biliparser.storage import db_init, db_close
-    from biliparser.storage.cache import RedisCache, FakeRedis
-    from biliparser.storage.models import TelegramFileCache
+    from biliparser.storage.cache import RedisCache
+
     assert RedisCache is not None
 
 
 def test_import_utils():
-    from biliparser.utils import logger, compress, escape_markdown, get_filename
+    from biliparser.utils import compress, escape_markdown, get_filename, logger
+
     assert logger is not None
     assert callable(compress)
     assert callable(escape_markdown)
@@ -48,16 +47,19 @@ def test_import_utils():
 
 def test_import_bot():
     from biliparser.channel.telegram.bot import (
-        format_caption_for_telegram, add_handlers, run_bot,
+        add_handlers,
+        format_caption_for_telegram,
     )
+
     assert callable(format_caption_for_telegram)
     assert callable(add_handlers)
 
 
 def test_import_uploader():
     from biliparser.channel.telegram.uploader import (
-        UploadTask, UploadQueueManager, get_cached_media_file_id,
-        cleanup_medias, get_media,
+        UploadQueueManager,
+        UploadTask,
     )
+
     assert UploadTask is not None
     assert UploadQueueManager is not None

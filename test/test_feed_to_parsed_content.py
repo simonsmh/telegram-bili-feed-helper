@@ -1,10 +1,11 @@
 """测试 _feed_to_parsed_content — Feed 对象到 ParsedContent 的转换"""
-import pytest
-import httpx
 
+import httpx
+import pytest
+
+from biliparser.model import ParsedContent
 from biliparser.provider.bilibili import _feed_to_parsed_content
 from biliparser.provider.bilibili.feed import Feed
-from biliparser.model import ParsedContent, Author, Comment, MediaInfo
 
 
 class StubFeed(Feed):

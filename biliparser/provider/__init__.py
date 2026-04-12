@@ -10,13 +10,13 @@ class Provider(ABC):
         """URL 是否属于本 Provider"""
 
     @abstractmethod
-    async def parse(self, urls: list[str], constraints: MediaConstraints,
-                    extra: dict | None = None) -> list[ParsedContent]:
+    async def parse(
+        self, urls: list[str], constraints: MediaConstraints, extra: dict | None = None
+    ) -> list[ParsedContent]:
         """解析 URL 列表，返回 ParsedContent 列表"""
 
     @abstractmethod
-    async def prepare_media(self, content: ParsedContent,
-                            constraints: MediaConstraints) -> PreparedMedia:
+    async def prepare_media(self, content: ParsedContent, constraints: MediaConstraints) -> PreparedMedia:
         """按 Channel 的 constraints 下载/准备媒体"""
 
 
@@ -33,8 +33,9 @@ class ProviderRegistry:
                 return provider
         return None
 
-    async def parse(self, urls: list[str], constraints: MediaConstraints,
-                    extra: dict | None = None) -> list[ParsedContent]:
+    async def parse(
+        self, urls: list[str], constraints: MediaConstraints, extra: dict | None = None
+    ) -> list[ParsedContent]:
         provider_urls: dict[int, tuple[Provider, list[str]]] = {}
         for url in urls:
             provider = self.find_provider(url)
@@ -45,10 +46,7 @@ class ProviderRegistry:
                 provider_urls[pid] = (provider, [])
             provider_urls[pid][1].append(url)
 
-        tasks = [
-            provider.parse(purl_list, constraints, extra)
-            for provider, purl_list in provider_urls.values()
-        ]
+        tasks = [provider.parse(purl_list, constraints, extra) for provider, purl_list in provider_urls.values()]
         results_nested = await asyncio.gather(*tasks, return_exceptions=True)
         results: list[ParsedContent] = []
         for r in results_nested:

@@ -1,12 +1,13 @@
 """测试 provider 层 — Provider ABC、ProviderRegistry、BilibiliProvider"""
+
 import pytest
 
-from biliparser.model import Author, MediaConstraints, MediaInfo, ParsedContent, PreparedMedia
+from biliparser.model import Author, MediaConstraints, ParsedContent, PreparedMedia
 from biliparser.provider import Provider, ProviderRegistry
 from biliparser.provider.bilibili import BilibiliProvider
 
-
 # --- Provider ABC ---
+
 
 class DummyProvider(Provider):
     def can_handle(self, url: str) -> bool:
@@ -39,6 +40,7 @@ def _mc():
 
 
 # --- ProviderRegistry ---
+
 
 def test_registry_find_provider():
     registry = ProviderRegistry()
@@ -102,6 +104,7 @@ async def test_registry_parse_with_extra():
 
 
 # --- BilibiliProvider.can_handle ---
+
 
 class TestBilibiliProviderCanHandle:
     def setup_method(self):

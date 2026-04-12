@@ -22,10 +22,7 @@ CACHE_TIMER_DEFAULTS = {
     "VIDEO": 60 * 60,
 }
 
-CACHES_TIMER = {
-    k: int(os.environ.get(f"{k}_CACHE_TIME", v))
-    for k, v in CACHE_TIMER_DEFAULTS.items()
-}
+CACHES_TIMER = {k: int(os.environ.get(f"{k}_CACHE_TIME", v)) for k, v in CACHE_TIMER_DEFAULTS.items()}
 
 
 class ParserException(Exception):
@@ -48,6 +45,7 @@ def retry_catcher(func):
         except BaseException as err:
             logger.exception(err)
             return err
+
     return inner_function
 
 
@@ -71,15 +69,11 @@ async def bili_api_request(client: AsyncClient, path: str, **kwargs) -> Response
             if resp.status_code == 200:
                 result = resp.json()
                 if result.get("code") == 0:
-                    logger.debug(
-                        f"biliAPI请求成功 [{resp.status_code}]: {url} -> {resp.text}"
-                    )
+                    logger.debug(f"biliAPI请求成功 [{resp.status_code}]: {url} -> {resp.text}")
                     return resp
         except HTTPStatusError as e:
-            logger.warning(
-                f"biliAPI请求失败 [{e.response.status_code}]: {e.request.url}"
-            )
+            logger.warning(f"biliAPI请求失败 [{e.response.status_code}]: {e.request.url}")
         except Exception as e:
-            logger.error(f"biliAPI请求异常 [{url_prefix}]: {str(e)}")
+            logger.error(f"biliAPI请求异常 [{url_prefix}]: {e!s}")
             continue
     raise ParserException("biliAPI请求错误", path)

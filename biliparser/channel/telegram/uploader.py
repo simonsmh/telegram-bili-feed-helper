@@ -21,12 +21,10 @@ from ...storage.cache import RedisCache
 from ...storage.models import TelegramFileCache
 from ...utils import compress, logger
 
-LOCAL_MEDIA_FILE_PATH = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", os.getcwd())) / ".tmp"
+LOCAL_MEDIA_FILE_PATH = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", str(Path.cwd()))) / ".tmp"
 LOCAL_MODE = bool(os.environ.get("LOCAL_MODE", False))
 
-BILIBILI_SHARE_URL_REGEX = (
-    r"(?i)【.*】 https://[\w\.]*?(?:bilibili\.com|b23\.tv|bili2?2?3?3?\.cn)\S+"
-)
+BILIBILI_SHARE_URL_REGEX = r"(?i)【.*】 https://[\w\.]*?(?:bilibili\.com|b23\.tv|bili2?2?3?3?\.cn)\S+"
 
 
 def _get_constraints() -> MediaConstraints:
@@ -41,6 +39,7 @@ def _get_constraints() -> MediaConstraints:
 @dataclass
 class UploadTask:
     """上传任务数据结构"""
+
     user_id: int
     message: Message
     parsed_content: ParsedContent
@@ -66,9 +65,7 @@ async def cache_media(mediafilename: str, file) -> None:
     if not file:
         return
     try:
-        await TelegramFileCache.update_or_create(
-            mediafilename=mediafilename, defaults=dict(file_id=file.file_id)
-        )
+        await TelegramFileCache.update_or_create(mediafilename=mediafilename, defaults=dict(file_id=file.file_id))
     except Exception as e:
         logger.exception(e)
 
@@ -101,52 +98,45 @@ async def get_media(
     try:
         header = BILIBILI_DESKTOP_HEADER.copy()
         header["Referer"] = referer
-        async with timeout(CACHES_TIMER["LOCK"]):
-            async with client.stream("GET", url, headers=header) as response:
-                logger.info(f"下载开始: {url}")
-                if response.status_code != 200:
-                    raise NetworkError(
-                        f"媒体文件获取错误: {response.status_code} {url}->{referer}"
-                    )
-                content_type = response.headers.get("content-type")
-                if content_type is None:
-                    raise NetworkError(
-                        f"媒体文件获取错误: 无法获取 content-type {url}->{referer}"
-                    )
-                mediatype = content_type.split("/")
-                total = int(response.headers.get("content-length", 0))
-                if mediatype[0] in ["video", "audio", "application"]:
-                    with open(temp_media, "wb") as file:
-                        with tqdm(
-                            total=total,
-                            unit_scale=True,
-                            unit_divisor=1024,
-                            unit="B",
-                            desc=response.request.url.host + "->" + filename,
-                        ) as pbar:
-                            async for chunk in response.aiter_bytes():
-                                file.write(chunk)
-                                pbar.update(len(chunk))
-                elif media_check_ignore or mediatype[0] == "image":
-                    img = await response.aread()
-                    if compression and mediatype[1] in ["jpeg", "png"]:
-                        logger.info(f"压缩: {url} {mediatype[1]}")
-                        if is_thumbnail:
-                            img = compress(
-                                BytesIO(img), size=320, format="JPEG"
-                            ).getvalue()
-                        else:
-                            img = compress(BytesIO(img)).getvalue()
-                    with open(temp_media, "wb") as file:
-                        file.write(img)
-                else:
-                    raise NetworkError(
-                        f"媒体文件类型错误: {mediatype} {url}->{referer}"
-                    )
-                media.unlink(missing_ok=True)
-                temp_media.rename(media)
-                logger.info(f"完成下载: {media}")
-                return media
+        async with timeout(CACHES_TIMER["LOCK"]), client.stream("GET", url, headers=header) as response:
+            logger.info(f"下载开始: {url}")
+            if response.status_code != 200:
+                raise NetworkError(f"媒体文件获取错误: {response.status_code} {url}->{referer}")
+            content_type = response.headers.get("content-type")
+            if content_type is None:
+                raise NetworkError(f"媒体文件获取错误: 无法获取 content-type {url}->{referer}")
+            mediatype = content_type.split("/")
+            total = int(response.headers.get("content-length", 0))
+            if mediatype[0] in ["video", "audio", "application"]:
+                with (
+                    temp_media.open("wb") as file,
+                    tqdm(
+                        total=total,
+                        unit_scale=True,
+                        unit_divisor=1024,
+                        unit="B",
+                        desc=response.request.url.host + "->" + filename,
+                    ) as pbar,
+                ):
+                    async for chunk in response.aiter_bytes():
+                        file.write(chunk)
+                        pbar.update(len(chunk))
+            elif media_check_ignore or mediatype[0] == "image":
+                img = await response.aread()
+                if compression and mediatype[1] in ["jpeg", "png"]:
+                    logger.info(f"压缩: {url} {mediatype[1]}")
+                    if is_thumbnail:
+                        img = compress(BytesIO(img), size=320, format="JPEG").getvalue()
+                    else:
+                        img = compress(BytesIO(img)).getvalue()
+                with temp_media.open("wb") as file:
+                    file.write(img)
+            else:
+                raise NetworkError(f"媒体文件类型错误: {mediatype} {url}->{referer}")
+            media.unlink(missing_ok=True)
+            temp_media.rename(media)
+            logger.info(f"完成下载: {media}")
+            return media
     except asyncio.TimeoutError:
         logger.error(f"下载超时: {url}->{referer}")
         raise NetworkError(f"下载超时: {url}")
@@ -173,16 +163,15 @@ async def handle_dash_media(f: ParsedContent, client: httpx.AsyncClient):
         if is_custom:
             cache_dash_file = LOCAL_MEDIA_FILE_PATH / f"{bvid}{quality_name}.mp4"
         else:
-            cache_dash_file = LOCAL_MEDIA_FILE_PATH / (f.media.filenames[0] if f.media and f.media.filenames else f"{bvid}.mp4")
+            cache_dash_file = LOCAL_MEDIA_FILE_PATH / (
+                f.media.filenames[0] if f.media and f.media.filenames else f"{bvid}.mp4"
+            )
 
         cache_dash = await get_cached_media_file_id(cache_dash_file.name)
         if cache_dash:
             return [cache_dash]
 
-        tasks = [
-            get_media(client, f.url, m, fn)
-            for m, fn in zip(dashurls, dashfilenames)
-        ]
+        tasks = [get_media(client, f.url, m, fn) for m, fn in zip(dashurls, dashfilenames, strict=False)]
         res = [m for m in await asyncio.gather(*tasks) if m]
         if len(res) < 2:
             logger.error(f"DASH媒体下载失败: {f.url}")
@@ -190,11 +179,9 @@ async def handle_dash_media(f: ParsedContent, client: httpx.AsyncClient):
         cmd = [os.environ.get("FFMPEG_PATH", "ffmpeg"), "-y"]
         for item in res:
             cmd.extend(["-i", str(item)])
-        cmd.extend(
-            ["-vcodec", "copy", "-acodec", "copy", str(cache_dash_file.absolute())]
-        )
+        cmd.extend(["-vcodec", "copy", "-acodec", "copy", str(cache_dash_file.absolute())])
         logger.info(f"开始合并，执行命令：{' '.join(cmd)}")
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True)  # noqa: ASYNC221, S603
 
         if f.media:
             f.media.urls = [str(cache_dash_file.absolute())]
@@ -202,7 +189,7 @@ async def handle_dash_media(f: ParsedContent, client: httpx.AsyncClient):
         logger.debug(f"合并完成: {f.url}")
         return [cache_dash_file]
     except subprocess.CalledProcessError as e:
-        logger.error(f"DASH媒体处理失败: {f.url} - {str(e)}")
+        logger.error(f"DASH媒体处理失败: {f.url} - {e!s}")
         return []
     finally:
         for item in res:
@@ -255,11 +242,14 @@ async def get_media_for_content(
                     return media, mediathumb
             tasks = [
                 get_media(
-                    client, f.url, m, fn,
+                    client,
+                    f.url,
+                    m,
+                    fn,
                     compression=compression,
                     media_check_ignore=media_check_ignore,
                 )
-                for m, fn in zip(f.media.urls, f.media.filenames)
+                for m, fn in zip(f.media.urls, f.media.filenames, strict=False)
             ]
             media = [m for m in await asyncio.gather(*tasks) if m]
         else:
@@ -279,9 +269,7 @@ async def get_media_for_content(
 class UploadQueueManager:
     """上传队列管理器 - 处理 Telegram API 限流"""
 
-    def __init__(
-        self, max_workers: int = 4, max_user_tasks: int = 5, max_queue_size: int = 200
-    ):
+    def __init__(self, max_workers: int = 4, max_user_tasks: int = 5, max_queue_size: int = 200):
         self.queue: asyncio.Queue[UploadTask] = asyncio.Queue(maxsize=max_queue_size)
         self.max_workers = max_workers
         self.max_user_tasks = max_user_tasks
@@ -296,9 +284,7 @@ class UploadQueueManager:
                 self.active_tasks[task.user_id] = {}
             user_tasks = self.active_tasks[task.user_id]
             if len(user_tasks) >= self.max_user_tasks:
-                logger.warning(
-                    f"用户 {task.user_id} 的任务数已达上限 ({self.max_user_tasks})，丢弃新任务"
-                )
+                logger.warning(f"用户 {task.user_id} 的任务数已达上限 ({self.max_user_tasks})，丢弃新任务")
                 return
             for existing_task in user_tasks.values():
                 if existing_task.urls == task.urls:
@@ -328,9 +314,7 @@ class UploadQueueManager:
     async def get_user_tasks(self, user_id: int) -> list[str]:
         async with self._lock:
             tasks = self.active_tasks.get(user_id, {})
-            return [
-                f"{t.parsed_content.url} (ID: {t.task_id[:8]})" for t in tasks.values()
-            ]
+            return [f"{t.parsed_content.url} (ID: {t.task_id[:8]})" for t in tasks.values()]
 
     async def _worker(self, worker_id: int) -> None:
         logger.info(f"上传 Worker {worker_id} 启动")
@@ -362,10 +346,7 @@ class UploadQueueManager:
                             if not self.processing_tasks[task.user_id]:
                                 del self.processing_tasks[task.user_id]
                 async with self._lock:
-                    if (
-                        task.user_id in self.active_tasks
-                        and task.task_id in self.active_tasks[task.user_id]
-                    ):
+                    if task.user_id in self.active_tasks and task.task_id in self.active_tasks[task.user_id]:
                         del self.active_tasks[task.user_id][task.task_id]
                         if not self.active_tasks[task.user_id]:
                             del self.active_tasks[task.user_id]
@@ -381,7 +362,7 @@ class UploadQueueManager:
         if task.task_type == "fetch":
             await self._process_fetch_task(task)
             return
-        MAX_RETRIES = 4
+        MAX_RETRIES = 4  # noqa: N806
         for attempt in range(1, MAX_RETRIES + 1):
             async with self._lock:
                 if task.task_id not in self.active_tasks.get(task.user_id, {}):
@@ -389,14 +370,14 @@ class UploadQueueManager:
             success = await self._try_upload_once(task, attempt, MAX_RETRIES)
             if success:
                 return
-            if attempt < MAX_RETRIES:
-                if not await self._retry_parse_url(task):
-                    break
+            if attempt < MAX_RETRIES and not await self._retry_parse_url(task):
+                break
 
     async def _retry_parse_url(self, task: UploadTask) -> bool:
         try:
             logger.info(f"任务 {task.task_id[:8]} 正在重新解析 URL: {task.parsed_content.url}")
             from ...provider.bilibili import BilibiliProvider
+
             provider = BilibiliProvider()
             results = await provider.parse([task.parsed_content.url], _get_constraints())
             if results and not isinstance(results[0], Exception):
@@ -408,9 +389,7 @@ class UploadQueueManager:
             logger.exception(f"任务 {task.task_id[:8]} 重新解析时发生异常: {e}")
             return False
 
-    async def _try_upload_once(
-        self, task: UploadTask, attempt: int, max_retries: int
-    ) -> bool:
+    async def _try_upload_once(self, task: UploadTask, attempt: int, max_retries: int) -> bool:
         f = task.parsed_content
         message = task.message
         medias = []
@@ -418,6 +397,7 @@ class UploadQueueManager:
             async with RedisCache().lock(f.url, timeout=2 * CACHES_TIMER["LOCK"]):
                 if not f.media or not f.media.urls:
                     from .bot import format_caption_for_telegram
+
                     await message.reply_text(format_caption_for_telegram(f, _get_constraints()))
                     return True
 
@@ -427,6 +407,7 @@ class UploadQueueManager:
                         media = [mediathumb]
                     else:
                         from .bot import format_caption_for_telegram
+
                         await message.reply_text(format_caption_for_telegram(f, _get_constraints()))
                         return True
 
@@ -439,20 +420,14 @@ class UploadQueueManager:
 
                 await self._upload_media(task)
                 await self._try_delete_share_message(task)
-                logger.info(
-                    f"任务 {task.task_id[:8]} 上传成功 (尝试 {attempt}/{max_retries})"
-                )
+                logger.info(f"任务 {task.task_id[:8]} 上传成功 (尝试 {attempt}/{max_retries})")
                 return True
 
         except (BadRequest, RetryAfter, NetworkError, httpx.HTTPError) as err:
-            should_retry = await self._handle_upload_error(
-                err, task, attempt, max_retries, medias
-            )
+            should_retry = await self._handle_upload_error(err, task, attempt, max_retries, medias)
             return not should_retry
         except Exception as err:
-            logger.exception(
-                f"任务 {task.task_id[:8]} 第 {attempt}/{max_retries} 次未预期异常: {err}"
-            )
+            logger.exception(f"任务 {task.task_id[:8]} 第 {attempt}/{max_retries} 次未预期异常: {err}")
             cleanup_medias(medias)
             return False
         finally:
@@ -469,28 +444,20 @@ class UploadQueueManager:
                 await message.chat.leave()
                 cleanup_medias(medias)
                 return False
-            elif any(
-                x in err.message
-                for x in ["Topic_deleted", "Topic_closed", "Message thread not found"]
-            ):
+            if any(x in err.message for x in ["Topic_deleted", "Topic_closed", "Message thread not found"]):
                 cleanup_medias(medias)
                 return False
-            else:
-                logger.error(
-                    f"任务 {task.task_id[:8]} 第 {attempt}/{max_retries} 次上传失败 (BadRequest): {err}"
-                )
-                if f.media:
-                    f.media.need_download = True
-                cleanup_medias(medias)
-                return True
-        elif isinstance(err, RetryAfter):
+            logger.error(f"任务 {task.task_id[:8]} 第 {attempt}/{max_retries} 次上传失败 (BadRequest): {err}")
+            if f.media:
+                f.media.need_download = True
+            cleanup_medias(medias)
+            return True
+        if isinstance(err, RetryAfter):
             cleanup_medias(medias)
             await asyncio.sleep(err.retry_after)
             return True
-        elif isinstance(err, (NetworkError, httpx.HTTPError)):
-            logger.error(
-                f"任务 {task.task_id[:8]} 第 {attempt}/{max_retries} 次网络错误: {err}"
-            )
+        if isinstance(err, (NetworkError, httpx.HTTPError)):
+            logger.error(f"任务 {task.task_id[:8]} 第 {attempt}/{max_retries} 次网络错误: {err}")
             cleanup_medias(medias)
             return True
         return False
@@ -502,6 +469,7 @@ class UploadQueueManager:
         mediathumb = task.mediathumb
 
         from .bot import format_caption_for_telegram
+
         caption = format_caption_for_telegram(f, _get_constraints())
 
         if not media or not f.media:
@@ -564,13 +532,11 @@ class UploadQueueManager:
             sub_result = await message.reply_media_group(
                 [
                     (
-                        InputMediaVideo(
-                            img, caption=caption, filename=fn, supports_streaming=True
-                        )
+                        InputMediaVideo(img, caption=caption, filename=fn, supports_streaming=True)
                         if ".gif" in mu
                         else InputMediaPhoto(img, caption=caption, filename=fn)
                     )
-                    for img, mu, fn in zip(sub_media, sub_urls, sub_fns)
+                    for img, mu, fn in zip(sub_media, sub_urls, sub_fns, strict=False)
                 ],
             )
             result += sub_result
@@ -581,7 +547,7 @@ class UploadQueueManager:
         if result is None or not f.media or not f.media.filenames:
             return
         if isinstance(result, tuple):
-            for filename, item in zip(f.media.filenames, result):
+            for filename, item in zip(f.media.filenames, result, strict=False):
                 attachment = item.effective_attachment
                 if isinstance(attachment, tuple):
                     await cache_media(filename, attachment[0])
@@ -600,6 +566,7 @@ class UploadQueueManager:
         no_media = task.fetch_mode == "cover"
 
         from .bot import format_caption_for_telegram
+
         caption = format_caption_for_telegram(f, _get_constraints())
 
         async with RedisCache().lock(f.url, timeout=CACHES_TIMER["LOCK"]):
@@ -612,7 +579,7 @@ class UploadQueueManager:
                 )
                 if mediathumb:
                     medias.insert(0, mediathumb)
-                    mediafilenames = [f.media.thumbnail_filename] + f.media.filenames
+                    mediafilenames = [f.media.thumbnail_filename, *f.media.filenames]
                 else:
                     mediafilenames = f.media.filenames
 
@@ -632,17 +599,14 @@ class UploadQueueManager:
                             (medias[:mid], mediafilenames[:mid]),
                             (medias[mid:], mediafilenames[mid:]),
                         ]
-                    result = tuple()
+                    result = ()
                     for sub_m, sub_fn in splits:
                         sub_result = await message.reply_media_group(
-                            [
-                                InputMediaDocument(m, filename=fn)
-                                for m, fn in zip(sub_m, sub_fn)
-                            ],
+                            [InputMediaDocument(m, filename=fn) for m, fn in zip(sub_m, sub_fn, strict=False)],
                         )
                         result += sub_result
                     await message.reply_text(caption)
-                    for filename, item in zip(mediafilenames, result):
+                    for filename, item in zip(mediafilenames, result, strict=False):
                         attachment = item.effective_attachment
                         if isinstance(attachment, tuple):
                             await cache_media(filename, attachment[0])
@@ -665,9 +629,7 @@ class UploadQueueManager:
                 and not message.is_automatic_forward
             ):
                 match = re.match(BILIBILI_SHARE_URL_REGEX, message.text)
-                if urls[0] == message.text or (
-                    match and match.group(0) == message.text
-                ):
+                if urls[0] == message.text or (match and match.group(0) == message.text):
                     await message.delete()
         except Exception as e:
             logger.debug(f"无法删除消息: {e}")

@@ -40,14 +40,14 @@ from telegram.ext import (
 
 from ...model import Comment, MediaConstraints, ParsedContent
 from ...provider import ProviderRegistry
+from ...storage import db_close, db_init
 from ...storage.cache import RedisCache
-from ...storage import db_init, db_close
 from ...utils import escape_markdown, logger
 
-BILIBILI_URL_REGEX = r"(?i)(?:https?://)?[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv|bili2?2?3?3?\.cn)\S+|BV\w{10}"
-BILIBILI_SHARE_URL_REGEX = (
-    r"(?i)【.*】 https://[\w\.]*?(?:bilibili\.com|b23\.tv|bili2?2?3?3?\.cn)\S+"
+BILIBILI_URL_REGEX = (
+    r"(?i)(?:https?://)?[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv|bili2?2?3?3?\.cn)\S+|BV\w{10}"
 )
+BILIBILI_SHARE_URL_REGEX = r"(?i)【.*】 https://[\w\.]*?(?:bilibili\.com|b23\.tv|bili2?2?3?3?\.cn)\S+"
 
 SOURCE_CODE_MARKUP = InlineKeyboardMarkup(
     [
@@ -88,16 +88,14 @@ def _format_comment_markdown(comments: list[Comment]) -> str:
 def _try_append_within_limit(components: list[str], text: str, max_len: int) -> bool:
     if not text:
         return True
-    test_content = "".join(components + [text])
+    test_content = "".join([*components, text])
     if len(test_content) < max_len:
         components.append(text)
         return True
     return False
 
 
-def format_caption_for_telegram(
-    content: ParsedContent, constraints: MediaConstraints
-) -> str:
+def format_caption_for_telegram(content: ParsedContent, constraints: MediaConstraints) -> str:
     """Format ParsedContent into a Telegram MarkdownV2 caption string.
 
     Mirrors the original Feed.caption logic:
@@ -153,9 +151,7 @@ def message_to_urls_sync(message: Message, bot_username: str, bot_first_name: st
     return urls
 
 
-async def message_to_urls(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> tuple[Message | None, list[str]]:
+async def message_to_urls(update: Update, context: ContextTypes.DEFAULT_TYPE) -> tuple[Message | None, list[str]]:
     """Extract message and Bilibili URLs from an update, filtering bot's own forwards."""
     message = update.message or update.channel_post
     if message is None:
@@ -176,13 +172,12 @@ async def message_to_urls(
     elif isinstance(message.forward_origin, MessageOriginChannel):
         if message.forward_origin.author_signature == context.bot.first_name:
             return message, []
-        else:
-            try:
-                self_user = await message.forward_origin.chat.get_member(context.bot.id)
-                if self_user.status == "administrator":
-                    return message, []
-            except Exception:
-                pass
+        try:
+            self_user = await message.forward_origin.chat.get_member(context.bot.id)
+            if self_user.status == "administrator":
+                return message, []
+        except Exception:
+            logger.debug("Failed to check channel admin status")
 
     urls = re.findall(BILIBILI_URL_REGEX, message.text or message.caption or "")
     if message.entities:
@@ -194,7 +189,7 @@ async def message_to_urls(
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle Bilibili URL parse requests."""
-    from .uploader import UploadTask, UploadQueueManager
+    from .uploader import UploadQueueManager, UploadTask
 
     message, urls = await message_to_urls(update, context)
     if message is None:
@@ -205,11 +200,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     extra = None
 
     if is_video:
-        if (
-            not message.text
-            or message.text == "/video"
-            or len(texts := message.text.split(" ")) < 2
-        ):
+        if not message.text or message.text == "/video" or len(texts := message.text.split(" ")) < 2:
             await message.reply_text("参数不正确，例如：/video 720P BV1Y25Nz4EZ3")
             return
         extra = {"quality": texts[1]}
@@ -219,14 +210,12 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await message.reply_text("链接不正确")
         return
 
-    logger.info(
-        f"Parse: {urls} (用户: {message.from_user.id if message.from_user else 'unknown'})"
-    )
+    logger.info(f"Parse: {urls} (用户: {message.from_user.id if message.from_user else 'unknown'})")
 
-    try:
+    import contextlib
+
+    with contextlib.suppress(Exception):
         await message.reply_chat_action(ChatAction.TYPING)
-    except Exception:
-        pass
 
     registry: ProviderRegistry = context.bot_data["provider_registry"]
     telegram_channel = context.bot_data["telegram_channel"]
@@ -265,7 +254,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /file and /cover commands."""
-    from .uploader import UploadTask, UploadQueueManager
+    from .uploader import UploadQueueManager, UploadTask
 
     message, urls = await message_to_urls(update, context)
     if message is None or not message.text:
@@ -275,9 +264,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     fetch_mode = "cover" if message.text.startswith("/cover") else "file"
-    logger.info(
-        f"Fetch ({fetch_mode}): {urls} (用户: {message.from_user.id if message.from_user else 'unknown'})"
-    )
+    logger.info(f"Fetch ({fetch_mode}): {urls} (用户: {message.from_user.id if message.from_user else 'unknown'})")
 
     registry: ProviderRegistry = context.bot_data["provider_registry"]
     telegram_channel = context.bot_data["telegram_channel"]
@@ -322,10 +309,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         try:
             await inline_query.answer(msg, cache_time=0, is_personal=True)
         except BadRequest as err:
-            if (
-                "Query is too old and response timeout expired or query id is invalid"
-                in err.message
-            ):
+            if "Query is too old and response timeout expired or query id is invalid" in err.message:
                 logger.error(f"{err} -> Inline请求超时")
             else:
                 logger.exception(err)
@@ -336,7 +320,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     inline_query = update.inline_query
     if inline_query is None:
-        return
+        return None
     query = inline_query.query
     helpmsg = [
         InlineQueryResultArticle(
@@ -344,9 +328,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             title="帮助",
             description="将 Bot 添加到群组或频道可以自动匹配消息，请注意 Inline 模式存在限制：只可发单张图，消耗设备流量。",
             reply_markup=SOURCE_CODE_MARKUP,
-            input_message_content=InputTextMessageContent(
-                await get_description(context)
-            ),
+            input_message_content=InputTextMessageContent(await get_description(context)),
         )
     ]
     if not query:
@@ -438,9 +420,12 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             ]
         else:
             import asyncio
-            cache_file_ids = await asyncio.gather(
-                *[get_cached_media_file_id(fn) for fn in f.media.filenames]
-            ) if f.media.filenames else []
+
+            cache_file_ids = (
+                await asyncio.gather(*[get_cached_media_file_id(fn) for fn in f.media.filenames])
+                if f.media.filenames
+                else []
+            )
             results = [
                 (
                     (
@@ -479,7 +464,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                         )
                     )
                 )
-                for mediaurl, cache_file_id in zip(f.media.urls, cache_file_ids)
+                for mediaurl, cache_file_id in zip(f.media.urls, cache_file_ids, strict=False)
             ]
     return await inline_query_answer(inline_query, results)
 
@@ -502,7 +487,7 @@ async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if isinstance(f, Exception):
             await message.reply_text(str(f))
             continue
-        for key, value in f.cache_keys.items():
+        for _key, value in f.cache_keys.items():
             if value:
                 await RedisCache().delete(value)
         await message.reply_text(f"清除缓存成功：{escape_markdown(f.url)}\n请重新获取")
@@ -510,7 +495,7 @@ async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Cancel all queued tasks for the user."""
-    from .uploader import UploadQueueManager
+    from .uploader import UploadQueueManager  # noqa: TC001
 
     message = update.effective_message
     if message is None:
@@ -529,7 +514,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show current tasks for the user."""
-    from .uploader import UploadQueueManager
+    from .uploader import UploadQueueManager  # noqa: TC001
 
     message = update.effective_message
     if message is None:
@@ -540,10 +525,7 @@ async def tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_tasks = await upload_queue_manager.get_user_tasks(user_id)
 
     if user_tasks:
-        await message.reply_text(
-            "当前正在进行的任务:\n"
-            + "\n".join(escape_markdown(task) for task in user_tasks)
-        )
+        await message.reply_text("当前正在进行的任务:\n" + "\n".join(escape_markdown(task) for task in user_tasks))
     else:
         await message.reply_text("当前没有正在进行的任务")
 
@@ -553,9 +535,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
     if message is None:
         return
-    await message.reply_text(
-        await get_description(context), reply_markup=SOURCE_CODE_MARKUP
-    )
+    await message.reply_text(await get_description(context), reply_markup=SOURCE_CODE_MARKUP)
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -619,9 +599,7 @@ def run_bot(channel, provider_registry: ProviderRegistry) -> None:
 
         await channel.start(provider_registry)
 
-        logger.info(
-            f"上传队列管理器已启动 ({max_workers} 个 worker, 单用户任务上限: {max_user_tasks})"
-        )
+        logger.info(f"上传队列管理器已启动 ({max_workers} 个 worker, 单用户任务上限: {max_user_tasks})")
 
         await application.bot.set_my_commands(
             [
@@ -639,9 +617,7 @@ def run_bot(channel, provider_registry: ProviderRegistry) -> None:
         logger.info(f"Bot @{bot_me.username} started.")
 
     async def post_shutdown(application: Application) -> None:
-        upload_queue_manager: UploadQueueManager | None = application.bot_data.get(
-            "upload_queue_manager"
-        )
+        upload_queue_manager: UploadQueueManager | None = application.bot_data.get("upload_queue_manager")
         if upload_queue_manager:
             await upload_queue_manager.stop_workers()
             logger.info("上传队列管理器已停止")
@@ -666,18 +642,10 @@ def run_bot(channel, provider_registry: ProviderRegistry) -> None:
         .read_timeout(60)
         .write_timeout(60)
         .base_url(os.environ.get("API_BASE_URL", "https://api.telegram.org/bot"))
-        .base_file_url(
-            os.environ.get("API_BASE_FILE_URL", "https://api.telegram.org/file/bot")
-        )
+        .base_file_url(os.environ.get("API_BASE_FILE_URL", "https://api.telegram.org/file/bot"))
         .local_mode(local_mode)
-        .concurrent_updates(
-            int(os.environ.get("SEMAPHORE_SIZE", 256))
-            if os.environ.get("SEMAPHORE_SIZE")
-            else True
-        )
-        .rate_limiter(
-            AIORateLimiter(max_retries=int(os.environ.get("API_MAX_RETRIES", 5)))
-        )
+        .concurrent_updates(int(os.environ.get("SEMAPHORE_SIZE", 256)) if os.environ.get("SEMAPHORE_SIZE") else True)
+        .rate_limiter(AIORateLimiter(max_retries=int(os.environ.get("API_MAX_RETRIES", 5))))
         .build()
     )
 
@@ -685,7 +653,7 @@ def run_bot(channel, provider_registry: ProviderRegistry) -> None:
 
     if os.environ.get("DOMAIN"):
         application.run_webhook(
-            listen=os.environ.get("HOST", "0.0.0.0"),
+            listen=os.environ.get("HOST", "0.0.0.0"),  # noqa: S104
             port=int(os.environ.get("PORT", 9000)),
             url_path=token,
             webhook_url=f"{os.environ.get('DOMAIN')}{token}",

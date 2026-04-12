@@ -1,6 +1,7 @@
 """测试 channel/telegram/bot.py — format_caption_for_telegram"""
-from biliparser.model import Author, Comment, MediaConstraints, MediaInfo, ParsedContent
+
 from biliparser.channel.telegram.bot import format_caption_for_telegram
+from biliparser.model import Author, Comment, MediaConstraints, ParsedContent
 
 
 def _mc(max_len=1024):

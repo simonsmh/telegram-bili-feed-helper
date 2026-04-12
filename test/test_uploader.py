@@ -1,8 +1,9 @@
 """测试 channel/telegram/uploader.py — cleanup_medias、_get_constraints"""
+
 import tempfile
 from pathlib import Path
 
-from biliparser.channel.telegram.uploader import cleanup_medias, _get_constraints
+from biliparser.channel.telegram.uploader import _get_constraints, cleanup_medias
 
 
 def test_cleanup_medias_paths():

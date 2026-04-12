@@ -16,8 +16,7 @@ class Channel(ABC):
         """将 ParsedContent 格式化为通道特定的文本"""
 
     @abstractmethod
-    async def send_content(self, content: ParsedContent,
-                           media: PreparedMedia | None, context: Any) -> Any:
+    async def send_content(self, content: ParsedContent, media: PreparedMedia | None, context: Any) -> Any:
         """发送内容到通道"""
 
     @abstractmethod

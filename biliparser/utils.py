@@ -9,7 +9,7 @@ from pathlib import Path
 from loguru import logger
 from PIL import Image
 
-LOCAL_FILE_PATH = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", os.getcwd()))
+LOCAL_FILE_PATH = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", str(Path.cwd())))
 
 logger.remove()
 logger.add(sys.stdout, backtrace=True, diagnose=True)

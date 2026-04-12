@@ -30,4 +30,57 @@ readme = "README.md"
 dev = [
     "pytest",
     "pytest-asyncio",
+    "ruff",
 ]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "F",      # pyflakes
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "SIM",    # flake8-simplify
+    "RUF",    # ruff-specific rules
+    "N",      # pep8-naming
+    "ASYNC",  # flake8-async
+    "S",      # flake8-bandit (security)
+    "T20",    # flake8-print
+    "TCH",    # flake8-type-checking
+    "PTH",    # flake8-use-pathlib
+    "RET",    # flake8-return
+    "FURB",   # refurb
+]
+ignore = [
+    "E501",    # line too long — handled by formatter
+    "RUF001",  # ambiguous unicode char in string (Chinese content)
+    "RUF002",  # ambiguous unicode char in docstring (Chinese content)
+    "RUF003",  # ambiguous unicode char in comment (Chinese content)
+    "S101",    # assert in tests is fine
+    "S108",    # hardcoded temp file path — acceptable in this project
+    "B904",    # raise-without-from — too noisy for existing codebase
+    "RET503",  # implicit return — stylistic preference
+    "RUF012",  # mutable class default — dataclass fields use field()
+    "SIM108",  # ternary operator — readability preference
+    "N818",    # exception Error suffix — existing naming convention
+    "N816",    # mixed-case global — existing naming convention (credentialFactory)
+    "B019",    # lru_cache on method — intentional design in Opus
+    "ASYNC110", # asyncio.sleep in while loop — simple polling pattern for FakeLock
+    "RUF022",  # unsorted __all__ — grouped by category intentionally
+]
+
+[tool.ruff.lint.per-file-ignores]
+"test/**/*.py" = ["S101", "T20"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

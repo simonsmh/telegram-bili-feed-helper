@@ -55,12 +55,8 @@ class Feed(ABC):
                     select_urls.insert(0, test_url)
         for select_url in select_urls:
             try:
-                select_url = re.sub(
-                    r"&buvid=[^&]+", "&buvid=", select_url
-                )  ## 清除buvid参数
-                async with self.client.stream(
-                    "GET", select_url, headers=header
-                ) as response:
+                select_url = re.sub(r"&buvid=[^&]+", "&buvid=", select_url)  ## 清除buvid参数
+                async with self.client.stream("GET", select_url, headers=header) as response:
                     if response.status_code != 200:
                         continue
                     return int(response.headers.get("Content-Length", 0)), select_url
@@ -71,11 +67,7 @@ class Feed(ABC):
 
     @staticmethod
     def make_user_markdown(user, uid):
-        return (
-            f"[@{escape_markdown(user)}](https://space.bilibili.com/{uid})"
-            if user and uid
-            else str()
-        )
+        return f"[@{escape_markdown(user)}](https://space.bilibili.com/{uid})" if user and uid else ""
 
     @staticmethod
     def shrink_line(text: str):
@@ -87,7 +79,7 @@ class Feed(ABC):
             )
             .replace(r"\n*\n", r"\n")
             if text
-            else str()
+            else ""
         )
 
     @staticmethod
@@ -111,7 +103,7 @@ class Feed(ABC):
 
     @cached_property
     def comment(self):
-        comment = str()
+        comment = ""
         if isinstance(self.replycontent, dict):
             target = self.replycontent.get("target")
             if target:
@@ -138,9 +130,7 @@ class Feed(ABC):
 
     @cached_property
     def mediafilename(self):
-        return (
-            [get_filename(i) for i in self.__mediaurls] if self.__mediaurls else list()
-        )
+        return [get_filename(i) for i in self.__mediaurls] if self.__mediaurls else list()
 
     @property
     def mediathumb(self):
@@ -154,7 +144,7 @@ class Feed(ABC):
 
     @cached_property
     def mediathumbfilename(self):
-        return get_filename(self.mediathumb) if self.mediathumb else str()
+        return get_filename(self.mediathumb) if self.mediathumb else ""
 
     @cached_property
     def url(self):
@@ -165,12 +155,8 @@ class Feed(ABC):
         return {}
 
     async def parse_reply(self, oid, reply_type, seek_comment_id=None):
-        logger.info(
-            f"处理评论信息: 媒体ID: {oid} 评论类型: {reply_type} 评论ID {seek_comment_id}"
-        )
-        cache_key = "new_reply:" + ":".join(
-            str(x) for x in [oid, reply_type, seek_comment_id] if x is not None
-        )
+        logger.info(f"处理评论信息: 媒体ID: {oid} 评论类型: {reply_type} 评论ID {seek_comment_id}")
+        cache_key = "new_reply:" + ":".join(str(x) for x in [oid, reply_type, seek_comment_id] if x is not None)
         # 1.获取缓存
         try:
             cache = await RedisCache().get(cache_key)
@@ -208,11 +194,10 @@ class Feed(ABC):
                     if str(r["rpid"]) == str(seek_comment_id):
                         target = r
                         break
-                    else:
-                        for sr in r["replies"]:
-                            if str(sr["rpid"]) == str(seek_comment_id):
-                                target = sr
-                                break
+                    for sr in r["replies"]:
+                        if str(sr["rpid"]) == str(seek_comment_id):
+                            target = sr
+                            break
             reply = {"top": data.get("top_replies"), "target": target}
             # 4.缓存评论
             try:

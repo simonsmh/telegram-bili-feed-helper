@@ -4,6 +4,7 @@ biliparser — 兼容入口
 保持 `from biliparser import biliparser` 的向后兼容性。
 内部改用 BilibiliProvider。
 """
+
 from .model import MediaConstraints
 from .provider.bilibili import BilibiliProvider
 

@@ -34,16 +34,11 @@ class CredentialFactory:
                     try:
                         result = await RedisCache().get("credential")
                         if result:
-                            self._credential = Credential().from_cookies(
-                                orjson.loads(result)
-                            )
+                            self._credential = Credential().from_cookies(orjson.loads(result))
                     except Exception:
                         logger.exception("Failed to load credential.")
             try:
-                if (
-                    self._credential.ac_time_value
-                    and await self._credential.check_refresh()
-                ):
+                if self._credential.ac_time_value and await self._credential.check_refresh():
                     await self._credential.refresh()
                     try:
                         await RedisCache().set(

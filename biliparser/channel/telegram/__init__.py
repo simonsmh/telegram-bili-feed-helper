@@ -1,6 +1,7 @@
 import os
 
-from ...model import MediaConstraints, ParsedContent, PreparedMedia
+from ...model import MediaConstraints, ParsedContent
+from ...model import PreparedMedia as PreparedMedia
 from ...provider import ProviderRegistry
 from ...storage.models import TelegramFileCache
 from ...utils import logger
@@ -19,9 +20,7 @@ class TelegramChannel(Channel):
     @property
     def media_constraints(self) -> MediaConstraints:
         return MediaConstraints(
-            max_upload_size=(
-                TELEGRAM_UPLOAD_SIZE_LOCAL if self._local_mode else TELEGRAM_UPLOAD_SIZE
-            ),
+            max_upload_size=(TELEGRAM_UPLOAD_SIZE_LOCAL if self._local_mode else TELEGRAM_UPLOAD_SIZE),
             max_download_size=TELEGRAM_UPLOAD_SIZE_LOCAL,
             caption_max_length=TELEGRAM_CAPTION_LENGTH,
             local_mode=self._local_mode,
@@ -29,6 +28,7 @@ class TelegramChannel(Channel):
 
     def format_caption(self, content: ParsedContent) -> str:
         from .bot import format_caption_for_telegram
+
         return format_caption_for_telegram(content, self.media_constraints)
 
     async def send_content(self, content, media, context):

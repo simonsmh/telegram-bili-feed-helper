@@ -1,6 +1,5 @@
 """测试 storage 层 — RedisCache、FakeRedis、FakeLock、TelegramFileCache"""
-import asyncio
-import os
+
 import tempfile
 from pathlib import Path
 
@@ -69,6 +68,7 @@ class TestFakeRedis:
     async def test_expiry(self):
         """过期的 key 应返回 None"""
         import time
+
         with tempfile.TemporaryDirectory() as tmpdir:
             cache = self._make_cache(tmpdir)
             await cache.set("exp_key", "value", ex=1)
@@ -135,7 +135,7 @@ class TestTelegramFileCache:
         assert TelegramFileCache._meta.db_table is not None
 
     def test_model_fields(self):
-        field_names = {f for f in TelegramFileCache._meta.fields_map.keys()}
+        field_names = {f for f in TelegramFileCache._meta.fields_map}
         assert "mediafilename" in field_names
         assert "file_id" in field_names
         assert "created" in field_names

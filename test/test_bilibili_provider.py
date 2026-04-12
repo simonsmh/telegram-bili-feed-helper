@@ -1,6 +1,4 @@
-import pytest
 from biliparser.provider.bilibili import BilibiliProvider
-from biliparser.model import MediaConstraints
 
 
 def test_can_handle_video():

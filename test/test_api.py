@@ -1,11 +1,12 @@
 """测试 provider/bilibili/api.py — ParserException、referer_url、CACHES_TIMER"""
+
 import pytest
 
 from biliparser.provider.bilibili.api import (
-    BILIBILI_DESKTOP_HEADER,
     BILIBILI_DESKTOP_BUILD,
-    CACHES_TIMER,
+    BILIBILI_DESKTOP_HEADER,
     CACHE_TIMER_DEFAULTS,
+    CACHES_TIMER,
     ParserException,
     referer_url,
     retry_catcher,

@@ -1,9 +1,14 @@
 """测试 model.py — 所有数据类"""
+
 from pathlib import Path
 
 from biliparser.model import (
-    Author, Comment, MediaInfo, MediaConstraints,
-    ParsedContent, PreparedMedia,
+    Author,
+    Comment,
+    MediaConstraints,
+    MediaInfo,
+    ParsedContent,
+    PreparedMedia,
 )
 
 
@@ -119,7 +124,8 @@ def test_prepared_media():
 
 def test_prepared_media_cleanup_paths():
     pm = PreparedMedia(
-        files=[], thumbnail=None,
+        files=[],
+        thumbnail=None,
         cleanup_paths=[Path("/tmp/a"), Path("/tmp/b")],
     )
     assert len(pm.cleanup_paths) == 2

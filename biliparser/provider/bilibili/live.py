@@ -1,8 +1,8 @@
 import re
 from functools import cached_property
 
-from httpx import HTTPStatusError
 import orjson
+from httpx import HTTPStatusError
 
 from ...storage.cache import RedisCache
 from ...utils import escape_markdown, logger

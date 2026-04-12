@@ -7,7 +7,7 @@ from typing import Any
 
 import redis.asyncio as redis
 
-LOCAL_FILE_PATH = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", os.getcwd()))
+LOCAL_FILE_PATH = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", str(Path.cwd())))
 
 
 class FakeLock:
@@ -51,16 +51,16 @@ class FakeRedis:
 
     def _load_cache(self) -> dict[Any, Any]:
         try:
-            with open(self.cache_file, "r", encoding="utf-8") as f:
+            with self.cache_file.open(encoding="utf-8") as f:
                 result = json.load(f)
                 if isinstance(result, dict) and result.get("__version") == 2:
                     return result
-        except (IOError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError):
             pass
         return {"__version": 2}
 
     def _save_cache(self):
-        with open(self.cache_file, "w", encoding="utf-8") as f:
+        with self.cache_file.open("w", encoding="utf-8") as f:
             json.dump(self.cache, f, ensure_ascii=False)
 
     async def get(self, key: str):
@@ -75,8 +75,9 @@ class FakeRedis:
             return target.get("value")
         return None
 
-    async def set(self, key: str, value: str | bytes, ex: int | None = None,
-                  nx: bool | None = None, *args, **kwargs) -> None:
+    async def set(
+        self, key: str, value: str | bytes, ex: int | None = None, nx: bool | None = None, *args, **kwargs
+    ) -> None:
         if isinstance(value, bytes):
             value = value.decode("utf-8")
         if nx and key in self.cache:

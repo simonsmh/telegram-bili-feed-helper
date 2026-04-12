@@ -114,9 +114,7 @@ class Opus(Feed):
             self.forward_user = majorcontent["module_author"]["user"]["name"]
             self.forward_uid = majorcontent["module_author"]["user"]["mid"]
             if majorcontent.get("module_desc"):
-                self.forward_content = self.__opus_handle_desc_text(
-                    majorcontent["module_desc"]
-                )
+                self.forward_content = self.__opus_handle_desc_text(majorcontent["module_desc"])
             if not self.mediatype and majorcontent.get("module_dynamic"):
                 self.__opus_handle_major(majorcontent["module_dynamic"])
         elif major["type"] == "MDL_DYN_TYPE_DRAW":
@@ -164,11 +162,7 @@ class Opus(Feed):
             except Exception as e:
                 raise ParserException(f"动态获取错误:{self.dynamic_id}", self.rawurl, e)
             # 3.动态解析
-            if (
-                not response
-                or not response.get("data")
-                or not response["data"].get("item")
-            ):
+            if not response or not response.get("data") or not response["data"].get("item"):
                 raise ParserException("动态解析错误", self.rawurl, response)
             self.detailcontent = response["data"]
             # 4.缓存动态

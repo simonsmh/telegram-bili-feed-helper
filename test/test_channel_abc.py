@@ -1,9 +1,11 @@
 """测试 channel 层 — Channel ABC、TelegramChannel"""
+
 import os
+
 import pytest
 
 from biliparser.channel import Channel
-from biliparser.model import Author, MediaConstraints, MediaInfo, ParsedContent, PreparedMedia
+from biliparser.model import Author, MediaConstraints, ParsedContent
 from biliparser.provider import ProviderRegistry
 
 
@@ -58,6 +60,7 @@ class TestChannelABC:
 class TestTelegramChannel:
     def test_media_constraints_default(self):
         from biliparser.channel.telegram import TelegramChannel
+
         ch = TelegramChannel()
         mc = ch.media_constraints
         assert mc.max_upload_size == 50 * 1024 * 1024
@@ -66,6 +69,7 @@ class TestTelegramChannel:
 
     def test_media_constraints_local_mode(self):
         from biliparser.channel.telegram import TelegramChannel
+
         old = os.environ.get("LOCAL_MODE")
         os.environ["LOCAL_MODE"] = "1"
         try:
@@ -83,14 +87,16 @@ class TestTelegramChannel:
     async def test_get_cached_media_returns_none_without_db(self):
         """没有初始化 DB 时应该抛异常或返回 None"""
         from biliparser.channel.telegram import TelegramChannel
+
         ch = TelegramChannel()
         # 没有 db_init，查询会失败
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             await ch.get_cached_media("nonexistent.jpg")
 
     @pytest.mark.asyncio
     async def test_start_sets_registry(self):
         from biliparser.channel.telegram import TelegramChannel
+
         ch = TelegramChannel()
         registry = ProviderRegistry()
         await ch.start(registry)
@@ -99,5 +105,6 @@ class TestTelegramChannel:
     @pytest.mark.asyncio
     async def test_stop(self):
         from biliparser.channel.telegram import TelegramChannel
+
         ch = TelegramChannel()
         await ch.stop()  # 不应抛异常

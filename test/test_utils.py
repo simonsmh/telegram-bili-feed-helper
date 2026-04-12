@@ -1,5 +1,7 @@
 """测试 utils.py — logger、compress、escape_markdown、get_filename"""
+
 import io
+
 from PIL import Image
 
 from biliparser.utils import compress, escape_markdown, get_filename, logger

@@ -1,12 +1,14 @@
 """测试 provider/bilibili/feed.py — Feed 基类的纯数据属性和工具方法"""
-import pytest
+
 import httpx
+import pytest
 
 from biliparser.provider.bilibili.feed import Feed
 
 
 class ConcreteFeed(Feed):
     """Feed 是 ABC，需要一个具体子类来测试"""
+
     async def handle(self):
         return self
 
@@ -55,8 +57,7 @@ class TestFeedProperties:
     @pytest.fixture
     def feed(self):
         client = httpx.AsyncClient()
-        f = ConcreteFeed("https://test.bilibili.com/123", client)
-        return f
+        return ConcreteFeed("https://test.bilibili.com/123", client)
 
     def test_default_values(self, feed):
         assert feed.user == ""

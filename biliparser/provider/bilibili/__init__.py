@@ -12,19 +12,19 @@ from ...model import (
     ParsedContent,
     PreparedMedia,
 )
-from ..  import Provider
+from .. import Provider
 from .api import (
-    BILIBILI_DESKTOP_HEADER,
     BILIBILI_DESKTOP_BUILD,
+    BILIBILI_DESKTOP_HEADER,
     CACHES_TIMER,
     ParserException,
-    retry_catcher,
-    referer_url,
     bili_api_request,
+    referer_url,
+    retry_catcher,
 )
+from .audio import Audio
 from .credential import CredentialFactory, credentialFactory
 from .feed import Feed
-from .audio import Audio
 from .live import Live
 from .opus import Opus
 from .read import Read
@@ -33,10 +33,10 @@ from .video import Video
 # Regex that matches any Bilibili URL we can handle
 _BILIBILI_RE = re.compile(
     r"(?:"
-    r"bilibili\.com"          # any bilibili.com subdomain
-    r"|b23\.tv"               # short links
-    r"|(?:BV\w{10})"          # bare BV id
-    r"|(?:av\d+)"             # bare av id
+    r"bilibili\.com"  # any bilibili.com subdomain
+    r"|b23\.tv"  # short links
+    r"|(?:BV\w{10})"  # bare BV id
+    r"|(?:av\d+)"  # bare av id
     r")",
     re.IGNORECASE,
 )
@@ -72,7 +72,7 @@ def _feed_to_parsed_content(f: Feed) -> ParsedContent:
             )
         top = f.replycontent.get("top")
         if top:
-            for item in (top.values() if isinstance(top, dict) else top):
+            for item in top.values() if isinstance(top, dict) else top:
                 if item:
                     comments.append(
                         Comment(
@@ -98,19 +98,19 @@ async def _route(client: httpx.AsyncClient, url: str, extra: dict | None = None)
     # bare BV/av/ep/ss ids or short paths
     if re.search(r"(?:^|/)(?:BV\w{10}|av\d+|ep\d+|ss\d+)", url):
         return await Video(url if "/" in url else f"b23.tv/{url}", client).handle(extra)
-    elif re.search(r"(?:www|t|h|m)\.bilibili\.com\/(?:[^\/?]+\/)*?(?:\d+)(?:[\/?].*)?", url):
+    if re.search(r"(?:www|t|h|m)\.bilibili\.com\/(?:[^\/?]+\/)*?(?:\d+)(?:[\/?].*)?", url):
         return await Opus(url, client).handle()
-    elif re.search(r"live\.bilibili\.com[\/\w]*\/(\d+)", url):
+    if re.search(r"live\.bilibili\.com[\/\w]*\/(\d+)", url):
         return await Live(url, client).handle()
-    elif re.search(r"bilibili\.com\/audio\/au(\d+)", url):
+    if re.search(r"bilibili\.com\/audio\/au(\d+)", url):
         return await Audio(url, client).handle()
-    elif re.search(r"bilibili\.com\/read\/(?:cv|mobile\/|mobile\?id=)(\d+)", url):
+    if re.search(r"bilibili\.com\/read\/(?:cv|mobile\/|mobile\?id=)(\d+)", url):
         return await Read(url, client).handle()
 
     # follow redirects then re-classify
     try:
         resp = await client.head(url)
-    except httpx.HTTPStatusError as e:
+    except httpx.HTTPStatusError:
         raise ParserException("URL请求失败", url)
     except Exception:
         raise ParserException("URL请求异常", url)
@@ -118,15 +118,15 @@ async def _route(client: httpx.AsyncClient, url: str, extra: dict | None = None)
     url = str(resp.url)
     if re.search(r"video|bangumi/play|festival", url):
         return await Video(url, client).handle(extra)
-    elif re.search(r"(?:www|t|h|m)\.bilibili\.com\/(?:[^\/?]+\/)*?(?:\d+)(?:[\/?].*)?", url):
+    if re.search(r"(?:www|t|h|m)\.bilibili\.com\/(?:[^\/?]+\/)*?(?:\d+)(?:[\/?].*)?", url):
         return await Opus(url, client).handle()
-    elif "live" in url:
+    if "live" in url:
         return await Live(url, client).handle()
-    elif "audio" in url:
+    if "audio" in url:
         return await Audio(url, client).handle()
-    elif "read" in url:
+    if "read" in url:
         return await Read(url, client).handle()
-    elif re.search(r"^https?:\/\/(?:api|www\.bilibili\.com\/blackboard|space\.bilibili\.com)", url):
+    if re.search(r"^https?:\/\/(?:api|www\.bilibili\.com\/blackboard|space\.bilibili\.com)", url):
         pass
     raise ParserException("URL无可用策略", url)
 
