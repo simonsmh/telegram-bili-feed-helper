@@ -220,7 +220,7 @@ class Video(Feed):
 
     async def handle(self, constraints=None, extra: dict | None = None) -> "Video":
         max_size = constraints.max_upload_size if constraints else _DEFAULT_MAX_SIZE
-        caption_length = constraints.max_caption_length if constraints else 1024
+        caption_length = constraints.caption_max_length if constraints else 1024
         if extra:
             self.set_quality(extra.get("quality"))
         logger.info(f"处理视频信息: 链接: {self.rawurl}")
