@@ -4,8 +4,6 @@
 用法：uv run pytest test/test_integration_bv.py -x -s --tb=short
 """
 
-import asyncio
-import re
 import uuid
 
 import httpx
@@ -13,14 +11,12 @@ import pytest
 
 from biliparser.model import MediaConstraints
 from biliparser.provider.bilibili import (
-    BilibiliProvider,
-    Video,
-    Feed,
     BILIBILI_DESKTOP_HEADER,
+    BilibiliProvider,
+    Feed,
+    _route,
 )
-from biliparser.provider.bilibili.api import ParserException
 from biliparser.provider.bilibili.credential import credentialFactory
-from biliparser.provider.bilibili import _route
 
 # 测试用 BV 号
 TEST_BV = "BV1zvQbBkEcG"

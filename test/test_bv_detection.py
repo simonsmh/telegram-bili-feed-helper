@@ -5,7 +5,7 @@
 """
 
 import re
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from telegram import Chat, Message, MessageEntity, Update, User
@@ -17,8 +17,7 @@ from biliparser.channel.telegram.bot import (
     message_to_urls_sync,
 )
 from biliparser.provider import ProviderRegistry
-from biliparser.provider.bilibili import BilibiliProvider, _BILIBILI_RE
-
+from biliparser.provider.bilibili import BilibiliProvider
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -187,7 +186,7 @@ class TestMessageToUrls:
         msg = _make_message("看看这个 BV1zvQbBkEcG 视频不错")
         update = _make_update(msg)
         ctx = _make_context()
-        result_msg, urls = await message_to_urls(update, ctx)
+        _result_msg, urls = await message_to_urls(update, ctx)
         assert urls == ["BV1zvQbBkEcG"]
 
     @pytest.mark.asyncio
