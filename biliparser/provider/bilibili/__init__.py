@@ -94,18 +94,18 @@ def _feed_to_parsed_content(f: Feed) -> ParsedContent:
 
 
 @retry_catcher
-async def _route(client: httpx.AsyncClient, url: str, extra: dict | None = None) -> Feed:
+async def _route(client: httpx.AsyncClient, url: str, constraints=None, extra: dict | None = None) -> Feed:
     # bare BV/av/ep/ss ids or short paths
     if re.search(r"(?:^|/)(?:BV\w{10}|av\d+|ep\d+|ss\d+)", url):
-        return await Video(url if "/" in url else f"b23.tv/{url}", client).handle(extra)
+        return await Video(url if "/" in url else f"b23.tv/{url}", client).handle(constraints=constraints, extra=extra)
     if re.search(r"(?:www|t|h|m)\.bilibili\.com\/(?:[^\/?]+\/)*?(?:\d+)(?:[\/?].*)?", url):
-        return await Opus(url, client).handle()
+        return await Opus(url, client).handle(constraints=constraints)
     if re.search(r"live\.bilibili\.com[\/\w]*\/(\d+)", url):
-        return await Live(url, client).handle()
+        return await Live(url, client).handle(constraints=constraints)
     if re.search(r"bilibili\.com\/audio\/au(\d+)", url):
-        return await Audio(url, client).handle()
+        return await Audio(url, client).handle(constraints=constraints)
     if re.search(r"bilibili\.com\/read\/(?:cv|mobile\/|mobile\?id=)(\d+)", url):
-        return await Read(url, client).handle()
+        return await Read(url, client).handle(constraints=constraints)
 
     # follow redirects then re-classify
     try:
@@ -117,15 +117,15 @@ async def _route(client: httpx.AsyncClient, url: str, extra: dict | None = None)
 
     url = str(resp.url)
     if re.search(r"video|bangumi/play|festival", url):
-        return await Video(url, client).handle(extra)
+        return await Video(url, client).handle(constraints=constraints, extra=extra)
     if re.search(r"(?:www|t|h|m)\.bilibili\.com\/(?:[^\/?]+\/)*?(?:\d+)(?:[\/?].*)?", url):
-        return await Opus(url, client).handle()
+        return await Opus(url, client).handle(constraints=constraints)
     if "live" in url:
-        return await Live(url, client).handle()
+        return await Live(url, client).handle(constraints=constraints)
     if "audio" in url:
-        return await Audio(url, client).handle()
+        return await Audio(url, client).handle(constraints=constraints)
     if "read" in url:
-        return await Read(url, client).handle()
+        return await Read(url, client).handle(constraints=constraints)
     if re.search(r"^https?:\/\/(?:api|www\.bilibili\.com\/blackboard|space\.bilibili\.com)", url):
         pass
     raise ParserException("URL无可用策略", url)
@@ -151,7 +151,8 @@ class BilibiliProvider(Provider):
                 _route(
                     client,
                     f"http://{url}" if not url.startswith(("http:", "https:", "av", "BV")) else url,
-                    extra,
+                    constraints=constraints,
+                    extra=extra,
                 )
                 for url in list(set(urls))
             ]
