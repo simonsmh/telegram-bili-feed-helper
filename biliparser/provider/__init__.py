@@ -12,8 +12,8 @@ class Provider(ABC):
     @abstractmethod
     async def parse(
         self, urls: list[str], constraints: MediaConstraints, extra: dict | None = None
-    ) -> list[ParsedContent]:
-        """解析 URL 列表，返回 ParsedContent 列表"""
+    ) -> list[ParsedContent | Exception]:
+        """解析 URL 列表，返回 ParsedContent 列表（解析失败的 URL 以 Exception 形式返回）"""
 
     @abstractmethod
     async def prepare_media(self, content: ParsedContent, constraints: MediaConstraints) -> PreparedMedia:
@@ -48,9 +48,10 @@ class ProviderRegistry:
 
         tasks = [provider.parse(purl_list, constraints, extra) for provider, purl_list in provider_urls.values()]
         results_nested = await asyncio.gather(*tasks, return_exceptions=True)
-        results: list[ParsedContent] = []
+        results: list[ParsedContent | Exception] = []
         for r in results_nested:
             if isinstance(r, Exception):
-                raise r
-            results.extend(r)
+                results.append(r)
+            else:
+                results.extend(r)
         return results

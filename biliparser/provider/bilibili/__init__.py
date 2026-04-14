@@ -157,11 +157,12 @@ class BilibiliProvider(Provider):
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        parsed: list[ParsedContent] = []
+        parsed: list[ParsedContent | Exception] = []
         for r in results:
             if isinstance(r, Exception):
-                raise r
-            parsed.append(_feed_to_parsed_content(r))
+                parsed.append(r)
+            else:
+                parsed.append(_feed_to_parsed_content(r))
         return parsed
 
     async def prepare_media(
