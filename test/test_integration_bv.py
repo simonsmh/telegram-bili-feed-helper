@@ -44,6 +44,7 @@ async def _can_reach_bilibili() -> bool:
 # 1. credentialFactory 基本功能
 # ---------------------------------------------------------------------------
 
+
 class TestCredentialFactory:
     @pytest.mark.asyncio
     async def test_credential_returns_credential_object(self):
@@ -66,6 +67,7 @@ class TestCredentialFactory:
 # ---------------------------------------------------------------------------
 # 2. _route 对裸 BV 号的路由
 # ---------------------------------------------------------------------------
+
 
 class TestRouteIntegration:
     @pytest.mark.asyncio
@@ -132,6 +134,7 @@ class TestRouteIntegration:
 # ---------------------------------------------------------------------------
 # 3. BilibiliProvider.parse 端到端
 # ---------------------------------------------------------------------------
+
 
 class TestBilibiliProviderParse:
     @pytest.mark.asyncio

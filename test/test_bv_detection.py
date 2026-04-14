@@ -23,6 +23,7 @@ from biliparser.provider.bilibili import BilibiliProvider
 # helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_message(text: str, entities=None, caption=None, caption_entities=None) -> Message:
     """构造一个最小化的 Message mock。"""
     chat = Chat(id=123, type="private")
@@ -60,6 +61,7 @@ def _make_context(bot_username="testbot", bot_first_name="TestBot") -> ContextTy
 # 1. BILIBILI_URL_REGEX 匹配测试
 # ---------------------------------------------------------------------------
 
+
 class TestBilibiliUrlRegex:
     """验证 BILIBILI_URL_REGEX 能匹配各种 bilibili URL 和裸 BV 号。"""
 
@@ -95,6 +97,7 @@ class TestBilibiliUrlRegex:
 # 2. filters.Regex 匹配测试 — 模拟 Telegram 的 filter 行为
 # ---------------------------------------------------------------------------
 
+
 class TestTelegramFilterRegex:
     """验证 Telegram 的 filters.Regex 能命中含 BV 号的消息。"""
 
@@ -125,6 +128,7 @@ class TestTelegramFilterRegex:
 # ---------------------------------------------------------------------------
 # 3. message_to_urls_sync 提取测试
 # ---------------------------------------------------------------------------
+
 
 class TestMessageToUrlsSync:
     def test_extract_full_url(self):
@@ -160,6 +164,7 @@ class TestMessageToUrlsSync:
 # ---------------------------------------------------------------------------
 # 4. message_to_urls (async) 提取测试
 # ---------------------------------------------------------------------------
+
 
 class TestMessageToUrls:
     @pytest.mark.asyncio
@@ -204,6 +209,7 @@ class TestMessageToUrls:
 # 5. BilibiliProvider.can_handle 路由测试
 # ---------------------------------------------------------------------------
 
+
 class TestProviderCanHandle:
     def setup_method(self):
         self.p = BilibiliProvider()
@@ -226,15 +232,14 @@ class TestProviderCanHandle:
 # 6. ProviderRegistry 路由测试 — 裸 BV 号不应被静默丢弃
 # ---------------------------------------------------------------------------
 
+
 class TestRegistryRouting:
     def setup_method(self):
         self.registry = ProviderRegistry()
         self.registry.register(BilibiliProvider())
 
     def test_find_provider_full_url(self):
-        assert self.registry.find_provider(
-            "https://www.bilibili.com/video/BV1zvQbBkEcG"
-        ) is not None
+        assert self.registry.find_provider("https://www.bilibili.com/video/BV1zvQbBkEcG") is not None
 
     def test_find_provider_bare_bv(self):
         assert self.registry.find_provider("BV1zvQbBkEcG") is not None
@@ -249,6 +254,7 @@ class TestRegistryRouting:
 # ---------------------------------------------------------------------------
 # 7. _route 路由测试 — 裸 BV 号应命中 Video 策略
 # ---------------------------------------------------------------------------
+
 
 class TestRouteBareBV:
     """验证 _route 函数对裸 BV 号的路由正确性。"""
@@ -300,6 +306,7 @@ class TestRouteBareBV:
 # ---------------------------------------------------------------------------
 # 8. 端到端：parse handler 对裸 BV 号的处理
 # ---------------------------------------------------------------------------
+
 
 class TestParseHandlerBareBV:
     """验证 parse handler 对裸 BV 号消息的完整处理链路。"""
@@ -399,6 +406,7 @@ class TestParseHandlerBareBV:
 # 9. ProviderRegistry.parse 异常处理 — 不应 raise，应返回在列表中
 # ---------------------------------------------------------------------------
 
+
 class TestRegistryExceptionHandling:
     @pytest.mark.asyncio
     async def test_provider_exception_returned_not_raised(self):
@@ -412,6 +420,7 @@ class TestRegistryExceptionHandling:
         registry.register(FailingProvider())
 
         from biliparser.model import MediaConstraints
+
         mc = MediaConstraints(
             max_upload_size=50 * 1024 * 1024,
             max_download_size=2 * 1024 * 1024 * 1024,
