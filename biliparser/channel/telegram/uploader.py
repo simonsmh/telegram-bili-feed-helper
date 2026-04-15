@@ -225,11 +225,12 @@ async def get_media_for_content(
         if no_media:
             return media, mediathumb
 
-        if f.media.need_download or LOCAL_MODE:
-            if f.media.merge_streams:
-                media = await handle_dash_media(f, client)
-                if media:
-                    return media, mediathumb
+        if f.media.merge_streams:
+            # DASH 多轨流必须下载后合并，无论是否 local 模式
+            media = await handle_dash_media(f, client)
+            if media:
+                return media, mediathumb
+        elif f.media.need_download or LOCAL_MODE:
             tasks = [
                 get_media(
                     client,
@@ -243,10 +244,6 @@ async def get_media_for_content(
             ]
             media = [m for m in await asyncio.gather(*tasks) if m]
         else:
-            if f.media.merge_streams:
-                cache_dash = await get_cached_media_file_id(f.media.filenames[0])
-                if cache_dash:
-                    return [cache_dash], mediathumb
             if f.media.type in ["video", "audio"]:
                 media = [referer_url(f.media.urls[0], f.url)]
             else:
