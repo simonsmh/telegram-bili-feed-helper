@@ -163,7 +163,17 @@ class BilibiliProvider(Provider):
             if isinstance(r, Exception):
                 parsed.append(r)
             else:
-                parsed.append(_feed_to_parsed_content(r))
+                pc = _feed_to_parsed_content(r)
+                if isinstance(r, Video) and r.dashtype == "dash" and r.dashurls:
+                    pc._dash_info = {
+                        "dashtype": r.dashtype,
+                        "dashurls": r.dashurls,
+                        "dashfilenames": r.dashfilename,
+                        "bvid": r.bvid,
+                        "quality_name": r.quality.name,
+                        "is_custom": False,
+                    }
+                parsed.append(pc)
         return parsed
 
     async def prepare_media(
