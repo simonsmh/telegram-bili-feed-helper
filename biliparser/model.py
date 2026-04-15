@@ -27,6 +27,7 @@ class MediaInfo:
     filenames: list[str] = field(default_factory=list)
     thumbnail_filename: str = ""
     need_download: bool = False
+    merge_streams: bool = False  # True 表示 urls 中的多个轨道需要下载后合并（如 DASH 视频轨+音频轨）
 
 
 @dataclass

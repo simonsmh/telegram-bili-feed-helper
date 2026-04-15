@@ -148,30 +148,18 @@ async def get_media(
 
 
 async def handle_dash_media(f: ParsedContent, client: httpx.AsyncClient):
-    """处理 DASH 视频合并"""
-    dash_info = getattr(f, "_dash_info", None)
-    if not dash_info:
+    """处理 DASH 视频合并（多轨流下载后用 ffmpeg 合并）"""
+    if not f.media or not f.media.merge_streams or len(f.media.urls) < 2:
         return []
     res = []
     try:
-        dashurls = dash_info.get("dashurls", [])
-        dashfilenames = dash_info.get("dashfilenames", [])
-        bvid = dash_info.get("bvid", "")
-        quality_name = dash_info.get("quality_name", "")
-        is_custom = dash_info.get("is_custom", False)
-
-        if is_custom:
-            cache_dash_file = LOCAL_MEDIA_FILE_PATH / f"{bvid}{quality_name}.mp4"
-        else:
-            cache_dash_file = LOCAL_MEDIA_FILE_PATH / (
-                f.media.filenames[0] if f.media and f.media.filenames else f"{bvid}.mp4"
-            )
+        cache_dash_file = LOCAL_MEDIA_FILE_PATH / (f.media.filenames[0] if f.media.filenames else "merged.mp4")
 
         cache_dash = await get_cached_media_file_id(cache_dash_file.name)
         if cache_dash:
             return [cache_dash]
 
-        tasks = [get_media(client, f.url, m, fn) for m, fn in zip(dashurls, dashfilenames, strict=False)]
+        tasks = [get_media(client, f.url, m, fn) for m, fn in zip(f.media.urls, f.media.filenames, strict=False)]
         res = [m for m in await asyncio.gather(*tasks) if m]
         if len(res) < 2:
             logger.error(f"DASH媒体下载失败: {f.url}")
@@ -183,9 +171,9 @@ async def handle_dash_media(f: ParsedContent, client: httpx.AsyncClient):
         logger.info(f"开始合并，执行命令：{' '.join(cmd)}")
         subprocess.run(cmd, check=True)  # noqa: ASYNC221, S603
 
-        if f.media:
-            f.media.urls = [str(cache_dash_file.absolute())]
-            f.media.filenames = [cache_dash_file.name]
+        f.media.urls = [str(cache_dash_file.absolute())]
+        f.media.filenames = [cache_dash_file.name]
+        f.media.merge_streams = False
         logger.debug(f"合并完成: {f.url}")
         return [cache_dash_file]
     except subprocess.CalledProcessError as e:
@@ -235,8 +223,7 @@ async def get_media_for_content(
             return media, mediathumb
 
         if f.media.need_download or LOCAL_MODE:
-            dash_info = getattr(f, "_dash_info", None)
-            if dash_info and dash_info.get("dashtype") == "dash":
+            if f.media.merge_streams:
                 media = await handle_dash_media(f, client)
                 if media:
                     return media, mediathumb
@@ -253,8 +240,7 @@ async def get_media_for_content(
             ]
             media = [m for m in await asyncio.gather(*tasks) if m]
         else:
-            dash_info = getattr(f, "_dash_info", None)
-            if dash_info and dash_info.get("dashtype") == "dash":
+            if f.media.merge_streams:
                 cache_dash = await get_cached_media_file_id(f.media.filenames[0])
                 if cache_dash:
                     return [cache_dash], mediathumb

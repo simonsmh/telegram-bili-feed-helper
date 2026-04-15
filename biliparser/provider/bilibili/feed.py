@@ -27,6 +27,7 @@ class Feed(ABC):
     __mediaurls: list = []
     mediacontent: dict = {}
     mediaraws: bool = False
+    mediamerge: bool = False  # 多轨流需要合并（如 DASH 视频轨+音频轨）
     mediatype: str = ""
     __mediathumb: str = ""
     mediaduration: int = 0

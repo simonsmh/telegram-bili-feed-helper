@@ -12,7 +12,6 @@ from bilibili_api import video
 from ...storage.cache import RedisCache
 from ...utils import (
     escape_markdown,
-    get_filename,
     logger,
 )
 from .api import (
@@ -33,22 +32,6 @@ class Video(Feed):
     page = 1
     quality = video.VideoQuality._8K
     reply_type: int = 1
-    __dashurls: list[str] = []
-    dashtype: str = ""
-
-    @property
-    def dashurls(self):
-        return self.__dashurls
-
-    @dashurls.setter
-    def dashurls(self, content):
-        self.__dashurls = content
-        if hasattr(self, "dashfilename"):
-            delattr(self, "dashfilename")
-
-    @cached_property
-    def dashfilename(self):
-        return [get_filename(i) for i in self.dashurls] if self.dashurls else list()
 
     def extract_episode_info(self, target: str):
         if not self.epid or not self.epcontent or not self.epcontent.get("result"):
@@ -191,17 +174,16 @@ class Video(Feed):
         if not video_streams or not audio_streams:
             logger.error(f"获取Dash视频流错误: {streams}")
             return False
-        self.dashtype = ""
-        self.dashurls = []
         video_streams.sort(key=lambda x: x.video_quality.value, reverse=True)
         audio_streams.sort(key=lambda x: x.audio_quality.value, reverse=True)
+        audio_url = None
         audio_size = 0
         for audio_stream in audio_streams:
             audio_size, audio_stream.url = await self.test_url_status_code(audio_stream.url, self.url)
             if audio_size:
-                self.dashurls = [audio_stream.url]
+                audio_url = audio_stream.url
                 break
-        if len(self.dashurls) < 1:
+        if not audio_url:
             logger.error(f"无可用Dash视频音频流清晰度: {streams}")
             return False
         size_limit = int(os.environ.get("VIDEO_SIZE_LIMIT", max_size))
@@ -209,14 +191,13 @@ class Video(Feed):
             video_size, video_stream.url = await self.test_url_status_code(video_stream.url, self.url)
             if audio_size and video_size and (audio_size + video_size < size_limit):
                 logger.info(f"选择Dash视频清晰度:{video_stream.video_quality.name} 大小:{video_size}")
-                self.dashurls.insert(0, video_stream.url)
-                self.dashtype = "dash"
+                self.mediaurls = [video_stream.url, audio_url]
+                self.mediatype = "video"
                 self.mediaraws = True
+                self.mediamerge = True
                 self.mediafilesize = audio_size + video_size
                 return True
-        if len(self.dashurls) < 2:
-            logger.error(f"无可用Dash视频流清晰度: {streams}")
-            return False
+        logger.error(f"无可用Dash视频流清晰度: {streams}")
 
     async def handle(self, constraints=None, extra: dict | None = None) -> "Video":
         max_size = constraints.max_upload_size if constraints else _DEFAULT_MAX_SIZE

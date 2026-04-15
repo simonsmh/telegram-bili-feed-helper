@@ -57,6 +57,7 @@ def _feed_to_parsed_content(f: Feed) -> ParsedContent:
             filenames=f.mediafilename,
             thumbnail_filename=f.mediathumbfilename,
             need_download=f.mediaraws,
+            merge_streams=f.mediamerge,
         )
 
     comments: list[Comment] = []
@@ -163,17 +164,7 @@ class BilibiliProvider(Provider):
             if isinstance(r, Exception):
                 parsed.append(r)
             else:
-                pc = _feed_to_parsed_content(r)
-                if isinstance(r, Video) and r.dashtype == "dash" and r.dashurls:
-                    pc._dash_info = {
-                        "dashtype": r.dashtype,
-                        "dashurls": r.dashurls,
-                        "dashfilenames": r.dashfilename,
-                        "bvid": r.bvid,
-                        "quality_name": r.quality.name,
-                        "is_custom": False,
-                    }
-                parsed.append(pc)
+                parsed.append(_feed_to_parsed_content(r))
         return parsed
 
     async def prepare_media(
