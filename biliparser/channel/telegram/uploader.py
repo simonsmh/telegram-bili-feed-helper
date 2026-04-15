@@ -153,7 +153,10 @@ async def handle_dash_media(f: ParsedContent, client: httpx.AsyncClient):
         return []
     res = []
     try:
-        cache_dash_file = LOCAL_MEDIA_FILE_PATH / (f.media.filenames[0] if f.media.filenames else "merged.mp4")
+        # Use a distinct merged filename to avoid ffmpeg reading and writing the same file
+        base_name = f.media.filenames[0] if f.media.filenames else "merged"
+        merged_name = Path(base_name).stem + "_merged.mp4"
+        cache_dash_file = LOCAL_MEDIA_FILE_PATH / merged_name
 
         cache_dash = await get_cached_media_file_id(cache_dash_file.name)
         if cache_dash:
