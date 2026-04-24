@@ -162,8 +162,9 @@ class Video(Feed):
         if video_result.get("code") != 0 or not video_result.get("data"):
             logger.error(f"获取Dash视频流错误: {video_result}")
             return False
+        dash_data = video_result["data"]
         ## TODO: rewrite self VideoDownloadURLDataDetecter with built-in test_url_status_code
-        detecter = video.VideoDownloadURLDataDetecter(data=video_result.get("data"))
+        detecter = video.VideoDownloadURLDataDetecter(data=dash_data)
         streams = detecter.detect(
             video_min_quality=video.VideoQuality._360P,
             video_max_quality=self.quality,
@@ -176,6 +177,11 @@ class Video(Feed):
             return False
         video_streams.sort(key=lambda x: x.video_quality.value, reverse=True)
         audio_streams.sort(key=lambda x: x.audio_quality.value, reverse=True)
+        dash_info = dash_data.get("dash", {})
+        # 使用实际流分辨率而非原始上传分辨率，避免 Telegram 尺寸不匹配
+        stream_dimensions = {}
+        for rv in dash_info.get("video", []):
+            stream_dimensions[(rv.get("id"), rv.get("codecs", ""))] = (rv.get("width", 0), rv.get("height", 0))
         audio_url = None
         audio_size = 0
         for audio_stream in audio_streams:
@@ -187,6 +193,7 @@ class Video(Feed):
             logger.error(f"无可用Dash视频音频流清晰度: {streams}")
             return False
         size_limit = int(os.environ.get("VIDEO_SIZE_LIMIT", max_size))
+        dash_duration = dash_info.get("duration", 0)
         for video_stream in video_streams:
             video_size, video_stream.url = await self.test_url_status_code(video_stream.url, self.url)
             if audio_size and video_size and (audio_size + video_size < size_limit):
@@ -196,6 +203,18 @@ class Video(Feed):
                 self.mediaraws = True
                 self.mediamerge = True
                 self.mediafilesize = audio_size + video_size
+                if dash_duration:
+                    self.mediaduration = dash_duration
+                w, h = next(
+                    (
+                        (w, h)
+                        for (qid, codecs), (w, h) in stream_dimensions.items()
+                        if qid == video_stream.video_quality.value and codecs.startswith(video_stream.video_codecs.value)
+                    ),
+                    (0, 0),
+                )
+                if w and h:
+                    self.mediadimention = {"width": w, "height": h, "rotate": self.mediadimention.get("rotate", 0)}
                 return True
         logger.error(f"无可用Dash视频流清晰度: {streams}")
 
