@@ -209,7 +209,8 @@ class Video(Feed):
                     (
                         (w, h)
                         for (qid, codecs), (w, h) in stream_dimensions.items()
-                        if qid == video_stream.video_quality.value and codecs.startswith(video_stream.video_codecs.value)
+                        if qid == video_stream.video_quality.value
+                        and codecs.startswith(video_stream.video_codecs.value)
                     ),
                     (0, 0),
                 )

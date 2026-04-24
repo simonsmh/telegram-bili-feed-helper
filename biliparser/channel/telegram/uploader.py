@@ -163,7 +163,8 @@ async def handle_dash_media(f: ParsedContent, client: httpx.AsyncClient):
             return [cache_dash]
 
         tasks = [
-            get_media(client, f.url, m, fn, no_cache=True) for m, fn in zip(f.media.urls, f.media.filenames, strict=False)
+            get_media(client, f.url, m, fn, no_cache=True)
+            for m, fn in zip(f.media.urls, f.media.filenames, strict=False)
         ]
         res = [m for m in await asyncio.gather(*tasks) if m]
         if len(res) < 2:
