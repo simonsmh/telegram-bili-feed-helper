@@ -160,6 +160,9 @@ async def handle_dash_media(f: ParsedContent, client: httpx.AsyncClient):
 
         cache_dash = await get_cached_media_file_id(cache_dash_file.name)
         if cache_dash:
+            f.media.urls = [str(cache_dash_file.absolute())]
+            f.media.filenames = [cache_dash_file.name]
+            f.media.merge_streams = False
             return [cache_dash]
 
         tasks = [
@@ -392,7 +395,7 @@ class UploadQueueManager:
 
                 media, mediathumb = await get_media_for_content(f)
                 if not media:
-                    if mediathumb:
+                    if mediathumb and f.media.type not in ["video", "audio"]:
                         media = [mediathumb]
                     else:
                         from .bot import format_caption_for_telegram
