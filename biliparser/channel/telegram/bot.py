@@ -40,7 +40,7 @@ from telegram.ext import (
 
 from ...model import Comment, MediaConstraints, ParsedContent
 from ...provider import ProviderRegistry
-from ...storage import db_close, db_init
+from ...storage import db_close, db_context, db_init
 from ...storage.cache import RedisCache
 from ...utils import escape_markdown, logger
 
@@ -651,13 +651,14 @@ def run_bot(channel, provider_registry: ProviderRegistry) -> None:
 
     add_handlers(application)
 
-    if os.environ.get("DOMAIN"):
-        application.run_webhook(
-            listen=os.environ.get("HOST", "0.0.0.0"),  # noqa: S104
-            port=int(os.environ.get("PORT", 9000)),
-            url_path=token,
-            webhook_url=f"{os.environ.get('DOMAIN')}{token}",
-            max_connections=100,
-        )
-    else:
-        application.run_polling()
+    with db_context():
+        if os.environ.get("DOMAIN"):
+            application.run_webhook(
+                listen=os.environ.get("HOST", "0.0.0.0"),  # noqa: S104
+                port=int(os.environ.get("PORT", 9000)),
+                url_path=token,
+                webhook_url=f"{os.environ.get('DOMAIN')}{token}",
+                max_connections=100,
+            )
+        else:
+            application.run_polling()
