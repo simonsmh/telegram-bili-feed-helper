@@ -137,6 +137,7 @@ class Video(Feed):
                 self.mediacontent = video_result
                 self.mediaduration = round(video_result["data"]["durl"][0]["length"] / 1000)
                 self.mediaurls = url
+                self.mediafallbackurl = url
                 self.mediatype = "video"
                 self.mediaraws = False
                 self.mediafilesize = video_result.get("data").get("durl")[0].get("size")

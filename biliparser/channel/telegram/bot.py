@@ -374,6 +374,8 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     else:
         if f.media.type == "video":
             cache_file_id = await get_cached_media_file_id(f.media.filenames[0]) if f.media.filenames else None
+            # DASH 分离流无法被 Telegram inline 直接播放，优先使用 MP4 直链 fallback_url
+            inline_video_url = f.media.fallback_url or f.media.urls[0]
             results = [
                 (
                     InlineQueryResultCachedVideo(
@@ -391,7 +393,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                         description=f"{f.author.name}: {f.content}",
                         mime_type="video/mp4",
                         thumbnail_url=f.media.thumbnail,
-                        video_url=referer_url(f.media.urls[0], f.url),
+                        video_url=referer_url(inline_video_url, f.url),
                         video_duration=f.media.duration,
                         video_width=f.media.dimension.get("width", 0),
                         video_height=f.media.dimension.get("height", 0),

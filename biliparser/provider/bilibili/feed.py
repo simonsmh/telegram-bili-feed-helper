@@ -29,6 +29,7 @@ class Feed(ABC):
     mediaraws: bool = False
     mediamerge: bool = False  # 多轨流需要合并（如 DASH 视频轨+音频轨）
     mediatype: str = ""
+    mediafallbackurl: str = ""  # MP4 直链，供无法合并 DASH 的 Channel（如 inline）使用
     __mediathumb: str = ""
     mediaduration: int = 0
     mediadimention: dict = {"width": 0, "height": 0, "rotate": 0}
