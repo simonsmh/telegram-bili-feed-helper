@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import os
 import re
 import sys
@@ -39,11 +40,13 @@ from telegram.ext import (
     filters,
 )
 
-from ...model import Comment, MediaConstraints, ParsedContent
 from ...provider import ProviderRegistry
+from ...provider.bilibili.api import referer_url
 from ...storage import db_close, db_context, db_init
 from ...storage.cache import RedisCache
 from ...utils import escape_markdown, logger
+from .formatting import format_caption_for_telegram
+from .uploader import TelegramUploadQueueManager, TelegramUploadTask, get_cached_media_file_id
 
 BILIBILI_URL_REGEX = (
     r"(?i)(?:https?://)?[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv|bili2?2?3?3?\.cn)\S+|BV\w{10}"
@@ -60,13 +63,6 @@ SOURCE_CODE_MARKUP = InlineKeyboardMarkup(
         ]
     ]
 )
-
-
-def _clean_cn_tag_style(content: str) -> str:
-    """Refine cn tag style display: #abc# -> #abc"""
-    if not content:
-        return ""
-    return re.sub(r"\\#((?:(?!\\#).)+)\\#", r"\\#\1 ", content)
 
 
 def _get_env_int(name: str, default: int = 0) -> int:
@@ -120,68 +116,6 @@ async def check_message_request_limit(message: Message, reply_on_limit: bool = T
         await message.reply_text(f"请求次数已达到上限，请 {_format_rate_limit_ttl(ttl)} 再试")
     logger.info(f"请求被限流: 用户 {user_id}")
     return False
-
-
-def _make_user_markdown(name: str, uid: str) -> str:
-    if name and uid:
-        return f"[@{escape_markdown(name)}](https://space.bilibili.com/{uid})"
-    return ""
-
-
-def _format_comment_markdown(comments: list[Comment]) -> str:
-    result = ""
-    for c in comments:
-        user_md = _make_user_markdown(c.author.name, c.author.uid)
-        if c.is_target:
-            result += f"💬\\> {user_md}:\n{escape_markdown(c.text)}\n"
-        elif c.is_top:
-            result += f"🔝\\> {user_md}:\n{escape_markdown(c.text)}\n"
-    return result
-
-
-def _try_append_within_limit(components: list[str], text: str, max_len: int) -> bool:
-    if not text:
-        return True
-    test_content = "".join([*components, text])
-    if len(test_content) < max_len:
-        components.append(text)
-        return True
-    return False
-
-
-def format_caption_for_telegram(content: ParsedContent, constraints: MediaConstraints) -> str:
-    """Format ParsedContent into a Telegram MarkdownV2 caption string.
-
-    Mirrors the original Feed.caption logic:
-    - First line: extra_markdown or escaped url
-    - User markdown link
-    - Content and comments wrapped in **>...|| (spoiler blockquote)
-    """
-    max_len = constraints.caption_max_length
-
-    components = [f"{content.extra_markdown or escape_markdown(content.url)}\n"]
-
-    if content.author.name:
-        user_md = _make_user_markdown(content.author.name, content.author.uid)
-        if not _try_append_within_limit(components, f"{user_md}:", max_len):
-            return "".join(components)
-
-    # Content markdown
-    content_md = content.content_markdown or escape_markdown(content.content)
-    if content_md and not content_md.endswith("\n"):
-        content_md += "\n"
-
-    # Comment markdown
-    comment_md = _format_comment_markdown(content.comments)
-
-    # Wrap content and comments in **>...|| (spoiler blockquote for folding)
-    for text in [content_md, comment_md]:
-        if text:
-            formatted = f"\n**>{_clean_cn_tag_style(text).replace(chr(10), chr(10) + '>')}||"
-            if not _try_append_within_limit(components, formatted, max_len):
-                return "".join(components)
-
-    return "".join(components)
 
 
 async def get_description(context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -243,9 +177,6 @@ async def message_to_urls(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle Bilibili URL parse requests."""
-    from .uploader import TelegramUploadQueueManager as UploadQueueManager
-    from .uploader import TelegramUploadTask as UploadTask
-
     message, urls = await message_to_urls(update, context)
     if message is None:
         return
@@ -270,8 +201,6 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     logger.info(f"Parse: {urls} (用户: {message.from_user.id if message.from_user else 'unknown'})")
 
-    import contextlib
-
     with contextlib.suppress(Exception):
         await message.reply_chat_action(ChatAction.TYPING)
 
@@ -294,7 +223,7 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             continue
 
         user_id = message.from_user.id if message.from_user else message.chat.id
-        task = UploadTask(
+        task = TelegramUploadTask(
             user_id=user_id,
             context=message,
             message=message,
@@ -304,16 +233,13 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             urls=urls,
         )
 
-        upload_queue_manager: UploadQueueManager = context.bot_data["upload_queue_manager"]
+        upload_queue_manager: TelegramUploadQueueManager = context.bot_data["upload_queue_manager"]
         await upload_queue_manager.submit(task)
         logger.info(f"已提交上传任务: {f.url} (用户: {user_id})")
 
 
 async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /file and /cover commands."""
-    from .uploader import TelegramUploadQueueManager as UploadQueueManager
-    from .uploader import TelegramUploadTask as UploadTask
-
     message, urls = await message_to_urls(update, context)
     if message is None or not message.text:
         return
@@ -342,7 +268,7 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             continue
 
         user_id = message.from_user.id if message.from_user else message.chat.id
-        task = UploadTask(
+        task = TelegramUploadTask(
             user_id=user_id,
             context=message,
             message=message,
@@ -354,15 +280,13 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             fetch_mode=fetch_mode,
         )
 
-        upload_queue_manager: UploadQueueManager = context.bot_data["upload_queue_manager"]
+        upload_queue_manager: TelegramUploadQueueManager = context.bot_data["upload_queue_manager"]
         await upload_queue_manager.submit(task)
         logger.info(f"已提交 fetch 任务: {f.url} (用户: {user_id}, 模式: {fetch_mode})")
 
 
 async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle inline queries."""
-    from ...provider.bilibili.api import referer_url
-    from .uploader import get_cached_media_file_id
 
     async def inline_query_answer(inline_query: InlineQuery, msg):
         try:
@@ -480,8 +404,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 )
             ]
         else:
-            import asyncio
-
             cache_file_ids = (
                 await asyncio.gather(*[get_cached_media_file_id(fn) for fn in f.media.filenames])
                 if f.media.filenames
@@ -556,14 +478,12 @@ async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Cancel all queued tasks for the user."""
-    from .uploader import TelegramUploadQueueManager as UploadQueueManager  # noqa: TC001
-
     message = update.effective_message
     if message is None:
         return
 
     user_id = message.from_user.id if message.from_user else message.chat.id
-    upload_queue_manager: UploadQueueManager = context.bot_data["upload_queue_manager"]
+    upload_queue_manager: TelegramUploadQueueManager = context.bot_data["upload_queue_manager"]
     cancelled_count = await upload_queue_manager.cancel_user_tasks(user_id)
 
     if cancelled_count > 0:
@@ -575,14 +495,12 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show current tasks for the user."""
-    from .uploader import TelegramUploadQueueManager as UploadQueueManager  # noqa: TC001
-
     message = update.effective_message
     if message is None:
         return
 
     user_id = message.from_user.id if message.from_user else message.chat.id
-    upload_queue_manager: UploadQueueManager = context.bot_data["upload_queue_manager"]
+    upload_queue_manager: TelegramUploadQueueManager = context.bot_data["upload_queue_manager"]
     user_tasks = await upload_queue_manager.get_user_tasks(user_id)
 
     if user_tasks:
@@ -638,8 +556,6 @@ def _get_token() -> str:
 
 def build_application(channel, provider_registry: ProviderRegistry, manage_db: bool = True) -> Application:
     """Build the Telegram bot application."""
-    from .uploader import TelegramUploadQueueManager
-
     token = _get_token()
     local_mode = bool(os.environ.get("LOCAL_MODE", False))
 

@@ -21,6 +21,7 @@ from ...storage.models import TelegramFileCache
 from ...uploader.download import cleanup_medias, get_media_for_content
 from ...uploader.queue import UploadQueueManager, UploadTask
 from ...utils import logger
+from .formatting import format_caption_for_telegram
 
 BILIBILI_SHARE_URL_REGEX = r"(?i)【.*】 https://[\w\.]*?(?:bilibili\.com|b23\.tv|bili2?2?3?3?\.cn)\S+"
 
@@ -102,8 +103,6 @@ class TelegramUploadQueueManager(UploadQueueManager):
         return await super()._handle_upload_error(err, task, attempt, max_retries)
 
     async def _upload_media(self, task: TelegramUploadTask) -> Any:
-        from .bot import format_caption_for_telegram
-
         f = task.parsed_content
         message = task.message
         media = task.media
@@ -200,8 +199,6 @@ class TelegramUploadQueueManager(UploadQueueManager):
                 await cache_media(f.media.filenames[0], attachment)
 
     async def _process_fetch_task(self, task: TelegramUploadTask) -> None:
-        from .bot import format_caption_for_telegram
-
         f = task.parsed_content
         message = task.message
         no_media = task.fetch_mode == "cover"
