@@ -47,6 +47,10 @@ class TelegramUploadTask(UploadTask):
 
     message: Message | None = field(default=None)
 
+    def __post_init__(self) -> None:
+        if self.message is None and isinstance(self.context, Message):
+            self.message = self.context
+
 
 class TelegramUploadQueueManager(UploadQueueManager):
     """Telegram 专属上传队列管理器"""
@@ -59,7 +63,9 @@ class TelegramUploadQueueManager(UploadQueueManager):
         if task.task_type == "fetch":
             await self._process_fetch_task(task)
             return None
-        return await self._upload_media(task)
+        result = await self._upload_media(task)
+        await self._try_delete_share_message(task)
+        return result
 
     async def _do_cache(self, content: ParsedContent, result: Any) -> None:
         await self._cache_upload_result(content, result)

@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 import sys
@@ -295,12 +296,11 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = message.from_user.id if message.from_user else message.chat.id
         task = UploadTask(
             user_id=user_id,
+            context=message,
             message=message,
             parsed_content=f,
             media=[],
             mediathumb=None,
-            is_parse_cmd=is_parse,
-            is_video_cmd=is_video,
             urls=urls,
         )
 
@@ -344,12 +344,11 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = message.from_user.id if message.from_user else message.chat.id
         task = UploadTask(
             user_id=user_id,
+            context=message,
             message=message,
             parsed_content=f,
             media=[],
             mediathumb=None,
-            is_parse_cmd=False,
-            is_video_cmd=False,
             urls=urls,
             task_type="fetch",
             fetch_mode=fetch_mode,
@@ -628,22 +627,25 @@ def add_handlers(application: Application) -> None:
     application.add_error_handler(error_handler)
 
 
-def run_bot(channel, provider_registry: ProviderRegistry) -> None:
-    """Build and run the Telegram bot application."""
+def _get_token() -> str:
+    if os.environ.get("TOKEN"):
+        return os.environ["TOKEN"]
+    if len(sys.argv) >= 2:
+        return sys.argv[1]
+    logger.error("Need TOKEN.")
+    sys.exit(1)
+
+
+def build_application(channel, provider_registry: ProviderRegistry, manage_db: bool = True) -> Application:
+    """Build the Telegram bot application."""
     from .uploader import TelegramUploadQueueManager
 
-    if os.environ.get("TOKEN"):
-        token = os.environ["TOKEN"]
-    elif len(sys.argv) >= 2:
-        token = sys.argv[1]
-    else:
-        logger.error("Need TOKEN.")
-        sys.exit(1)
-
+    token = _get_token()
     local_mode = bool(os.environ.get("LOCAL_MODE", False))
 
     async def post_init(application: Application) -> None:
-        await db_init()
+        if manage_db:
+            await db_init()
 
         max_workers = int(os.environ.get("UPLOAD_WORKERS", 4))
         max_user_tasks = int(os.environ.get("MAX_USER_TASKS", 5))
@@ -687,7 +689,8 @@ def run_bot(channel, provider_registry: ProviderRegistry) -> None:
             logger.info("上传队列管理器已停止")
 
         await channel.stop()
-        await db_close()
+        if manage_db:
+            await db_close()
 
     application = (
         Application.builder()
@@ -714,6 +717,46 @@ def run_bot(channel, provider_registry: ProviderRegistry) -> None:
     )
 
     add_handlers(application)
+    return application
+
+
+async def run_bot_async(channel, provider_registry: ProviderRegistry) -> None:
+    """Run the Telegram bot inside an existing asyncio loop."""
+    token = _get_token()
+    application = build_application(channel, provider_registry, manage_db=False)
+
+    await application.initialize()
+    try:
+        if application.post_init:
+            await application.post_init(application)
+
+        if os.environ.get("DOMAIN"):
+            await application.updater.start_webhook(
+                listen=os.environ.get("HOST", "0.0.0.0"),  # noqa: S104
+                port=int(os.environ.get("PORT", 9000)),
+                url_path=token,
+                webhook_url=f"{os.environ.get('DOMAIN')}{token}",
+                max_connections=100,
+            )
+        else:
+            await application.updater.start_polling()
+
+        await application.start()
+        await asyncio.Event().wait()
+    finally:
+        if application.updater.running:
+            await application.updater.stop()
+        if application.running:
+            await application.stop()
+        await application.shutdown()
+        if application.post_shutdown:
+            await application.post_shutdown(application)
+
+
+def run_bot(channel, provider_registry: ProviderRegistry) -> None:
+    """Build and run the Telegram bot application."""
+    token = _get_token()
+    application = build_application(channel, provider_registry, manage_db=True)
 
     with db_context():
         if os.environ.get("DOMAIN"):
