@@ -68,6 +68,58 @@ def _clean_cn_tag_style(content: str) -> str:
     return re.sub(r"\\#((?:(?!\\#).)+)\\#", r"\\#\1 ", content)
 
 
+def _get_env_int(name: str, default: int = 0) -> int:
+    raw_value = os.environ.get(name, str(default))
+    try:
+        return max(0, int(raw_value))
+    except ValueError:
+        logger.warning(f"{name} 配置无效: {raw_value}")
+        return default
+
+
+def _get_request_limit_config() -> tuple[int, int]:
+    return _get_env_int("REQUEST_LIMIT_COUNT"), _get_env_int("REQUEST_LIMIT_TTL")
+
+
+def _format_rate_limit_ttl(ttl_seconds: int) -> str:
+    if ttl_seconds <= 0:
+        return "稍后"
+    hours, remainder = divmod(ttl_seconds, 3600)
+    minutes = remainder // 60
+    if hours:
+        return f"{hours} 小时 {minutes} 分钟后"
+    if minutes:
+        return f"{minutes} 分钟后"
+    return f"{ttl_seconds} 秒后"
+
+
+async def check_request_limit(user_id: int | str) -> tuple[bool, int, int]:
+    limit_count, limit_ttl = _get_request_limit_config()
+    if limit_count <= 0 or limit_ttl <= 0:
+        return True, 0, 0
+
+    cache = RedisCache()
+    key = f"request_limit:{limit_ttl}:{user_id}"
+    count = await cache.incr(key)
+    ttl = await cache.ttl(key)
+    if count == 1 or ttl < 0:
+        await cache.expire(key, limit_ttl)
+        ttl = limit_ttl
+
+    remaining = max(0, limit_count - count)
+    return count <= limit_count, remaining, max(0, ttl)
+
+
+async def check_message_request_limit(message: Message) -> bool:
+    user_id = message.from_user.id if message.from_user else message.chat.id
+    allowed, _remaining, ttl = await check_request_limit(user_id)
+    if allowed:
+        return True
+    await message.reply_text(f"请求次数已达到上限，请 {_format_rate_limit_ttl(ttl)} 再试")
+    logger.info(f"请求被限流: 用户 {user_id}")
+    return False
+
+
 def _make_user_markdown(name: str, uid: str) -> str:
     if name and uid:
         return f"[@{escape_markdown(name)}](https://space.bilibili.com/{uid})"
@@ -209,6 +261,8 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if is_parse or is_video or message.chat.type == ChatType.PRIVATE:
             await message.reply_text("链接不正确")
         return
+    if not await check_message_request_limit(message):
+        return
 
     logger.info(f"Parse: {urls} (用户: {message.from_user.id if message.from_user else 'unknown'})")
 
@@ -261,6 +315,8 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if not urls:
         await message.reply_text("链接不正确")
+        return
+    if not await check_message_request_limit(message):
         return
 
     fetch_mode = "cover" if message.text.startswith("/cover") else "file"
@@ -338,6 +394,17 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return await inline_query_answer(inline_query, helpmsg)
     url = url_re.group(0)
     logger.info(f"Inline: {url}")
+    allowed, _remaining, ttl = await check_request_limit(inline_query.from_user.id)
+    if not allowed:
+        results = [
+            InlineQueryResultArticle(
+                id=uuid4().hex,
+                title="请求次数已达到上限",
+                description=f"请 {_format_rate_limit_ttl(ttl)} 再试",
+                input_message_content=InputTextMessageContent("请求次数已达到上限"),
+            )
+        ]
+        return await inline_query_answer(inline_query, results)
 
     registry: ProviderRegistry = context.bot_data["provider_registry"]
     telegram_channel = context.bot_data["telegram_channel"]

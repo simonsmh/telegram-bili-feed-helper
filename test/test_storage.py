@@ -78,6 +78,17 @@ class TestFakeRedis:
             assert result is None
 
     @pytest.mark.asyncio
+    async def test_incr_expire_ttl(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = self._make_cache(tmpdir)
+            assert await cache.incr("counter") == 1
+            assert await cache.incr("counter") == 2
+            assert await cache.get("counter") == "2"
+            assert await cache.ttl("counter") == -1
+            assert await cache.expire("counter", 60) is True
+            assert 0 < await cache.ttl("counter") <= 60
+
+    @pytest.mark.asyncio
     async def test_version_key_returns_none(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cache = self._make_cache(tmpdir)

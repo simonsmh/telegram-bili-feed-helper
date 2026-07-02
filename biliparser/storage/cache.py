@@ -87,6 +87,31 @@ class FakeRedis:
             self.cache[key]["timeout"] = int(time.time()) + ex
         self._save_cache()
 
+    async def incr(self, key: str) -> int:
+        value = await self.get(key)
+        count = int(value or 0) + 1
+        timeout = self.cache.get(key, {}).get("timeout")
+        self.cache[key] = {"value": str(count)}
+        if timeout:
+            self.cache[key]["timeout"] = timeout
+        self._save_cache()
+        return count
+
+    async def expire(self, key: str, time_seconds: int) -> bool:
+        if key not in self.cache:
+            return False
+        self.cache[key]["timeout"] = int(time.time()) + time_seconds
+        self._save_cache()
+        return True
+
+    async def ttl(self, key: str) -> int:
+        if await self.get(key) is None:
+            return -2
+        timeout = self.cache.get(key, {}).get("timeout")
+        if not timeout:
+            return -1
+        return max(0, timeout - int(time.time()))
+
     async def delete(self, key: str) -> None:
         if key in self.cache:
             del self.cache[key]
