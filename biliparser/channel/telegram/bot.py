@@ -110,12 +110,13 @@ async def check_request_limit(user_id: int | str) -> tuple[bool, int, int]:
     return count <= limit_count, remaining, max(0, ttl)
 
 
-async def check_message_request_limit(message: Message) -> bool:
+async def check_message_request_limit(message: Message, reply_on_limit: bool = True) -> bool:
     user_id = message.from_user.id if message.from_user else message.chat.id
     allowed, _remaining, ttl = await check_request_limit(user_id)
     if allowed:
         return True
-    await message.reply_text(f"请求次数已达到上限，请 {_format_rate_limit_ttl(ttl)} 再试")
+    if reply_on_limit:
+        await message.reply_text(f"请求次数已达到上限，请 {_format_rate_limit_ttl(ttl)} 再试")
     logger.info(f"请求被限流: 用户 {user_id}")
     return False
 
@@ -241,7 +242,8 @@ async def message_to_urls(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle Bilibili URL parse requests."""
-    from .uploader import UploadQueueManager, UploadTask
+    from .uploader import TelegramUploadQueueManager as UploadQueueManager
+    from .uploader import TelegramUploadTask as UploadTask
 
     message, urls = await message_to_urls(update, context)
     if message is None:
@@ -261,7 +263,8 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if is_parse or is_video or message.chat.type == ChatType.PRIVATE:
             await message.reply_text("链接不正确")
         return
-    if not await check_message_request_limit(message):
+    should_reply_on_limit = is_parse or is_video or message.chat.type == ChatType.PRIVATE
+    if not await check_message_request_limit(message, reply_on_limit=should_reply_on_limit):
         return
 
     logger.info(f"Parse: {urls} (用户: {message.from_user.id if message.from_user else 'unknown'})")
@@ -308,7 +311,8 @@ async def parse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /file and /cover commands."""
-    from .uploader import UploadQueueManager, UploadTask
+    from .uploader import TelegramUploadQueueManager as UploadQueueManager
+    from .uploader import TelegramUploadTask as UploadTask
 
     message, urls = await message_to_urls(update, context)
     if message is None or not message.text:
@@ -394,17 +398,6 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return await inline_query_answer(inline_query, helpmsg)
     url = url_re.group(0)
     logger.info(f"Inline: {url}")
-    allowed, _remaining, ttl = await check_request_limit(inline_query.from_user.id)
-    if not allowed:
-        results = [
-            InlineQueryResultArticle(
-                id=uuid4().hex,
-                title="请求次数已达到上限",
-                description=f"请 {_format_rate_limit_ttl(ttl)} 再试",
-                input_message_content=InputTextMessageContent("请求次数已达到上限"),
-            )
-        ]
-        return await inline_query_answer(inline_query, results)
 
     registry: ProviderRegistry = context.bot_data["provider_registry"]
     telegram_channel = context.bot_data["telegram_channel"]
@@ -564,7 +557,7 @@ async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Cancel all queued tasks for the user."""
-    from .uploader import UploadQueueManager  # noqa: TC001
+    from .uploader import TelegramUploadQueueManager as UploadQueueManager  # noqa: TC001
 
     message = update.effective_message
     if message is None:
@@ -583,7 +576,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show current tasks for the user."""
-    from .uploader import UploadQueueManager  # noqa: TC001
+    from .uploader import TelegramUploadQueueManager as UploadQueueManager  # noqa: TC001
 
     message = update.effective_message
     if message is None:
@@ -637,7 +630,7 @@ def add_handlers(application: Application) -> None:
 
 def run_bot(channel, provider_registry: ProviderRegistry) -> None:
     """Build and run the Telegram bot application."""
-    from .uploader import UploadQueueManager
+    from .uploader import TelegramUploadQueueManager
 
     if os.environ.get("TOKEN"):
         token = os.environ["TOKEN"]
@@ -655,7 +648,9 @@ def run_bot(channel, provider_registry: ProviderRegistry) -> None:
         max_workers = int(os.environ.get("UPLOAD_WORKERS", 4))
         max_user_tasks = int(os.environ.get("MAX_USER_TASKS", 5))
         max_queue_size = int(os.environ.get("MAX_QUEUE_SIZE", 200))
-        upload_queue_manager = UploadQueueManager(
+        upload_queue_manager = TelegramUploadQueueManager(
+            registry=provider_registry,
+            constraints=channel.media_constraints,
             max_workers=max_workers,
             max_user_tasks=max_user_tasks,
             max_queue_size=max_queue_size,
@@ -686,7 +681,7 @@ def run_bot(channel, provider_registry: ProviderRegistry) -> None:
         logger.info(f"Bot @{bot_me.username} started.")
 
     async def post_shutdown(application: Application) -> None:
-        upload_queue_manager: UploadQueueManager | None = application.bot_data.get("upload_queue_manager")
+        upload_queue_manager: TelegramUploadQueueManager | None = application.bot_data.get("upload_queue_manager")
         if upload_queue_manager:
             await upload_queue_manager.stop_workers()
             logger.info("上传队列管理器已停止")

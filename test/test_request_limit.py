@@ -1,5 +1,7 @@
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -68,3 +70,33 @@ async def test_request_limit_disabled_without_count(monkeypatch):
     assert allowed is True
     assert remaining == 0
     assert ttl == 0
+
+
+@pytest.mark.asyncio
+async def test_message_request_limit_can_be_silent(monkeypatch):
+    monkeypatch.setattr(bot, "check_request_limit", AsyncMock(return_value=(False, 0, 60)))
+    message = SimpleNamespace(
+        from_user=SimpleNamespace(id=123),
+        chat=SimpleNamespace(id=456),
+        reply_text=AsyncMock(),
+    )
+
+    allowed = await bot.check_message_request_limit(message, reply_on_limit=False)
+
+    assert allowed is False
+    message.reply_text.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_message_request_limit_replies_by_default(monkeypatch):
+    monkeypatch.setattr(bot, "check_request_limit", AsyncMock(return_value=(False, 0, 60)))
+    message = SimpleNamespace(
+        from_user=SimpleNamespace(id=123),
+        chat=SimpleNamespace(id=456),
+        reply_text=AsyncMock(),
+    )
+
+    allowed = await bot.check_message_request_limit(message)
+
+    assert allowed is False
+    message.reply_text.assert_called_once()

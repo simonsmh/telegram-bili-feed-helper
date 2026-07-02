@@ -108,6 +108,23 @@ def test_new_structure_exists():
         "biliparser/channel/telegram/__init__.py",
         "biliparser/channel/telegram/bot.py",
         "biliparser/channel/telegram/uploader.py",
+        # 共享上传层
+        "biliparser/uploader/__init__.py",
+        "biliparser/uploader/download.py",
+        "biliparser/uploader/queue.py",
+        # Discord channel
+        "biliparser/channel/discord/__init__.py",
+        "biliparser/channel/discord/channel.py",
+        "biliparser/channel/discord/bot.py",
     ]
     for f in required:
         assert Path(f).exists(), f"Missing required file: {f}"
+
+
+def test_shared_uploader_no_platform_imports():
+    """共享 uploader 层不应导入任何平台 SDK（telegram/discord 等）"""
+    imports = _collect_imports("biliparser/uploader")
+    for filepath, modules in imports.items():
+        for mod in modules:
+            assert "telegram" not in mod.lower(), f"{filepath} imports telegram module: {mod}"
+            assert "discord" not in mod.lower(), f"{filepath} imports discord module: {mod}"

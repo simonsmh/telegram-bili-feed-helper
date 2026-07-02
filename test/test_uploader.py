@@ -1,9 +1,9 @@
-"""测试 channel/telegram/uploader.py — cleanup_medias、_get_constraints"""
+"""测试 biliparser/uploader/download.py — cleanup_medias"""
 
 import tempfile
 from pathlib import Path
 
-from biliparser.channel.telegram.uploader import _get_constraints, cleanup_medias
+from biliparser.uploader.download import cleanup_medias
 
 
 def test_cleanup_medias_paths():
@@ -39,8 +39,12 @@ def test_cleanup_medias_empty():
     cleanup_medias([])
 
 
-def test_get_constraints_default():
-    mc = _get_constraints()
+def test_telegram_channel_constraints():
+    """TelegramChannel.media_constraints 应返回正确的默认值"""
+    from biliparser.channel.telegram import TelegramChannel
+
+    ch = TelegramChannel()
+    mc = ch.media_constraints
     assert mc.max_upload_size == 50 * 1024 * 1024  # 50MB (non-local mode)
     assert mc.max_download_size == 2 * 1024 * 1024 * 1024
     assert mc.caption_max_length == 1024

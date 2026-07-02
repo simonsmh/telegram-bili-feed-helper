@@ -20,6 +20,7 @@ dependencies = [
     "async-timeout",
     "orjson",
     "httpx[http2]",
+    "discord-py>=2.3",
 ]
 name = "telegram-bili-feed-helper"
 version = "0.1.0"
@@ -71,6 +72,7 @@ ignore = [
     "N816",    # mixed-case global — existing naming convention (credentialFactory)
     "B019",    # lru_cache on method — intentional design in Opus
     "ASYNC110", # asyncio.sleep in while loop — simple polling pattern for FakeLock
+    "ASYNC240", # Path/os.path in async — project uses asyncio, not trio/anyio
     "RUF022",  # unsorted __all__ — grouped by category intentionally
 ]
 
