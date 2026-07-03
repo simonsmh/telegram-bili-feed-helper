@@ -6,6 +6,7 @@ from ...provider import ProviderRegistry
 from ...storage.models import TelegramFileCache
 from ...utils import logger
 from .. import Channel
+from .formatting import format_caption_for_telegram
 
 TELEGRAM_UPLOAD_SIZE = 50 * 1024 * 1024
 TELEGRAM_UPLOAD_SIZE_LOCAL = 2 * 1024 * 1024 * 1024
@@ -27,8 +28,6 @@ class TelegramChannel(Channel):
         )
 
     def format_caption(self, content: ParsedContent) -> str:
-        from .bot import format_caption_for_telegram
-
         return format_caption_for_telegram(content, self.media_constraints)
 
     async def send_content(self, content, media, context):

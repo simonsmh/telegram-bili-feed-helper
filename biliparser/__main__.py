@@ -12,6 +12,10 @@ import asyncio
 import os
 import sys
 
+from .channel.discord import DiscordChannel
+from .channel.discord.bot import run_bot as run_discord
+from .channel.telegram import TelegramChannel
+from .channel.telegram.bot import run_bot_async as run_telegram
 from .provider import ProviderRegistry
 from .provider.bilibili import BilibiliProvider
 from .storage import db_close, db_context, db_init
@@ -24,16 +28,10 @@ async def _run_all(registry: ProviderRegistry) -> None:
     coroutines = []
 
     if os.environ.get("TOKEN"):
-        from .channel.telegram import TelegramChannel
-        from .channel.telegram.bot import run_bot as run_telegram
-
         logger.info("启动 Telegram channel...")
         coroutines.append(run_telegram(TelegramChannel(), registry))
 
     if os.environ.get("DISCORD_TOKEN"):
-        from .channel.discord import DiscordChannel
-        from .channel.discord.bot import run_bot as run_discord
-
         logger.info("启动 Discord channel...")
         coroutines.append(run_discord(DiscordChannel(), registry))
 

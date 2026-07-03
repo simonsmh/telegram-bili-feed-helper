@@ -10,6 +10,7 @@ from ...model import MediaConstraints, ParsedContent
 from ...model import PreparedMedia as PreparedMedia
 from ...provider import ProviderRegistry
 from .. import Channel
+from .bot import format_caption_for_discord
 
 
 class DiscordChannel(Channel):
@@ -30,8 +31,6 @@ class DiscordChannel(Channel):
         )
 
     def format_caption(self, content: ParsedContent) -> str:
-        from .bot import format_caption_for_discord
-
         return format_caption_for_discord(content, self.media_constraints)
 
     async def send_content(self, content: ParsedContent, media, context) -> None:

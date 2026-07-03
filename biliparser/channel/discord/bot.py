@@ -12,6 +12,7 @@ Discord bot 实现
 import os
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import discord
@@ -146,8 +147,6 @@ class DiscordUploadQueueManager(UploadQueueManager):
         caption: str,
         max_size: int,
     ) -> None:
-        from pathlib import Path
-
         media_item = media[0]
         file_size = media_item.stat().st_size if isinstance(media_item, Path) else 0
 
@@ -178,8 +177,6 @@ class DiscordUploadQueueManager(UploadQueueManager):
         caption: str,
         max_size: int,
     ) -> None:
-        from pathlib import Path
-
         media_item = media[0]
         file_size = media_item.stat().st_size if isinstance(media_item, Path) else 0
 
@@ -206,8 +203,6 @@ class DiscordUploadQueueManager(UploadQueueManager):
         caption: str,
         max_size: int,
     ) -> None:
-        from pathlib import Path
-
         discord_files = []
         fallback_urls = []
 

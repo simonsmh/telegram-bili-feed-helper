@@ -2,7 +2,12 @@
 
 import tempfile
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from biliparser.model import Author, MediaConstraints, ParsedContent
+from biliparser.provider import ProviderRegistry
 from biliparser.uploader.download import cleanup_medias
 
 
@@ -48,3 +53,57 @@ def test_telegram_channel_constraints():
     assert mc.max_upload_size == 50 * 1024 * 1024  # 50MB (non-local mode)
     assert mc.max_download_size == 2 * 1024 * 1024 * 1024
     assert mc.caption_max_length == 1024
+
+
+def _media_constraints() -> MediaConstraints:
+    return MediaConstraints(
+        max_upload_size=50 * 1024 * 1024,
+        max_download_size=2 * 1024 * 1024 * 1024,
+        caption_max_length=1024,
+    )
+
+
+def test_telegram_upload_task_uses_context_message():
+    from telegram import Message
+
+    from biliparser.channel.telegram.uploader import TelegramUploadTask
+
+    message = MagicMock(spec=Message)
+    task = TelegramUploadTask(
+        user_id=1,
+        context=message,
+        parsed_content=ParsedContent(url="https://example.com", author=Author()),
+        media=[],
+        mediathumb=None,
+        urls=["https://example.com"],
+    )
+
+    assert task.message is message
+
+
+@pytest.mark.asyncio
+async def test_telegram_upload_success_deletes_share_message(monkeypatch):
+    from biliparser.channel.telegram.uploader import TelegramUploadQueueManager, TelegramUploadTask
+
+    manager = TelegramUploadQueueManager(
+        registry=ProviderRegistry(),
+        constraints=_media_constraints(),
+    )
+    message = MagicMock()
+    task = TelegramUploadTask(
+        user_id=1,
+        context=message,
+        parsed_content=ParsedContent(url="https://example.com", author=Author()),
+        media=[],
+        mediathumb=None,
+        urls=["https://example.com"],
+    )
+    upload_media = AsyncMock(return_value=object())
+    delete_share_message = AsyncMock()
+    monkeypatch.setattr(manager, "_upload_media", upload_media)
+    monkeypatch.setattr(manager, "_try_delete_share_message", delete_share_message)
+
+    await manager._do_upload(task)
+
+    upload_media.assert_called_once_with(task)
+    delete_share_message.assert_called_once_with(task)
