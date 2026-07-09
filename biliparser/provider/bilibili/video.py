@@ -23,6 +23,22 @@ from .credential import credentialFactory
 from .feed import Feed
 
 _DEFAULT_MAX_SIZE = 50 * 1024 * 1024  # 50MB
+_VIDEO_CODEC_ALIASES = {
+    "avc": "AVC",
+    "hev": "HEV",
+    "hvc": "HEV",
+    "av1": "AV1",
+    "av01": "AV1",
+}
+
+
+def _resolve_video_codec(name: str) -> video.VideoCodecs:
+    codec_name = (name or "avc").strip()
+    try:
+        return video.VideoCodecs(codec_name)
+    except ValueError:
+        enum_name = _VIDEO_CODEC_ALIASES.get(codec_name.lower(), codec_name.upper())
+        return video.VideoCodecs[enum_name]
 
 
 class Video(Feed):
@@ -169,7 +185,7 @@ class Video(Feed):
         streams = detecter.detect(
             video_min_quality=video.VideoQuality._360P,
             video_max_quality=self.quality,
-            codecs=[video.VideoCodecs(os.environ.get("VIDEO_CODEC", "avc"))],
+            codecs=[_resolve_video_codec(os.environ.get("VIDEO_CODEC", "avc"))],
         )  # 可以设置成hev/av01减少文件体积，但是tg不二压会造成部分老设备直接解码指定codec时不展示，需要指定成avc
         video_streams = [video_stream for video_stream in streams if type(video_stream) is video.VideoStreamDownloadURL]
         audio_streams = [audio_stream for audio_stream in streams if type(audio_stream) is video.AudioStreamDownloadURL]
