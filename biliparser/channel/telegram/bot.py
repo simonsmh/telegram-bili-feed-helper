@@ -1,10 +1,12 @@
 import asyncio
 import contextlib
+import io
 import os
 import re
 import sys
 from uuid import uuid4
 
+from bilibili_api.login_v2 import QrCodeLogin, QrCodeLoginEvents
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -42,6 +44,7 @@ from telegram.ext import (
 
 from ...provider import ProviderRegistry
 from ...provider.bilibili.api import referer_url
+from ...provider.bilibili.credential import credentialFactory
 from ...storage import db_close, db_context, db_init
 from ...storage.cache import RedisCache
 from ...utils import escape_markdown, logger
@@ -76,6 +79,77 @@ def _get_env_int(name: str, default: int = 0) -> int:
 
 def _get_request_limit_config() -> tuple[int, int]:
     return _get_env_int("REQUEST_LIMIT_COUNT"), _get_env_int("REQUEST_LIMIT_TTL")
+
+
+def _get_admin_user_id() -> int | None:
+    """Read the single Telegram user ID allowed to use administrative commands."""
+    raw = os.environ.get("ADMIN_USER_ID", "")
+    try:
+        return int(raw) if raw else None
+    except ValueError:
+        logger.warning(f"管理员用户 ID 配置无效: {raw!r}")
+        return None
+
+
+def _is_admin(update: Update) -> bool:
+    user = update.effective_user
+    admin_user_id = _get_admin_user_id()
+    return user is not None and admin_user_id is not None and user.id == admin_user_id
+
+
+async def login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send a Bilibili QR code to the configured administrator and wait for login."""
+    message = update.effective_message
+    if message is None:
+        return
+
+    if message.chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
+        return
+
+    if not _is_admin(update):
+        if _get_admin_user_id() is None and update.effective_user is not None:
+            await message.reply_text(
+                f"你的 Telegram 用户 ID 是：{update.effective_user.id}\n"
+                "请将此 ID 配置到环境变量 ADMIN_USER_ID 后重启 Bot。"
+            )
+        return
+        return
+
+    old_task: asyncio.Task | None = context.bot_data.get("bilibili_login_task")
+    if old_task and not old_task.done():
+        old_task.cancel()
+
+    qr_login = QrCodeLogin()
+    try:
+        await qr_login.generate_qrcode()
+        picture = qr_login.get_qrcode_picture()
+        image = io.BytesIO(picture.content)
+        image.name = "bilibili-login.png"
+        await message.reply_photo(photo=image, caption="请使用哔哩哔哩客户端扫描二维码登录（二维码有效期约 3 分钟）。")
+    except Exception:
+        logger.exception("生成 Bilibili 登录二维码失败")
+        await message.reply_text("生成登录二维码失败，请稍后重试")
+        return
+
+    async def wait_for_login() -> None:
+        try:
+            while True:
+                await asyncio.sleep(3)
+                state = await qr_login.check_state()
+                if state is QrCodeLoginEvents.DONE:
+                    await credentialFactory.set(qr_login.get_credential())
+                    await message.reply_text("Bilibili 扫码登录成功，凭证已更新。")
+                    return
+                if state is QrCodeLoginEvents.TIMEOUT:
+                    await message.reply_text("登录二维码已过期，请重新发送 /login。")
+                    return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("轮询 Bilibili 扫码登录状态失败")
+            await message.reply_text("扫码登录失败，请重新发送 /login。")
+
+    context.bot_data["bilibili_login_task"] = context.application.create_task(wait_for_login())
 
 
 def _format_rate_limit_ttl(ttl_seconds: int) -> str:
@@ -531,6 +605,7 @@ def add_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("clear", clear, block=False))
     application.add_handler(CommandHandler("video", parse, block=False))
     application.add_handler(CommandHandler("parse", parse, block=False))
+    application.add_handler(CommandHandler("login", login, block=False))
     application.add_handler(
         MessageHandler(
             filters.Entity(MessageEntity.URL)
@@ -593,12 +668,19 @@ def build_application(channel, provider_registry: ProviderRegistry, manage_db: b
                 ["clear", "清除匹配内容缓存"],
                 ["tasks", "查看当前任务"],
                 ["cancel", "取消正在排队的任务"],
+                ["login", "管理员扫码更新 Bilibili 登录凭证"],
             ]
         )
         bot_me = await application.bot.get_me()
         logger.info(f"Bot @{bot_me.username} started.")
 
     async def post_shutdown(application: Application) -> None:
+        login_task: asyncio.Task | None = application.bot_data.get("bilibili_login_task")
+        if login_task and not login_task.done():
+            login_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await login_task
+
         upload_queue_manager: TelegramUploadQueueManager | None = application.bot_data.get("upload_queue_manager")
         if upload_queue_manager:
             await upload_queue_manager.stop_workers()
