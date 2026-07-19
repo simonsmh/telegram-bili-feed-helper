@@ -49,6 +49,24 @@ async def test_request_limit_counts_with_ttl(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_request_limit_is_shared_across_chats_for_the_same_user(monkeypatch):
+    monkeypatch.setenv("REQUEST_LIMIT_COUNT", "1")
+    monkeypatch.setenv("REQUEST_LIMIT_TTL", "60")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cache = _make_cache(tmpdir)
+        monkeypatch.setattr(bot, "RedisCache", lambda: cache)
+
+        first_message = SimpleNamespace(from_user=SimpleNamespace(id=123), chat=SimpleNamespace(id=-1001), reply_text=AsyncMock())
+        second_message = SimpleNamespace(from_user=SimpleNamespace(id=123), chat=SimpleNamespace(id=-1002), reply_text=AsyncMock())
+
+        first_request = await bot.check_message_request_limit(first_message, reply_on_limit=False)
+        second_request = await bot.check_message_request_limit(second_message, reply_on_limit=False)
+
+        assert first_request is True
+        assert second_request is False
+
+
+@pytest.mark.asyncio
 async def test_request_limit_requires_count_and_ttl(monkeypatch):
     monkeypatch.setenv("REQUEST_LIMIT_COUNT", "2")
     monkeypatch.setenv("REQUEST_LIMIT_TTL", "0")

@@ -1,11 +1,12 @@
 """测试 storage 层 — RedisCache、FakeRedis、FakeLock、TelegramFileCache"""
 
+import asyncio
 import tempfile
 from pathlib import Path
 
 import pytest
 
-from biliparser.storage.cache import FakeLock, FakeRedis, RedisCache
+from biliparser.storage.cache import AutoRenewingLock, FakeLock, FakeRedis, RedisCache
 from biliparser.storage.models import TelegramFileCache
 
 
@@ -131,6 +132,34 @@ class TestFakeLock:
             lock = FakeLock(store, "ctx_lock", timeout=10)
             async with lock:
                 pass  # 不应抛异常
+
+    @pytest.mark.asyncio
+    async def test_extend_refreshes_timeout(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = FakeRedis()
+            store.cache_file = Path(tmpdir) / "lock_cache.json"
+            store.cache = {"__version": 2}
+            lock = FakeLock(store, "extend_lock", timeout=10)
+            assert await lock.acquire() is True
+            assert await lock.extend(60, replace_ttl=True) is True
+            assert 0 < await store.ttl("extend_lock") <= 60
+
+
+class TestAutoRenewingLock:
+    @pytest.mark.asyncio
+    async def test_renews_lock_before_releasing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = FakeRedis()
+            store.cache_file = Path(tmpdir) / "renewing_lock_cache.json"
+            store.cache = {"__version": 2}
+            lock = FakeLock(store, "renewing_lock", timeout=1)
+            renewing_lock = AutoRenewingLock(lock, timeout=0.02)
+
+            async with renewing_lock:
+                await asyncio.sleep(0.03)
+                assert lock._acquired is True
+
+            assert lock._acquired is False
 
 
 class TestRedisCacheSingleton:

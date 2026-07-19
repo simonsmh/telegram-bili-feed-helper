@@ -7,6 +7,8 @@ from typing import Any
 
 import redis.asyncio as redis
 
+from ..utils import logger
+
 LOCAL_FILE_PATH = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", str(Path.cwd())))
 
 
@@ -34,6 +36,13 @@ class FakeLock:
         if self._acquired:
             await self.store.delete(self.lock_key)
             self._acquired = False
+
+    async def extend(self, additional_time: int, replace_ttl: bool = False) -> bool:
+        """Mirror the subset of redis-py's Lock API used by AutoRenewingLock."""
+        if not self._acquired:
+            return False
+        await self.store.expire(self.lock_key, additional_time)
+        return True
 
     async def __aenter__(self):
         while not await self.acquire():
@@ -129,3 +138,45 @@ class RedisCache:
             else:
                 cls.instance = FakeRedis()
         return cls.instance
+
+
+class AutoRenewingLock:
+    """Keep a Redis lock alive while an upload or download is still running."""
+
+    def __init__(self, lock: Any, timeout: int):
+        self._lock = lock
+        self._timeout = timeout
+        self._renewal_task: asyncio.Task[None] | None = None
+
+    async def __aenter__(self):
+        await self._lock.__aenter__()
+        self._renewal_task = asyncio.create_task(self._renew_periodically())
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self._renewal_task:
+            self._renewal_task.cancel()
+            await asyncio.gather(self._renewal_task, return_exceptions=True)
+        return await self._lock.__aexit__(exc_type, exc_val, exc_tb)
+
+    async def _renew_periodically(self) -> None:
+        # Renew well before the lease expires. The production callers always use
+        # whole-second timeouts, while the lower bound keeps this testable.
+        interval = max(self._timeout / 2, 0.01)
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                extended = await self._lock.extend(self._timeout, replace_ttl=True)
+                if not extended:
+                    logger.warning("Redis lock renewal failed because ownership was lost")
+                    return
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:
+                logger.warning(f"Redis lock renewal failed: {err}")
+                return
+
+
+def auto_renewing_lock(key: str, timeout: int) -> AutoRenewingLock:
+    """Return a lock whose TTL is renewed until the surrounding work finishes."""
+    return AutoRenewingLock(RedisCache().lock(key, timeout=timeout), timeout)

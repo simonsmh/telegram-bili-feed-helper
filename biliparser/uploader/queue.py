@@ -17,7 +17,7 @@ import httpx
 from ..model import MediaConstraints, ParsedContent
 from ..provider import ProviderRegistry
 from ..provider.bilibili.api import CACHES_TIMER
-from ..storage.cache import RedisCache
+from ..storage.cache import auto_renewing_lock
 from ..utils import logger
 from .download import cleanup_medias, get_media_for_content
 
@@ -213,7 +213,7 @@ class UploadQueueManager(ABC):
         f = task.parsed_content
         medias: list[Path | str] = []
         try:
-            async with RedisCache().lock(f.url, timeout=2 * CACHES_TIMER["LOCK"]):
+            async with auto_renewing_lock(f.url, timeout=2 * CACHES_TIMER["LOCK"]):
                 media, mediathumb = await get_media_for_content(f, cache_lookup=self._cache_lookup)
 
                 # 无媒体时用 thumbnail 代替（仅图片类型）
