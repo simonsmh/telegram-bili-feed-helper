@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from biliparser.model import Author, MediaConstraints, ParsedContent
+from biliparser.model import Author, MediaConstraints, MediaInfo, ParsedContent
 from biliparser.provider import ProviderRegistry
 from biliparser.uploader.download import cleanup_medias
 
@@ -107,3 +107,66 @@ async def test_telegram_upload_success_deletes_share_message(monkeypatch):
 
     upload_media.assert_called_once_with(task)
     delete_share_message.assert_called_once_with(task)
+
+
+@pytest.mark.asyncio
+async def test_fetch_upload_prepares_media_once_under_single_content_lock(monkeypatch):
+    import biliparser.uploader.queue as queue_module
+    from biliparser.channel.telegram.uploader import TelegramUploadQueueManager, TelegramUploadTask
+
+    class CountingLock:
+        def __init__(self):
+            self.enter_count = 0
+
+        async def __aenter__(self):
+            self.enter_count += 1
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+    class FakeCache:
+        def __init__(self, lock):
+            self.lock_instance = lock
+
+        def lock(self, key, timeout):
+            return self.lock_instance
+
+    lock = CountingLock()
+    monkeypatch.setattr(queue_module, "RedisCache", lambda: FakeCache(lock))
+
+    prepare_media = AsyncMock(return_value=(["prepared-video"], None))
+    monkeypatch.setattr(queue_module, "get_media_for_content", prepare_media)
+
+    message = MagicMock()
+    message.reply_document = AsyncMock(return_value=MagicMock(effective_attachment=object()))
+    monkeypatch.setattr(
+        "biliparser.channel.telegram.uploader.cache_media",
+        AsyncMock(),
+    )
+
+    url = "https://example.com/video"
+    task = TelegramUploadTask(
+        user_id=1,
+        context=message,
+        message=message,
+        parsed_content=ParsedContent(
+            url=url,
+            author=Author(),
+            media=MediaInfo(urls=["source"], type="video", filenames=["video.mp4"]),
+        ),
+        media=[],
+        mediathumb=None,
+        urls=[url],
+        task_type="fetch",
+        fetch_mode="file",
+    )
+    manager = TelegramUploadQueueManager(
+        registry=ProviderRegistry(),
+        constraints=_media_constraints(),
+    )
+
+    assert await manager._try_upload_once(task, 1, 1)
+    assert lock.enter_count == 1
+    prepare_media.assert_awaited_once()
+    message.reply_document.assert_awaited_once()

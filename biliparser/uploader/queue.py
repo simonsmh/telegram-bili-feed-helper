@@ -214,7 +214,14 @@ class UploadQueueManager(ABC):
         medias: list[Path | str] = []
         try:
             async with RedisCache().lock(f.url, timeout=2 * CACHES_TIMER["LOCK"]):
-                media, mediathumb = await get_media_for_content(f, cache_lookup=self._cache_lookup)
+                is_fetch_task = task.task_type == "fetch"
+                media, mediathumb = await get_media_for_content(
+                    f,
+                    compression=not is_fetch_task,
+                    media_check_ignore=is_fetch_task,
+                    no_media=is_fetch_task and task.fetch_mode == "cover",
+                    cache_lookup=self._cache_lookup,
+                )
 
                 # 无媒体时用 thumbnail 代替（仅图片类型）
                 if not media and mediathumb and f.media and f.media.type not in ["video", "audio"]:

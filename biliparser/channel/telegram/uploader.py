@@ -15,10 +15,8 @@ from telegram.constants import ChatType
 from telegram.error import BadRequest, NetworkError, RetryAfter
 
 from ...model import ParsedContent
-from ...provider.bilibili.api import CACHES_TIMER
-from ...storage.cache import RedisCache
 from ...storage.models import TelegramFileCache
-from ...uploader.download import cleanup_medias, get_media_for_content
+from ...uploader.download import cleanup_medias
 from ...uploader.queue import UploadQueueManager, UploadTask
 from ...utils import logger
 from .formatting import format_caption_for_telegram
@@ -201,57 +199,51 @@ class TelegramUploadQueueManager(UploadQueueManager):
     async def _process_fetch_task(self, task: TelegramUploadTask) -> None:
         f = task.parsed_content
         message = task.message
-        no_media = task.fetch_mode == "cover"
 
         if not message or not f.media or not f.media.urls:
             return
 
         caption = format_caption_for_telegram(f, self.constraints)
-        medias = []
+        # Media preparation and the per-content lock are owned by the base
+        # UploadQueueManager. Fetch tasks only format and send the prepared media.
+        medias = list(task.media)
+        mediathumb = task.mediathumb
         try:
-            async with RedisCache().lock(f.url, timeout=CACHES_TIMER["LOCK"]):
-                medias, mediathumb = await get_media_for_content(
-                    f,
-                    compression=False,
-                    media_check_ignore=True,
-                    no_media=no_media,
-                    cache_lookup=self._cache_lookup,
-                )
-                if mediathumb:
-                    medias.insert(0, mediathumb)
-                    mediafilenames = [f.media.thumbnail_filename, *f.media.filenames]
-                else:
-                    mediafilenames = f.media.filenames
+            if mediathumb:
+                medias.insert(0, mediathumb)
+                mediafilenames = [f.media.thumbnail_filename, *f.media.filenames]
+            else:
+                mediafilenames = f.media.filenames
 
-                if len(medias) == 1:
-                    result = await message.reply_document(
-                        document=medias[0],
-                        caption=caption,
-                        filename=mediafilenames[0],
-                    )
-                    await cache_media(mediafilenames[0], result.effective_attachment)
+            if len(medias) == 1:
+                result = await message.reply_document(
+                    document=medias[0],
+                    caption=caption,
+                    filename=mediafilenames[0],
+                )
+                await cache_media(mediafilenames[0], result.effective_attachment)
+            else:
+                if len(medias) <= 10:
+                    splits = [(medias, mediafilenames)]
                 else:
-                    if len(medias) <= 10:
-                        splits = [(medias, mediafilenames)]
+                    mid = len(medias) // 2
+                    splits = [
+                        (medias[:mid], mediafilenames[:mid]),
+                        (medias[mid:], mediafilenames[mid:]),
+                    ]
+                result = ()
+                for sub_m, sub_fn in splits:
+                    sub_result = await message.reply_media_group(
+                        [InputMediaDocument(m, filename=fn) for m, fn in zip(sub_m, sub_fn, strict=False)],
+                    )
+                    result += sub_result
+                await message.reply_text(caption)
+                for filename, item in zip(mediafilenames, result, strict=False):
+                    attachment = item.effective_attachment
+                    if isinstance(attachment, tuple):
+                        await cache_media(filename, attachment[0])
                     else:
-                        mid = len(medias) // 2
-                        splits = [
-                            (medias[:mid], mediafilenames[:mid]),
-                            (medias[mid:], mediafilenames[mid:]),
-                        ]
-                    result = ()
-                    for sub_m, sub_fn in splits:
-                        sub_result = await message.reply_media_group(
-                            [InputMediaDocument(m, filename=fn) for m, fn in zip(sub_m, sub_fn, strict=False)],
-                        )
-                        result += sub_result
-                    await message.reply_text(caption)
-                    for filename, item in zip(mediafilenames, result, strict=False):
-                        attachment = item.effective_attachment
-                        if isinstance(attachment, tuple):
-                            await cache_media(filename, attachment[0])
-                        else:
-                            await cache_media(filename, attachment)
+                        await cache_media(filename, attachment)
         except Exception as err:
             logger.exception(f"fetch 任务失败: {err} - {f.url}")
             raise  # 让 _try_upload_once 的错误处理感知到失败
