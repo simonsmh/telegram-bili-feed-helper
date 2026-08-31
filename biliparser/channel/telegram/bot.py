@@ -10,16 +10,7 @@ from bilibili_api.login_v2 import QrCodeLogin, QrCodeLoginEvents
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    InlineQuery,
     InlineQueryResultArticle,
-    InlineQueryResultAudio,
-    InlineQueryResultCachedAudio,
-    InlineQueryResultCachedGif,
-    InlineQueryResultCachedPhoto,
-    InlineQueryResultCachedVideo,
-    InlineQueryResultGif,
-    InlineQueryResultPhoto,
-    InlineQueryResultVideo,
     InputTextMessageContent,
     Message,
     MessageEntity,
@@ -30,7 +21,6 @@ from telegram import (
     Update,
 )
 from telegram.constants import ChatAction, ChatType, ParseMode
-from telegram.error import BadRequest
 from telegram.ext import (
     AIORateLimiter,
     Application,
@@ -43,13 +33,13 @@ from telegram.ext import (
 )
 
 from ...provider import ProviderRegistry
-from ...provider.bilibili.api import referer_url
 from ...provider.bilibili.credential import credentialFactory
 from ...storage import db_close, db_context, db_init
 from ...storage.cache import RedisCache
 from ...utils import escape_markdown, logger
 from .formatting import format_caption_for_telegram
-from .uploader import TelegramUploadQueueManager, TelegramUploadTask, get_cached_media_file_id
+from .inline import answer_inline_query, build_media_inline_results
+from .uploader import TelegramUploadQueueManager, TelegramUploadTask
 
 BILIBILI_URL_REGEX = (
     r"(?i)(?:https?://)?[\w\.]*?(?:bilibili(?:bb)?\.com|(?:b23(?:bb)?|acg)\.tv|bili2?2?3?3?\.cn)\S+|BV\w{10}"
@@ -361,20 +351,6 @@ async def fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle inline queries."""
-
-    async def inline_query_answer(inline_query: InlineQuery, msg):
-        try:
-            await inline_query.answer(msg, cache_time=0, is_personal=True)
-        except BadRequest as err:
-            if "Query is too old and response timeout expired or query id is invalid" in err.message:
-                logger.error(f"{err} -> Inline请求超时")
-            else:
-                logger.exception(err)
-                raise err
-        except Exception as err:
-            logger.exception(err)
-            raise err
-
     inline_query = update.inline_query
     if inline_query is None:
         return None
@@ -389,10 +365,10 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
     ]
     if not query:
-        return await inline_query_answer(inline_query, helpmsg)
+        return await answer_inline_query(inline_query, helpmsg)
     url_re = re.search(BILIBILI_URL_REGEX, query)
     if url_re is None:
-        return await inline_query_answer(inline_query, helpmsg)
+        return await answer_inline_query(inline_query, helpmsg)
     url = url_re.group(0)
     logger.info(f"Inline: {url}")
 
@@ -402,7 +378,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     parsed_list = await registry.parse([url], mc)
     if not parsed_list:
-        return await inline_query_answer(inline_query, helpmsg)
+        return await answer_inline_query(inline_query, helpmsg)
 
     f = parsed_list[0]
     if isinstance(f, Exception):
@@ -415,7 +391,7 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 input_message_content=InputTextMessageContent(str(f)),
             )
         ]
-        return await inline_query_answer(inline_query, results)
+        return await answer_inline_query(inline_query, results)
 
     caption = format_caption_for_telegram(f, mc)
 
@@ -428,102 +404,10 @@ async def inlineparse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 input_message_content=InputTextMessageContent(caption),
             )
         ]
-    else:
-        if f.media.type == "video":
-            cache_file_id = await get_cached_media_file_id(f.media.filenames[0]) if f.media.filenames else None
-            # DASH 分离流无法被 Telegram inline 直接播放，优先使用 MP4 直链 fallback_url
-            inline_video_url = f.media.fallback_url or f.media.urls[0]
-            results = [
-                (
-                    InlineQueryResultCachedVideo(
-                        id=uuid4().hex,
-                        video_file_id=cache_file_id,
-                        caption=caption,
-                        title=f.media.title,
-                        description=f"{f.author.name}: {f.content}",
-                    )
-                    if cache_file_id
-                    else InlineQueryResultVideo(
-                        id=uuid4().hex,
-                        caption=caption,
-                        title=f.media.title,
-                        description=f"{f.author.name}: {f.content}",
-                        mime_type="video/mp4",
-                        thumbnail_url=f.media.thumbnail,
-                        video_url=referer_url(inline_video_url, f.url),
-                        video_duration=f.media.duration,
-                        video_width=f.media.dimension.get("width", 0),
-                        video_height=f.media.dimension.get("height", 0),
-                    )
-                )
-            ]
-        elif f.media.type == "audio":
-            cache_file_id = await get_cached_media_file_id(f.media.filenames[0]) if f.media.filenames else None
-            results = [
-                (
-                    InlineQueryResultCachedAudio(
-                        id=uuid4().hex,
-                        audio_file_id=cache_file_id,
-                        caption=caption,
-                    )
-                    if cache_file_id
-                    else InlineQueryResultAudio(
-                        id=uuid4().hex,
-                        caption=caption,
-                        title=f.media.title,
-                        audio_duration=f.media.duration,
-                        audio_url=referer_url(f.media.urls[0], f.url),
-                        performer=f.author.name,
-                    )
-                )
-            ]
-        else:
-            cache_file_ids = (
-                await asyncio.gather(*[get_cached_media_file_id(fn) for fn in f.media.filenames])
-                if f.media.filenames
-                else []
-            )
-            results = [
-                (
-                    (
-                        InlineQueryResultCachedGif(
-                            id=uuid4().hex,
-                            gif_file_id=cache_file_id,
-                            caption=caption,
-                            title=f"{f.author.name}: {f.content}",
-                        )
-                        if ".gif" in mediaurl
-                        else InlineQueryResultCachedPhoto(
-                            id=uuid4().hex,
-                            photo_file_id=cache_file_id,
-                            caption=caption,
-                            title=f.author.name,
-                            description=f.content,
-                        )
-                    )
-                    if cache_file_id
-                    else (
-                        InlineQueryResultGif(
-                            id=uuid4().hex,
-                            caption=caption,
-                            title=f"{f.author.name}: {f.content}",
-                            gif_url=mediaurl,
-                            thumbnail_url=mediaurl,
-                        )
-                        if ".gif" in mediaurl
-                        else InlineQueryResultPhoto(
-                            id=uuid4().hex,
-                            caption=caption,
-                            title=f.author.name,
-                            description=f.content,
-                            photo_url=mediaurl + "@1280w.jpg",
-                            thumbnail_url=mediaurl + "@512w_512h.jpg",
-                        )
-                    )
-                )
-                for mediaurl, cache_file_id in zip(f.media.urls, cache_file_ids, strict=False)
-            ]
-    return await inline_query_answer(inline_query, results)
+        return await answer_inline_query(inline_query, results)
+
+    results, fallback = await build_media_inline_results(f, caption)
+    return await answer_inline_query(inline_query, results, fallback=fallback)
 
 
 async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

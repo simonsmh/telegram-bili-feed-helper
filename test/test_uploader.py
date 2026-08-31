@@ -170,3 +170,84 @@ async def test_fetch_upload_prepares_media_once_under_single_content_lock(monkey
     assert lock.enter_count == 1
     prepare_media.assert_awaited_once()
     message.reply_document.assert_awaited_once()
+
+
+class Video:
+    def __init__(self, file_id):
+        self.file_id = file_id
+
+
+class Document:
+    def __init__(self, file_id):
+        self.file_id = file_id
+
+
+class PhotoSize:
+    def __init__(self, file_id):
+        self.file_id = file_id
+
+
+def test_cache_key_document_is_namespaced():
+    from biliparser.channel.telegram.uploader import cache_key_for_attachment
+
+    assert cache_key_for_attachment("video.mp4", Document("doc-id")) == "document:video.mp4"
+
+
+def test_cache_key_video_is_native():
+    from biliparser.channel.telegram.uploader import cache_key_for_attachment
+
+    assert cache_key_for_attachment("video.mp4", Video("vid-id")) == "video.mp4"
+
+
+@pytest.mark.asyncio
+async def test_cache_media_document_uses_namespaced_key(monkeypatch):
+    from biliparser.channel.telegram.uploader import cache_media
+
+    update_or_create = AsyncMock()
+    monkeypatch.setattr(
+        "biliparser.channel.telegram.uploader.TelegramFileCache.update_or_create",
+        update_or_create,
+    )
+
+    await cache_media("video.mp4", Document("doc-id"))
+
+    update_or_create.assert_awaited_once_with(
+        mediafilename="document:video.mp4",
+        defaults={"file_id": "doc-id"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_cache_media_video_uses_native_key(monkeypatch):
+    from biliparser.channel.telegram.uploader import cache_media
+
+    update_or_create = AsyncMock()
+    monkeypatch.setattr(
+        "biliparser.channel.telegram.uploader.TelegramFileCache.update_or_create",
+        update_or_create,
+    )
+
+    await cache_media("video.mp4", Video("vid-id"))
+
+    update_or_create.assert_awaited_once_with(
+        mediafilename="video.mp4",
+        defaults={"file_id": "vid-id"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_cache_media_photosize_tuple_uses_largest(monkeypatch):
+    from biliparser.channel.telegram.uploader import cache_media
+
+    update_or_create = AsyncMock()
+    monkeypatch.setattr(
+        "biliparser.channel.telegram.uploader.TelegramFileCache.update_or_create",
+        update_or_create,
+    )
+
+    await cache_media("img.jpg", (PhotoSize("small"), PhotoSize("large")))
+
+    update_or_create.assert_awaited_once_with(
+        mediafilename="img.jpg",
+        defaults={"file_id": "large"},
+    )

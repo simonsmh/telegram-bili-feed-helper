@@ -150,3 +150,5 @@ class TestTelegramFileCache:
         assert "mediafilename" in field_names
         assert "file_id" in field_names
         assert "created" in field_names
+        assert TelegramFileCache._meta.fields_map["mediafilename"].max_length == 255
+        assert TelegramFileCache._meta.fields_map["file_id"].max_length == 512

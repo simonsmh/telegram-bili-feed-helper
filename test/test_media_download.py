@@ -7,6 +7,7 @@ import biliparser.uploader.download as download_module
 from biliparser.channel.telegram.uploader import TelegramUploadQueueManager, TelegramUploadTask
 from biliparser.model import Author, MediaConstraints, MediaInfo, ParsedContent
 from biliparser.provider import ProviderRegistry
+from biliparser.uploader.download import dash_merged_filename
 
 
 class TruncatedResponse:
@@ -84,3 +85,29 @@ async def test_file_fetch_sends_thumbnail_when_media_is_empty(monkeypatch):
     message.reply_document.assert_awaited_once()
     assert message.reply_document.await_args.kwargs["document"] == "cover.jpg"
     cache_media.assert_awaited_once()
+
+
+def test_dash_merged_filename():
+    assert dash_merged_filename("CID-1-30080.m4s") == "CID-1-30080_merged.mp4"
+
+
+@pytest.mark.asyncio
+async def test_handle_dash_media_cache_lookup_uses_merged_filename():
+    content = ParsedContent(
+        url="https://www.bilibili.com/video/BV-cached",
+        author=Author(),
+        media=MediaInfo(
+            urls=["https://cdn.invalid/video.m4s", "https://cdn.invalid/audio.m4s"],
+            type="video",
+            filenames=["CID-1-30080.m4s", "audio.m4s"],
+            merge_streams=True,
+        ),
+    )
+    cache_lookup = AsyncMock(return_value="cached-file-id")
+
+    result = await download_module.handle_dash_media(content, MagicMock(), cache_lookup=cache_lookup)
+
+    cache_lookup.assert_awaited_once_with("CID-1-30080_merged.mp4")
+    assert result == ["cached-file-id"]
+    assert content.media.filenames == ["CID-1-30080_merged.mp4"]
+    assert content.media.merge_streams is False

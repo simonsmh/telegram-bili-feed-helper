@@ -30,6 +30,11 @@ LOCAL_MODE = bool(os.environ.get("LOCAL_MODE", False))
 CacheLookup = Callable[[str], Coroutine[None, None, str | None]]
 
 
+def dash_merged_filename(filename: str) -> str:
+    """DASH 音视频合并后的缓存/落盘文件名。"""
+    return Path(filename).stem + "_merged.mp4"
+
+
 def cleanup_medias(medias) -> None:
     """删除临时下载的媒体文件（Path 类型），跳过字符串（file_id）"""
     for item in medias:
@@ -130,7 +135,7 @@ async def handle_dash_media(
     try:
         # Use a distinct merged filename to avoid ffmpeg reading and writing the same file
         base_name = f.media.filenames[0] if f.media.filenames else "merged"
-        merged_name = Path(base_name).stem + "_merged.mp4"
+        merged_name = dash_merged_filename(base_name)
         cache_dash_file = LOCAL_MEDIA_FILE_PATH / merged_name
 
         if cache_lookup is not None:

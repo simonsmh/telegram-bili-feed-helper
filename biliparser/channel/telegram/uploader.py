@@ -24,6 +24,32 @@ from .formatting import format_caption_for_telegram
 BILIBILI_SHARE_URL_REGEX = r"(?i)【.*】 https://[\w\.]*?(?:bilibili\.com|b23\.tv|bili2?2?3?3?\.cn)\S+"
 
 
+DOCUMENT_CACHE_PREFIX = "document:"
+
+
+def attachment_kind(attachment) -> str:
+    """Telegram 附件类型名：Video/Audio/Animation/PhotoSize/Document 等。"""
+    if isinstance(attachment, tuple):
+        return "PhotoSize"
+    if attachment is None:
+        return ""
+    return type(attachment).__name__
+
+
+def pick_attachment_for_cache(attachment):
+    """PhotoSize 元组取最大尺寸（最后一个）。"""
+    if isinstance(attachment, tuple):
+        return attachment[-1] if attachment else None
+    return attachment
+
+
+def cache_key_for_attachment(filename: str, attachment) -> str:
+    """Document 使用独立键，避免覆盖 Video/Photo 等原生媒体缓存。"""
+    if attachment_kind(attachment) == "Document":
+        return f"{DOCUMENT_CACHE_PREFIX}{filename}"
+    return filename
+
+
 async def get_cached_media_file_id(filename: str) -> str | None:
     file = await TelegramFileCache.get_or_none(mediafilename=filename)
     if file:
@@ -32,10 +58,12 @@ async def get_cached_media_file_id(filename: str) -> str | None:
 
 
 async def cache_media(mediafilename: str, file) -> None:
+    file = pick_attachment_for_cache(file)
     if not file:
         return
     try:
-        await TelegramFileCache.update_or_create(mediafilename=mediafilename, defaults=dict(file_id=file.file_id))
+        key = cache_key_for_attachment(mediafilename, file)
+        await TelegramFileCache.update_or_create(mediafilename=key, defaults=dict(file_id=file.file_id))
     except Exception as e:
         logger.exception(e)
 
@@ -184,17 +212,9 @@ class TelegramUploadQueueManager(UploadQueueManager):
             return
         if isinstance(result, tuple):
             for filename, item in zip(f.media.filenames, result, strict=False):
-                attachment = item.effective_attachment
-                if isinstance(attachment, tuple):
-                    await cache_media(filename, attachment[0])
-                else:
-                    await cache_media(filename, attachment)
+                await cache_media(filename, item.effective_attachment)
         else:
-            attachment = result.effective_attachment
-            if isinstance(attachment, tuple):
-                await cache_media(f.media.filenames[0], attachment[0])
-            else:
-                await cache_media(f.media.filenames[0], attachment)
+            await cache_media(f.media.filenames[0], result.effective_attachment)
 
     async def _process_fetch_task(self, task: TelegramUploadTask) -> None:
         f = task.parsed_content
@@ -239,11 +259,7 @@ class TelegramUploadQueueManager(UploadQueueManager):
                     result += sub_result
                 await message.reply_text(caption)
                 for filename, item in zip(mediafilenames, result, strict=False):
-                    attachment = item.effective_attachment
-                    if isinstance(attachment, tuple):
-                        await cache_media(filename, attachment[0])
-                    else:
-                        await cache_media(filename, attachment)
+                    await cache_media(filename, item.effective_attachment)
         except Exception as err:
             logger.exception(f"fetch 任务失败: {err} - {f.url}")
             raise  # 让 _try_upload_once 的错误处理感知到失败
