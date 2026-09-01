@@ -58,7 +58,11 @@ class CredentialFactory:
                 except Exception:
                     logger.exception("Failed to load credential from Redis.")
             try:
-                if self._credential.has_sessdata() and self._credential.ac_time_value and await self._credential.check_refresh():
+                if (
+                    self._credential.has_sessdata()
+                    and self._credential.ac_time_value
+                    and await self._credential.check_refresh()
+                ):
                     logger.info("Credential 需要刷新，正在刷新...")
                     await self._credential.refresh()
                     logger.info("Credential 刷新成功")
