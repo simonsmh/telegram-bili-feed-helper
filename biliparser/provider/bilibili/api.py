@@ -56,16 +56,10 @@ def referer_url(url: str, referer: str) -> str:
     return f"https://referer.simonsmh.workers.dev/?{urlencode(params)}#{get_filename(url)}"
 
 
-async def bili_api_request(
-    client: AsyncClient,
-    path: str,
-    *,
-    official_only: bool = False,
-    **kwargs,
-) -> Response:
+async def bili_api_request(client: AsyncClient, path: str, **kwargs) -> Response:
     url_prefixes = ["https://api.bilibili.com"]
     bili_apis = os.environ.get("BILI_API")
-    if bili_apis and not official_only:
+    if bili_apis:
         url_prefixes = [*bili_apis.split(","), *url_prefixes]
     for url_prefix in url_prefixes:
         try:

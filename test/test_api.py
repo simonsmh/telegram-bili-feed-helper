@@ -1,6 +1,5 @@
 """测试 provider/bilibili/api.py — ParserException、referer_url、CACHES_TIMER"""
 
-import httpx
 import pytest
 
 from biliparser.provider.bilibili.api import (
@@ -9,7 +8,6 @@ from biliparser.provider.bilibili.api import (
     CACHE_TIMER_DEFAULTS,
     CACHES_TIMER,
     ParserException,
-    bili_api_request,
     referer_url,
     retry_catcher,
 )
@@ -99,21 +97,3 @@ async def test_retry_catcher_passes_through():
 
     result = await ok_func()
     assert result == "success"
-
-
-@pytest.mark.asyncio
-async def test_official_only_request_skips_custom_bili_api(monkeypatch):
-    class Client:
-        def __init__(self):
-            self.urls = []
-
-        async def get(self, url, **kwargs):
-            self.urls.append(url)
-            return httpx.Response(200, json={"code": 0}, request=httpx.Request("GET", url))
-
-    monkeypatch.setenv("BILI_API", "https://relay.example/biliapi")
-    client = Client()
-
-    await bili_api_request(client, "/x/web-interface/view", official_only=True)
-
-    assert client.urls == ["https://api.bilibili.com/x/web-interface/view"]

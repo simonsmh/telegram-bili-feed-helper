@@ -371,12 +371,7 @@ class Video(Feed):
                 credential = await credentialFactory.get()
                 request_kwargs = {"params": params}
                 if credential.has_sessdata():
-                    # Account cookies must go only to Bilibili, never a custom
-                    # BILI_API relay endpoint.
-                    request_kwargs.update(
-                        cookies=credential.get_cookies(),
-                        official_only=True,
-                    )
+                    request_kwargs["cookies"] = credential.get_cookies()
                 r = await bili_api_request(
                     self.client,
                     "/x/web-interface/view",
