@@ -6,7 +6,7 @@ import re
 import sys
 from uuid import uuid4
 
-from bilibili_api.login_v2 import QrCodeLogin, QrCodeLoginEvents
+from bilibili_api.login_v2 import QrCodeLogin, QrCodeLoginChannel, QrCodeLoginEvents
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -109,7 +109,9 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if old_task and not old_task.done():
         old_task.cancel()
 
-    qr_login = QrCodeLogin()
+    # The web QR endpoint can report DONE without including SESSDATA in its
+    # redirect URL.  The TV endpoint returns the cookie list directly.
+    qr_login = QrCodeLogin(platform=QrCodeLoginChannel.TV)
     try:
         await qr_login.generate_qrcode()
         picture = qr_login.get_qrcode_picture()

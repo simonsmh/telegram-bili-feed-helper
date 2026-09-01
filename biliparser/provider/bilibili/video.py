@@ -368,10 +368,19 @@ class Video(Feed):
             logger.info(f"拉取视频缓存:{self.aid or self.bvid}")
         else:
             try:
+                credential = await credentialFactory.get()
+                request_kwargs = {"params": params}
+                if credential.has_sessdata():
+                    # Account cookies must go only to Bilibili, never a custom
+                    # BILI_API relay endpoint.
+                    request_kwargs.update(
+                        cookies=credential.get_cookies(),
+                        official_only=True,
+                    )
                 r = await bili_api_request(
                     self.client,
                     "/x/web-interface/view",
-                    params=params,
+                    **request_kwargs,
                 )
                 self.infocontent = r.json()
             except Exception as e:
