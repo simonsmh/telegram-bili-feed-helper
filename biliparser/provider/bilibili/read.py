@@ -79,6 +79,7 @@ class Read(Feed):
         mediaurls = cv_content.get("readInfo").get("banner_url") or cv_content.get("readInfo").get("image_urls")
         if mediaurls:
             logger.info(f"文章mediaurls: {mediaurls}")
+            mediaurls = mediaurls if isinstance(mediaurls, list) else [mediaurls]
             if not all(isinstance(url, str) and allowed_url(url, IMAGE_HOSTS) for url in mediaurls):
                 raise ParserException("文章图片主机错误", self.rawurl)
             self.mediaurls = mediaurls

@@ -108,7 +108,10 @@ async def test_article_media_blocks_cached_metadata_and_redirects(monkeypatch, t
     assert requests == ["https://i0.hdslb.com/redirect", "https://i0.hdslb.com/image"]
 
 
-async def test_article_fetch_uses_canonical_host_and_checks_cached_images(monkeypatch):
+@pytest.mark.parametrize("field", ["banner_url", "image_urls"])
+@pytest.mark.parametrize("scalar", [True, False])
+@pytest.mark.parametrize("cached", [True, False])
+async def test_article_fetch_uses_canonical_host_and_checks_cached_images(monkeypatch, field, scalar, cached):
     from unittest.mock import AsyncMock
 
     import orjson
@@ -120,11 +123,11 @@ async def test_article_fetch_uses_canonical_host_and_checks_cached_images(monkey
             "author": {"mid": 1, "name": "author"},
             "summary": "text",
             "title": "title",
-            "image_urls": ["https://i0.hdslb.com/image"],
+            field: "https://i0.hdslb.com/image" if scalar else ["https://i0.hdslb.com/image"],
         }
     }
     cache = AsyncMock()
-    cache.get.side_effect = [None, "https://telegra.ph/article"]
+    cache.get.side_effect = [orjson.dumps(article) if cached else None, "https://telegra.ph/article"]
     monkeypatch.setattr("biliparser.provider.bilibili.read.RedisCache", lambda: cache)
     monkeypatch.setattr(Read, "parse_reply", AsyncMock(return_value={}))
     requests = []
@@ -136,11 +139,11 @@ async def test_article_fetch_uses_canonical_host_and_checks_cached_images(monkey
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         result = await Read("https://www.bilibili.com/read/mobile?id=123", client).handle()
         assert result.mediaurls == ["https://i0.hdslb.com/image"]
-        assert requests == ["https://www.bilibili.com/read/cv123"]
-        article["readInfo"]["image_urls"] = ["http://127.0.0.1/secret"]
+        assert requests == ([] if cached else ["https://www.bilibili.com/read/cv123"])
+        article["readInfo"][field] = "http://127.0.0.1/secret" if scalar else ["http://127.0.0.1/secret"]
         cache.get.side_effect = [orjson.dumps(article)]
         with pytest.raises(ParserException):
             await Read("https://www.bilibili.com/read/cv123", client).handle()
         with pytest.raises(ParserException):
             await Read("https://qqbilibili.com/read/cv123", client).handle()
-    assert len(requests) == 1
+    assert len(requests) == (0 if cached else 1)
