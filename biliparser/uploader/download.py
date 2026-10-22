@@ -22,6 +22,7 @@ from tqdm import tqdm
 
 from ..model import ParsedContent
 from ..provider.bilibili.api import BILIBILI_DESKTOP_HEADER, CACHES_TIMER, referer_url
+from ..provider.bilibili.urls import IMAGE_HOSTS, checked_stream
 from ..utils import compress, logger
 
 LOCAL_MEDIA_FILE_PATH = Path(os.environ.get("LOCAL_TEMP_FILE_PATH", str(Path.cwd()))) / ".tmp"
@@ -66,7 +67,13 @@ async def get_media(
     try:
         header = BILIBILI_DESKTOP_HEADER.copy()
         header["Referer"] = referer
-        async with timeout(CACHES_TIMER["LOCK"]), client.stream("GET", url, headers=header) as response:
+        # Article images may also come from a cache populated before URL validation.
+        stream = (
+            checked_stream(client, "GET", url, IMAGE_HOSTS, headers=header)
+            if "/read/" in str(referer)
+            else client.stream("GET", url, headers=header)
+        )
+        async with timeout(CACHES_TIMER["LOCK"]), stream as response:
             logger.info(f"下载开始: {url}")
             if response.status_code != 200:
                 raise httpx.HTTPStatusError(

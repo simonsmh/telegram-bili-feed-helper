@@ -28,18 +28,8 @@ from .feed import Feed
 from .live import Live
 from .opus import Opus
 from .read import Read
+from .urls import LINK_HOSTS, checked_request, is_bilibili_link, normalize_link
 from .video import Video
-
-# Regex that matches any Bilibili URL we can handle
-_BILIBILI_RE = re.compile(
-    r"(?:"
-    r"bilibili\.com"  # any bilibili.com subdomain
-    r"|b23\.tv"  # short links
-    r"|(?:BV\w{10})"  # bare BV id
-    r"|(?:av\d+)"  # bare av id
-    r")",
-    re.IGNORECASE,
-)
 
 
 def _feed_to_parsed_content(f: Feed) -> ParsedContent:
@@ -97,6 +87,7 @@ def _feed_to_parsed_content(f: Feed) -> ParsedContent:
 
 @retry_catcher
 async def _route(client: httpx.AsyncClient, url: str, constraints=None, extra: dict | None = None) -> Feed:
+    url = normalize_link(url)
     # bare BV/av/ep/ss ids or short paths
     if re.search(r"(?:^|/)(?:BV\w{10}|av\d+|ep\d+|ss\d+)", url):
         return await Video(url if "/" in url else f"b23.tv/{url}", client).handle(constraints=constraints, extra=extra)
@@ -111,7 +102,7 @@ async def _route(client: httpx.AsyncClient, url: str, constraints=None, extra: d
 
     # follow redirects then re-classify
     try:
-        resp = await client.head(url)
+        resp = await checked_request(client, "HEAD", url, LINK_HOSTS)
     except httpx.HTTPStatusError:
         raise ParserException("URL请求失败", url)
     except Exception:
@@ -135,7 +126,7 @@ async def _route(client: httpx.AsyncClient, url: str, constraints=None, extra: d
 
 class BilibiliProvider(Provider):
     def can_handle(self, url: str) -> bool:
-        return bool(_BILIBILI_RE.search(url))
+        return is_bilibili_link(url)
 
     async def parse(
         self,
@@ -152,7 +143,7 @@ class BilibiliProvider(Provider):
             tasks = [
                 _route(
                     client,
-                    f"http://{url}" if not url.startswith(("http:", "https:", "av", "BV")) else url,
+                    url,
                     constraints=constraints,
                     extra=extra,
                 )

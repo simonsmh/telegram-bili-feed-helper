@@ -17,6 +17,7 @@ from .api import (
     referer_url,
 )
 from .feed import Feed
+from .urls import IMAGE_HOSTS, LINK_HOSTS, allowed_url, checked_request, normalize_link
 
 telegraph = Telegraph(access_token=os.environ.get("TELEGRAPH_ACCESS_TOKEN", None))
 
@@ -43,6 +44,7 @@ class Read(Feed):
 
     async def handle(self, constraints=None):
         logger.info(f"处理文章信息: 链接: {self.rawurl}")
+        self.rawurl = normalize_link(self.rawurl)
         match = re.search(r"bilibili\.com\/read\/(?:cv|mobile\/|mobile\?id=)(\d+)", self.rawurl)
         if not match:
             raise ParserException("文章链接错误", self.rawurl)
@@ -60,7 +62,7 @@ class Read(Feed):
             cv_content = orjson.loads(cache_base)  # type: ignore
         else:
             try:
-                resp = await self.client.get(self.rawurl)
+                resp = await checked_request(self.client, "GET", self.url, LINK_HOSTS)
                 resp.raise_for_status()
             except HTTPStatusError as e:
                 raise ParserException(f"文章页面获取错误:{self.read_id}", e.request.url, e)
@@ -77,6 +79,9 @@ class Read(Feed):
         mediaurls = cv_content.get("readInfo").get("banner_url") or cv_content.get("readInfo").get("image_urls")
         if mediaurls:
             logger.info(f"文章mediaurls: {mediaurls}")
+            mediaurls = mediaurls if isinstance(mediaurls, list) else [mediaurls]
+            if not all(isinstance(url, str) and allowed_url(url, IMAGE_HOSTS) for url in mediaurls):
+                raise ParserException("文章图片主机错误", self.rawurl)
             self.mediaurls = mediaurls
             self.mediatype = "image"
         title = cv_content.get("readInfo").get("title")
