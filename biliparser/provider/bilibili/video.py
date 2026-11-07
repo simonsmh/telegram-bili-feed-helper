@@ -242,15 +242,18 @@ class Video(Feed):
         if extra:
             self.set_quality(extra.get("quality"))
         logger.info(f"处理视频信息: 链接: {self.rawurl}")
-        match = re.search(
-            r"(?:bilibili\.com(?:/video|/bangumi/play)?|b23\.tv|acg\.tv)/(?:(?P<bvid>BV\w{10})|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+)|)",
-            self.rawurl,
+        pr = urlparse(self.rawurl if "://" in self.rawurl else f"https://{self.rawurl}")
+        # Match complete path segments; locale prefixes must not become video IDs.
+        locale = r"(?:[a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*/)?"
+        match = re.fullmatch(
+            rf"/(?:{locale}(?:video|bangumi/play)/)?"
+            r"(?:(?P<bvid>BV\w{10})|av(?P<aid>\d+)|ep(?P<epid>\d+)|ss(?P<ssid>\d+))/?",
+            pr.path,
         )
-        match_fes = re.search(
-            r"bilibili\.com/festival/(?P<festivalid>\w+)",
-            self.rawurl,
+        match_fes = re.fullmatch(
+            rf"/{locale}festival/(?P<festivalid>\w+)/?",
+            pr.path,
         )
-        pr = urlparse(self.rawurl)
         qs = parse_qs(pr.query)
         seek_id = None
         if "comment_secondary_id" in qs:
